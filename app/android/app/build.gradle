@@ -77,3 +77,41 @@ kotlin {
 flutter {
     source = "../.."
 }
+
+// Check the merged manifest, including permissions contributed by plugins.
+// A UI-only feature flag cannot remove Play's foreground-service declaration.
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        def manifest = variant.artifacts.get(
+            com.android.build.api.artifact.SingleArtifact.MERGED_MANIFEST.INSTANCE)
+        def suffix = variant.name.capitalize()
+        def verifyTask = tasks.register("verify${suffix}NoForegroundService") {
+            inputs.file(manifest)
+            doLast {
+                def factory = javax.xml.parsers.DocumentBuilderFactory.newInstance()
+                factory.setNamespaceAware(true)
+                def document = factory.newDocumentBuilder().parse(manifest.get().asFile)
+                def androidNs = "http://schemas.android.com/apk/res/android"
+                def permissions = document.getElementsByTagName("uses-permission")
+                for (int i = 0; i < permissions.length; i++) {
+                    def name = permissions.item(i).getAttributeNS(androidNs, "name")
+                    if (name.startsWith("android.permission.FOREGROUND_SERVICE")) {
+                        throw new GradleException("Disabled background sync declares ${name}")
+                    }
+                }
+                def services = document.getElementsByTagName("service")
+                for (int i = 0; i < services.length; i++) {
+                    def service = services.item(i)
+                    if (service.hasAttributeNS(androidNs, "foregroundServiceType") ||
+                        service.getAttributeNS(androidNs, "name") ==
+                            "androidx.work.impl.foreground.SystemForegroundService") {
+                        throw new GradleException("Disabled foreground service in merged manifest")
+                    }
+                }
+            }
+        }
+        tasks.matching { it.name in ["assemble${suffix}", "bundle${suffix}"] }.configureEach {
+            dependsOn(verifyTask)
+        }
+    }
+}

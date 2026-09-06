@@ -18,12 +18,14 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withContext
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.engine.dart.DartExecutor
 import io.flutter.FlutterInjector
 import io.flutter.plugin.common.MethodChannel
-import io.flutter.plugins.GeneratedPluginRegistrant
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -48,6 +50,9 @@ class SyncWorker(
 ) : CoroutineWorker(context, params) {
 
     companion object {
+        // Re-enabling requires restoring the foreground-service manifest entries
+        // and validating Android's service-start requirements on a device.
+        const val BACKGROUND_SYNC_ENABLED = false
         const val WORK_NAME_COMPACT = "pirate_sync_compact"
         const val WORK_NAME_DEEP = "pirate_sync_deep"
         
@@ -93,6 +98,7 @@ class SyncWorker(
             maxDurationSecs: Long = 120L,
             maxBlocks: Long = 250000L,
         ) {
+            if (!BACKGROUND_SYNC_ENABLED) return
             val constraints = Constraints.Builder()
                 .setRequiredNetworkType(NetworkType.CONNECTED)
                 .setRequiresBatteryNotLow(true)
@@ -139,6 +145,7 @@ class SyncWorker(
             requiresCharging: Boolean = true,
             requiresWifi: Boolean = true,
         ) {
+            if (!BACKGROUND_SYNC_ENABLED) return
             val constraints = Constraints.Builder()
                 .setRequiredNetworkType(
                     if (requiresWifi) NetworkType.UNMETERED else NetworkType.CONNECTED
@@ -193,6 +200,7 @@ class SyncWorker(
             maxDurationSecs: Long = if (mode == "deep") 600L else 120L,
             maxBlocks: Long = if (mode == "deep") 5000000L else 250000L,
         ) {
+            if (!BACKGROUND_SYNC_ENABLED) return
             val constraints = Constraints.Builder()
                 .setRequiredNetworkType(NetworkType.CONNECTED)
                 .build()
@@ -333,6 +341,9 @@ class SyncWorker(
     }
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
+        // Persisted work from an older installation may run before the next
+        // activity launch. Never start a service in a build without permission.
+        if (!BACKGROUND_SYNC_ENABLED) return@withContext Result.success()
         val syncMode = inputData.getString("sync_mode") ?: "compact"
         val maxDurationSecs = inputData.getLong("max_duration_secs", 60L)
         val maxBlocks = inputData.getLong("max_blocks", 5000L)
@@ -399,6 +410,8 @@ class SyncWorker(
                     "tunnel_used" to result.tunnelUsed
                 )
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: TorConnectionException) {
             android.util.Log.e(TAG, "Tor connection failed: ${e.message}", e)
             
@@ -537,109 +550,99 @@ class SyncWorker(
     ): SyncResult {
         val startTime = System.currentTimeMillis()
         
-        return suspendCancellableCoroutine { continuation ->
+        // Flutter engine creation, channel calls, and disposal are main-thread
+        // operations. The Dart/native sync itself remains asynchronous.
+        return withContext(Dispatchers.Main.immediate) {
+            val flutterEngine = FlutterEngine(applicationContext)
             try {
-                // Create headless Flutter engine for FFI calls
-                val flutterEngine = FlutterEngine(applicationContext)
-                GeneratedPluginRegistrant.registerWith(flutterEngine)
-                val appBundlePath = FlutterInjector.instance().flutterLoader().findAppBundlePath()
-                flutterEngine.dartExecutor.executeDartEntrypoint(
-                    DartExecutor.DartEntrypoint(appBundlePath, "backgroundSyncMain")
-                )
-                
-                val channel = MethodChannel(
-                    flutterEngine.dartExecutor.binaryMessenger,
-                    CHANNEL_NAME
-                )
-                
-                // Call FFI through method channel
-                channel.invokeMethod(
-                    "executeBackgroundSync",
-                    mapOf(
-                        "walletId" to walletId,
-                        "mode" to mode,
-                        "maxDurationSecs" to maxDurationSecs,
-                        "maxBlocks" to maxBlocks,
-                        "useRoundRobin" to useRoundRobin,
-                        "tunnelMode" to tunnelConfig.mode,
-                        "socks5Url" to tunnelConfig.socks5Url
-                    ),
-                    object : MethodChannel.Result {
-                        override fun success(result: Any?) {
-                            @Suppress("UNCHECKED_CAST")
-                            val resultMap = result as? Map<String, Any?> ?: emptyMap()
-                            
-                            val duration = ((System.currentTimeMillis() - startTime) / 1000).toInt()
-                            
-                            // Check for tunnel errors
-                            val errors = resultMap["errors"] as? List<String> ?: emptyList()
-                            if (errors.any { it.contains("tor", ignoreCase = true) }) {
-                                flutterEngine.destroy()
-                                continuation.resumeWithException(
-                                    TorConnectionException(errors.firstOrNull() ?: "Tor connection failed")
-                                )
-                                return
+                withTimeout((maxDurationSecs.coerceIn(1L, 600L) + 30L) * 1000L) {
+                    suspendCancellableCoroutine<SyncResult> { continuation ->
+                        val channel = MethodChannel(
+                            flutterEngine.dartExecutor.binaryMessenger, CHANNEL_NAME
+                        )
+                        val appBundlePath =
+                            FlutterInjector.instance().flutterLoader().findAppBundlePath()
+                        flutterEngine.dartExecutor.executeDartEntrypoint(
+                            DartExecutor.DartEntrypoint(appBundlePath, "backgroundSyncMain")
+                        )
+                        // FlutterEngine automatically registers plugins. Registering
+                        // them a second time duplicates plugin initialization.
+                        channel.invokeMethod(
+                            "executeBackgroundSync",
+                            mapOf(
+                                "walletId" to walletId,
+                                "mode" to mode,
+                                "maxDurationSecs" to maxDurationSecs,
+                                "maxBlocks" to maxBlocks,
+                                "useRoundRobin" to useRoundRobin,
+                                "tunnelMode" to tunnelConfig.mode,
+                                "socks5Url" to tunnelConfig.socks5Url
+                            ),
+                            object : MethodChannel.Result {
+                                override fun success(result: Any?) {
+                                    if (!continuation.isActive) return
+                                    @Suppress("UNCHECKED_CAST")
+                                    val values = result as? Map<String, Any?>
+                                    if (values == null) {
+                                        continuation.resumeWithException(
+                                            IllegalStateException("Invalid background sync result")
+                                        )
+                                        return
+                                    }
+                                    val errors = (values["errors"] as? List<*>)
+                                        ?.filterIsInstance<String>().orEmpty()
+                                    if (errors.isNotEmpty()) {
+                                        val message = errors.joinToString("; ")
+                                        val failure = when {
+                                            errors.any { it.contains("tor", ignoreCase = true) } ->
+                                                TorConnectionException(message)
+                                            errors.any { it.contains("socks5", ignoreCase = true) } ->
+                                                Socks5ConnectionException(message)
+                                            else -> Exception(message)
+                                        }
+                                        continuation.resumeWithException(failure)
+                                        return
+                                    }
+                                    continuation.resume(SyncResult(
+                                        mode = mode,
+                                        blocksSynced = (values["blocks_synced"] as? Number)?.toLong() ?: 0,
+                                        durationSecs = (System.currentTimeMillis() - startTime) / 1000,
+                                        newTransactions = (values["new_transactions"] as? Number)?.toInt() ?: 0,
+                                        newBalance = (values["new_balance"] as? Number)?.toLong(),
+                                        tunnelUsed = values["tunnel_used"] as? String ?: tunnelConfig.mode
+                                    ))
+                                }
+
+                                override fun error(code: String, message: String?, details: Any?) {
+                                    if (!continuation.isActive) return
+                                    val failure = when (code) {
+                                        "TOR_CONNECTION_FAILED" ->
+                                            TorConnectionException(message ?: "Tor connection failed")
+                                        "SOCKS5_CONNECTION_FAILED" ->
+                                            Socks5ConnectionException(message ?: "SOCKS5 connection failed")
+                                        "NETWORK_ERROR" ->
+                                            NetworkTunnelException(message ?: "Network error")
+                                        else -> Exception("Sync failed: $code - $message")
+                                    }
+                                    continuation.resumeWithException(failure)
+                                }
+
+                                override fun notImplemented() {
+                                    if (!continuation.isActive) return
+                                    continuation.resumeWithException(
+                                        IllegalStateException("Background sync not implemented in Flutter")
+                                    )
+                                }
                             }
-                            if (errors.any { it.contains("socks5", ignoreCase = true) }) {
-                                flutterEngine.destroy()
-                                continuation.resumeWithException(
-                                    Socks5ConnectionException(errors.firstOrNull() ?: "SOCKS5 connection failed")
-                                )
-                                return
-                            }
-                            
-                            val syncResult = SyncResult(
-                                mode = mode,
-                                blocksSynced = (resultMap["blocks_synced"] as? Number)?.toLong() ?: 0,
-                                durationSecs = duration.toLong(),
-                                newTransactions = (resultMap["new_transactions"] as? Number)?.toInt() ?: 0,
-                                newBalance = (resultMap["new_balance"] as? Number)?.toLong(),
-                                tunnelUsed = resultMap["tunnel_used"] as? String ?: tunnelConfig.mode
-                            )
-                            
-                            flutterEngine.destroy()
-                            continuation.resume(syncResult)
-                        }
-                        
-                        override fun error(errorCode: String, errorMessage: String?, errorDetails: Any?) {
-                            flutterEngine.destroy()
-                            
-                            // Map error codes to specific exceptions
-                            when (errorCode) {
-                                "TOR_CONNECTION_FAILED" -> 
-                                    continuation.resumeWithException(
-                                        TorConnectionException(errorMessage ?: "Tor connection failed")
-                                    )
-                                "SOCKS5_CONNECTION_FAILED" ->
-                                    continuation.resumeWithException(
-                                        Socks5ConnectionException(errorMessage ?: "SOCKS5 connection failed")
-                                    )
-                                "NETWORK_ERROR" ->
-                                    continuation.resumeWithException(
-                                        NetworkTunnelException(errorMessage ?: "Network error")
-                                    )
-                                else ->
-                                    continuation.resumeWithException(
-                                        Exception("Sync failed: $errorCode - $errorMessage")
-                                    )
-                            }
-                        }
-                        
-                        override fun notImplemented() {
-                            flutterEngine.destroy()
-                            continuation.resumeWithException(
-                                Exception("Background sync not implemented in Flutter")
-                            )
-                        }
+                        )
                     }
-                )
-                
-                continuation.invokeOnCancellation {
+                }
+            } finally {
+                // Also dispose on cancellation, timeout, or setup failure, exactly
+                // once and on the thread required by Flutter.
+                withContext(NonCancellable + Dispatchers.Main.immediate) {
                     flutterEngine.destroy()
                 }
-            } catch (e: Exception) {
-                android.util.Log.e(TAG, "Failed to execute FFI sync: ${e.message}", e)
-                continuation.resumeWithException(e)
             }
         }
     }

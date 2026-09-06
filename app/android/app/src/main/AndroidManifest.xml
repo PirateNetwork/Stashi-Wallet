@@ -8,8 +8,10 @@
     
     <!-- Background Sync Permissions -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Remove dependency declarations as well as our own while Android
+         background synchronization is disabled. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" tools:node="remove" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" tools:node="remove" />
     
     <!-- Notification Permissions -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -52,8 +54,7 @@
         <!-- WorkManager System Foreground Service (required for setForeground) -->
         <service
             android:name="androidx.work.impl.foreground.SystemForegroundService"
-            android:exported="false"
-            android:foregroundServiceType="dataSync" />
+            tools:node="remove" />
 
         <!-- WorkManager Initialization -->
         <provider
@@ -66,11 +67,6 @@
                 android:value="androidx.startup" />
         </provider>
         
-        <!-- Background Sync Service -->
-        <service
-            android:name="com.pirate.wallet.background.SyncForegroundService"
-            android:foregroundServiceType="dataSync"
-            android:exported="false" />
             
     </application>
     

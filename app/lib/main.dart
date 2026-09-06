@@ -201,7 +201,7 @@ class _StashiWalletAppState extends ConsumerState<StashiWalletApp>
     initializeBackgroundSyncHandler();
     FfiBridge.setAppActive(true);
     unawaited(ArbTextLocalizer.instance.bootstrap());
-    if (Platform.isAndroid || Platform.isIOS) {
+    if (Platform.isIOS) {
       unawaited(ref.read(backgroundSyncInitProvider.future));
     }
     if (_isDesktop) {

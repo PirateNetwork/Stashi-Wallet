@@ -47,6 +47,14 @@ class MainActivity: FlutterFragmentActivity() {
         
         // Set up method channel for background sync
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
+            if (!SyncWorker.BACKGROUND_SYNC_ENABLED && call.method in setOf(
+                    "initializeBackgroundSync", "scheduleCompactSync",
+                    "scheduleDeepSync", "triggerImmediateSync", "resumeSync"
+                )) {
+                SyncWorker.cancelAllSync(this)
+                result.success(false)
+                return@setMethodCallHandler
+            }
             when (call.method) {
                 "initializeBackgroundSync" -> {
                     NotificationChannels.createChannels(this)
