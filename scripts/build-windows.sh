@@ -138,6 +138,10 @@ sign_windows_binaries() {
     local signed_any=false
     local failed_any=false
     while IFS= read -r -d '' file; do
+        # Preserve Microsoft's signatures on the bundled redistributable CRT.
+        case "$(basename "$file")" in
+            msvcp140*.dll|vcruntime140*.dll|concrt140.dll) continue ;;
+        esac
         if sign_windows_file "$file" "$cert_path" "$cert_password" "$signtool_cmd"; then
             signed_any=true
         else
