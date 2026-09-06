@@ -8,7 +8,7 @@ This repository is under active development. Before distributing builds, review 
 User guide
 ----------
 
-The [Stashi Wallet User Guide](https://piratenetwork.github.io/Pirate-Unified-Light-Wallet/) covers installation, recovery, payments, privacy, key management, release verification, and troubleshooting for desktop and mobile. Its source is maintained under [`docs/user-guide/`](docs/user-guide/), and GitHub Actions publishes the approved PDF after guide changes reach `main`.
+The [Stashi Wallet User Guide](https://piratenetwork.github.io/Stashi-Wallet/) covers installation, recovery, payments, privacy, key management, release verification, and troubleshooting for desktop and mobile. Its source is maintained under [`docs/user-guide/`](docs/user-guide/), and GitHub Actions publishes the approved PDF after guide changes reach `main`.
 
 Repository layout
 -----------------
