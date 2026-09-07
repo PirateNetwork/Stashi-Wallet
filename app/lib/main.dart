@@ -27,6 +27,7 @@ import 'core/swaps/swap_providers.dart';
 import 'design/theme.dart';
 import 'design/tokens/colors.dart';
 import 'features/settings/providers/preferences_providers.dart';
+import 'features/settings/providers/theme_preferences.dart';
 import 'features/settings/providers/transport_providers.dart';
 import 'routes/app_router.dart';
 import 'core/providers/rust_init_provider.dart';
@@ -346,6 +347,7 @@ class _StashiWalletAppState extends ConsumerState<StashiWalletApp>
     }
     final router = ref.watch(appRouterProvider);
     final themeModeSetting = ref.watch(appThemeModeProvider);
+    final walletTheme = ref.watch(walletThemeProvider);
     final locale = ref.watch(localeProvider);
     final arbLocale = locale.countryCode == null || locale.countryCode!.isEmpty
         ? locale.languageCode
@@ -367,17 +369,22 @@ class _StashiWalletAppState extends ConsumerState<StashiWalletApp>
         : themeModeSetting.themeMode == ThemeMode.light
         ? Brightness.light
         : Brightness.dark; // Default to dark, will be updated in builder for system mode
-    AppColors.syncWithTheme(brightness);
+    AppColors.syncWithTheme(
+      brightness,
+      light: walletTheme.light,
+      dark: walletTheme.dark,
+    );
 
     return MaterialApp.router(
-      key: ValueKey(themeModeSetting.themeMode),
+      key: ValueKey((themeModeSetting.themeMode, walletTheme.id)),
       title: 'Stashi Wallet',
       debugShowCheckedModeBanner: false,
       scrollBehavior: const PirateScrollBehavior(),
 
       // Theme
-      theme: PTheme.light(),
-      darkTheme: PTheme.dark(),
+      theme: PTheme.light(palette: walletTheme.light),
+      darkTheme: PTheme.dark(palette: walletTheme.dark),
+      themeAnimationDuration: Duration.zero,
       themeMode: themeModeSetting.themeMode,
 
       builder: (context, child) {
@@ -385,7 +392,11 @@ class _StashiWalletAppState extends ConsumerState<StashiWalletApp>
         // This ensures AppColors stays in sync when theme changes
         // For system mode, this will use the actual resolved brightness
         final currentBrightness = Theme.of(context).brightness;
-        AppColors.syncWithTheme(currentBrightness);
+        AppColors.syncWithTheme(
+          currentBrightness,
+          light: walletTheme.light,
+          dark: walletTheme.dark,
+        );
 
         if (Platform.isWindows) {
           _syncWindowBackground(AppColors.backgroundBase);
