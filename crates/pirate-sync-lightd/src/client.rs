@@ -2356,77 +2356,19 @@ impl LightClient {
             .unwrap_or(false)
     }
 
-    /// Connect to lightwalletd server with retry
+    /// Connect to a validated Auto pool, or retry the explicitly selected server.
     pub async fn connect(&self) -> Result<()> {
-        if self.has_failover_endpoints() {
-            let primary = self
-                .candidate_client(0)
-                .expect("the primary endpoint is always present");
-            let primary_failure = match primary.clone().connect_single_endpoint().await {
-                Ok(()) => {
-                    let channel = Arc::clone(&primary.channel)
-                        .lock_owned()
-                        .await
-                        .clone()
-                        .ok_or_else(|| {
-                            Error::Connection(
-                                "connected primary lightwalletd endpoint has no channel"
-                                    .to_string(),
-                            )
-                        })?;
-                    let readiness_timeout = self.endpoint_probe_timeout();
-                    match tokio::time::timeout(
-                        readiness_timeout,
-                        Self::probe_connected_candidate(channel.clone()),
-                    )
-                    .await
-                    {
-                        Ok(Ok((_, tip))) => {
-                            *Arc::clone(&self.channel).lock_owned().await = Some(channel);
-                            write_endpoint_pool_debug_event(
-                                "log_endpoint_primary_ready",
-                                "selected Auto endpoint passed compact-cache readiness",
-                                &serde_json::json!({
-                                    "endpoint": self.config.endpoint,
-                                    "tip": tip,
-                                })
-                                .to_string(),
-                            );
-                            info!(
-                                tip,
-                                "Connected to ready lightwalletd endpoint {}; alternate validation is deferred until network streaming",
-                                self.config.endpoint
-                            );
-                            return Ok(());
-                        }
-                        Ok(Err(error)) => error.to_string(),
-                        Err(_) => format!(
-                            "compact-cache readiness timed out after {:?}",
-                            readiness_timeout
-                        ),
-                    }
-                }
-                Err(error) => error.to_string(),
-            };
-
-            warn!(
-                reason = %primary_failure,
-                "Selected lightwalletd endpoint {} is not ready; probing canonical alternates",
-                self.config.endpoint,
-            );
-            write_endpoint_pool_debug_event(
-                "log_endpoint_primary_rejected",
-                "selected Auto endpoint failed compact-cache readiness",
-                &serde_json::json!({
-                    "endpoint": self.config.endpoint,
-                    "reason": &primary_failure,
-                })
-                .to_string(),
-            );
-            let health = self
+        if self.has_failover_endpoints() && self.config.tls.spki_pin.is_none() {
+            // Initialize the selected transport once before concurrent probes.
+            // Probe channels reuse it and cannot silently switch transport.
+            let transport_config = build_transport_config(&self.config)?;
+            GLOBAL_TRANSPORT
                 .clone()
-                .probe_endpoints_owned(Some(primary_failure))
-                .await;
+                .get_or_init(transport_config)
+                .await?;
+            // Every candidate gets one bounded readiness probe. A dead primary
+            // must not consume its retry budget before alternates even start.
+            let health = self.clone().probe_endpoints_owned(None).await;
             Self::report_endpoint_pool_health(&health);
             if health.iter().any(|endpoint| endpoint.healthy) {
                 info!(
@@ -4203,6 +4145,58 @@ impl LightClient {
         .await
     }
 
+    /// Move a failed RPC to an already validated, up-to-date pool member.
+    /// Candidate clients have no failover pool and must never rotate the parent.
+    async fn rotate_failed_endpoint(&self) -> bool {
+        if !self.has_failover_endpoints() {
+            return false;
+        }
+        let replacement = {
+            let mut state = self.endpoint_pool.write().await;
+            let failed = state.active_index;
+            let failures = state.failures.entry(failed).or_default();
+            *failures = failures.saturating_add(1);
+            let highest_tip = state
+                .healthy_indices
+                .iter()
+                .filter_map(|index| state.tips.get(index))
+                .copied()
+                .max()
+                .unwrap_or(0);
+            let next = state
+                .healthy_indices
+                .iter()
+                .copied()
+                .filter(|index| *index != failed && state.channels.contains_key(index))
+                .filter(|index| {
+                    state.tips.get(index).is_some_and(|tip| {
+                        tip.saturating_add(HISTORICAL_STRIPE_MAX_TIP_LAG) >= highest_tip
+                    })
+                })
+                .min_by_key(|index| {
+                    (
+                        state.failures.get(index).copied().unwrap_or_default(),
+                        state
+                            .probe_latencies
+                            .get(index)
+                            .copied()
+                            .unwrap_or(Duration::MAX),
+                    )
+                });
+            next.and_then(|index| {
+                let channel = state.channels.get(&index)?.clone();
+                state.active_index = index;
+                Some(channel)
+            })
+        };
+        if let Some(channel) = replacement {
+            *self.channel.lock().await = Some(channel);
+            true
+        } else {
+            false
+        }
+    }
+
     /// Execute operation with retry logic
     async fn with_retry<F, Fut, T>(&self, mut operation: F) -> Result<T>
     where
@@ -4235,6 +4229,12 @@ impl LightClient {
                         "Operation failed (attempt {}), retrying in {:?}: {:?}",
                         attempt, backoff, e
                     );
+
+                    // Try a validated alternate immediately; backoff is useful
+                    // when retrying the same server, not before changing servers.
+                    if self.rotate_failed_endpoint().await {
+                        continue;
+                    }
 
                     tokio::time::sleep(jitter_duration(backoff)).await;
 
@@ -4387,6 +4387,84 @@ mod tests {
             .map(|index| (index, Duration::from_millis((index + 1) as u64)))
             .collect();
         state.failures = failures.iter().copied().collect();
+    }
+
+    #[tokio::test]
+    async fn auto_connect_probes_alternates_while_primary_is_stalled() {
+        let _guard = TRANSPORT_STATE_TEST_LOCK.lock().await;
+        clear_desired_transport_config();
+        let primary = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let alternate = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let client = LightClient::with_config(
+            LightClientConfig::direct(&format!("http://{}", primary.local_addr().unwrap()))
+                .with_failover_endpoint(LightClientEndpoint::new(format!(
+                    "http://{}",
+                    alternate.local_addr().unwrap()
+                ))),
+        );
+        let outcome = {
+            let connect = client.connect();
+            tokio::pin!(connect);
+            tokio::select! {
+                result = &mut connect => panic!("stalled servers unexpectedly completed: {result:?}"),
+                result = tokio::time::timeout(Duration::from_secs(5), async {
+                    // Keep both sockets open without replying to HTTP/2. The
+                    // alternate must connect before the primary can time out.
+                    let (primary_socket, _) = primary.accept().await.unwrap();
+                    let (alternate_socket, _) = alternate.accept().await.unwrap();
+                    (primary_socket, alternate_socket)
+                }) => result,
+            }
+        };
+        shutdown_transport().await;
+        assert!(
+            outcome.is_ok(),
+            "Auto waited for the stalled primary before probing its alternate"
+        );
+    }
+
+    #[tokio::test]
+    async fn auto_rpc_retry_uses_a_fresh_validated_alternate() {
+        let client = auto_pool_client(TransportMode::Direct);
+        seed_endpoint_pool(&client, &[1_000, 900, 1_000], &[]).await;
+        {
+            let mut state = client.endpoint_pool.write().await;
+            for index in 0..3 {
+                let channel = Endpoint::from_static("http://127.0.0.1:1").connect_lazy();
+                state.channels.insert(index, channel);
+            }
+        }
+        let result = client
+            .with_retry(|| async {
+                let index = client.endpoint_pool.read().await.active_index;
+                if index == 0 {
+                    Err(Error::Connection("primary unavailable".into()))
+                } else {
+                    Ok(index)
+                }
+            })
+            .await
+            .unwrap();
+        assert_eq!(result, 2, "stale alternate must be skipped");
+        assert!(client.is_connected());
+    }
+
+    #[tokio::test]
+    async fn auto_does_not_rotate_on_cancellation_or_permanent_rpc_errors() {
+        let client = auto_pool_client(TransportMode::Direct);
+        seed_endpoint_pool(&client, &[1_000, 1_000], &[]).await;
+        for error in [
+            Error::Cancelled,
+            Error::Status(tonic::Status::permission_denied("denied")),
+        ] {
+            let pending = Mutex::new(Some(error));
+            let result: Result<()> = client
+                .with_retry(|| async { Err(pending.lock().await.take().expect("must not retry")) })
+                .await;
+            assert!(result.is_err());
+            assert_eq!(client.endpoint_pool.read().await.active_index, 0);
+            assert!(client.endpoint_pool.read().await.failures.is_empty());
+        }
     }
 
     fn valid_subtree_root(height: u64) -> SubtreeRoot {
