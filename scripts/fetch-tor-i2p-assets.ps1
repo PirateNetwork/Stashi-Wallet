@@ -57,9 +57,15 @@ $staging = Join-Path $stagingParent ([Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $staging -Force | Out-Null
 try {
     if ($Components -contains 'bridges') {
+        # Git Bash puts GNU tar on PATH. It interprets a Windows drive prefix
+        # (D:\...) as a remote host. Use Windows' native tar with native paths.
+        $windowsTar = Join-Path ([Environment]::GetFolderPath('System')) 'tar.exe'
+        if (-not (Test-Path -LiteralPath $windowsTar -PathType Leaf)) {
+            throw "Windows native tar is required to extract Tor Expert Bundle: $windowsTar"
+        }
         $archive = Join-Path $staging 'tor-expert-bundle.tar.gz'
         Download-VerifiedArchive -Url $TorBundleUrl -Destination $archive -Algorithm SHA256 -Expected $TorBundleSha256
-        & tar.exe -xf $archive -C $staging tor/pluggable_transports/lyrebird.exe docs/lyrebird.txt
+        & $windowsTar -xf $archive -C $staging tor/pluggable_transports/lyrebird.exe docs/lyrebird.txt
         if ($LASTEXITCODE -ne 0) { throw 'Cannot extract Lyrebird and its license notices from Tor Expert Bundle.' }
         $destination = Join-Path $appDir 'tor-pt/windows'
         New-Item -ItemType Directory -Path $destination -Force | Out-Null
