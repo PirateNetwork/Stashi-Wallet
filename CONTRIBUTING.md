@@ -45,6 +45,9 @@ flutter analyze
 Documentation style
 -------------------
 
+For new wallet themes, follow [Contributing wallet themes](docs/contributing-themes.md).
+Theme styles are registered centrally and selected only from Settings.
+
 - Use direct technical language.
 - Do not add marketing copy, placeholders, or internal planning notes to user-facing documentation.
 - Keep documentation tied to committed code and scripts.
