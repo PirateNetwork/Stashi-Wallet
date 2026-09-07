@@ -414,3 +414,4 @@ run_windows_rust_build_and_copy.cmd
 /output/release-review/
 /output/release-investigation/
 /app/test/fixtures/releases/*.zip
+/output/play-console-video
