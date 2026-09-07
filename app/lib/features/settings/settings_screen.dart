@@ -17,6 +17,7 @@ import '../../core/crypto/mnemonic_language.dart';
 import '../../core/providers/wallet_providers.dart';
 import '../../core/platform/platform_utils.dart';
 import 'providers/preferences_providers.dart';
+import 'providers/theme_preferences.dart';
 import 'providers/transport_providers.dart';
 import '../../ui/molecules/p_list_tile.dart';
 import '../../ui/molecules/connection_status_indicator.dart';
@@ -267,10 +268,11 @@ class SettingsScreen extends ConsumerWidget {
             Consumer(
               builder: (context, ref, _) {
                 final themeMode = ref.watch(appThemeModeProvider);
+                final theme = ref.watch(walletThemeProvider);
                 return PListTile(
                   leading: const Icon(Icons.dark_mode_outlined),
                   title: 'Theme'.tr,
-                  subtitle: themeMode.label,
+                  subtitle: '${theme.name} · ${themeMode.label}',
                   onTap: () => context.push('/settings/theme'),
                   trailing: const Icon(Icons.chevron_right),
                 );
