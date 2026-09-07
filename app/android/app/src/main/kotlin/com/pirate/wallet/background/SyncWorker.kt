@@ -2,7 +2,6 @@ package com.pirate.wallet.background
 
 import android.content.Context
 import android.content.SharedPreferences
-import android.content.pm.ServiceInfo
 import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
@@ -36,7 +35,6 @@ import kotlin.coroutines.resumeWithException
  * Handles periodic blockchain synchronization using WorkManager with:
  * - SyncCompact: Daily short maintenance sync with battery/network constraints
  * - SyncDeep: Daily when on charger and unmetered network (WiFi)
- * - Foreground service for long-running operations
  * - Privacy-respecting network tunnel (Tor/SOCKS5)
  * - All RPC calls routed through configured NetTunnel
  * 
@@ -50,8 +48,8 @@ class SyncWorker(
 ) : CoroutineWorker(context, params) {
 
     companion object {
-        // Re-enabling requires restoring the foreground-service manifest entries
-        // and validating Android's service-start requirements on a device.
+        // Re-enabling requires implementing foreground execution, restoring its
+        // manifest entries and validating service-start requirements on a device.
         const val BACKGROUND_SYNC_ENABLED = false
         const val WORK_NAME_COMPACT = "pirate_sync_compact"
         const val WORK_NAME_DEEP = "pirate_sync_deep"
@@ -59,7 +57,6 @@ class SyncWorker(
         const val CHANNEL_ID_SYNC = NotificationChannels.CHANNEL_SYNC
         const val CHANNEL_ID_TX = NotificationChannels.CHANNEL_TRANSACTIONS
         
-        const val NOTIFICATION_ID_SYNC = 1001
         const val NOTIFICATION_ID_TX = 1002
         const val NOTIFICATION_ID_NETWORK_ERROR = 1003
         
@@ -366,11 +363,6 @@ class SyncWorker(
         try {
             // Ensure notification channel exists
             NotificationChannels.createChannels(applicationContext)
-            
-            // Show foreground notification for long operations or deep sync
-            if (syncMode == "deep" || maxDurationSecs > 60 || runAttemptCount > 0) {
-                setForeground(createForegroundInfo(syncMode))
-            }
 
             // Get tunnel configuration
             val tunnelConfig = getTunnelConfig()
@@ -495,45 +487,6 @@ class SyncWorker(
     private fun updateLastSyncTime(mode: String) {
         val key = if (mode == "deep") KEY_LAST_DEEP_SYNC else KEY_LAST_COMPACT_SYNC
         prefs.edit().putLong(key, System.currentTimeMillis()).apply()
-    }
-
-    /**
-     * Create foreground service notification
-     */
-    private fun createForegroundInfo(syncMode: String): ForegroundInfo {
-        val tunnelMode = prefs.getString(KEY_TUNNEL_MODE, TUNNEL_TOR) ?: TUNNEL_TOR
-        val tunnelText = when (tunnelMode) {
-            TUNNEL_TOR -> "via Tor 🧅"
-            TUNNEL_SOCKS5 -> "via SOCKS5"
-            else -> "directly"
-        }
-
-        val title = if (syncMode == "deep") {
-            "Deep Sync in Progress"
-        } else {
-            "Syncing Blockchain"
-        }
-
-        val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID_SYNC)
-            .setContentTitle(title)
-            .setContentText("Updating your balance securely $tunnelText...")
-            .setSmallIcon(android.R.drawable.ic_popup_sync)
-            .setOngoing(true)
-            .setSilent(true)
-            .setProgress(0, 0, true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setCategory(NotificationCompat.CATEGORY_PROGRESS)
-            .build()
-
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            ForegroundInfo(
-                NOTIFICATION_ID_SYNC,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-            )
-        } else {
-            ForegroundInfo(NOTIFICATION_ID_SYNC, notification)
-        }
     }
 
     /**
