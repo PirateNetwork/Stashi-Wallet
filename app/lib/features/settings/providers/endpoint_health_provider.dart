@@ -211,10 +211,6 @@ class EndpointHealthNotifier extends Notifier<EndpointHealthState> {
         clearSwitch: true,
       );
 
-      final currentRecord = await _probe(current, tlsPin: config.tlsPin);
-      if (!ref.mounted || generation != _checkGeneration) return;
-      _storeRecord(currentRecord);
-
       final preset = config.automaticFailover
           ? LightdEndpoint.currentAutomaticPreset(current)
           : LightdEndpoint.findPreset(current.url);
@@ -228,16 +224,20 @@ class EndpointHealthNotifier extends Notifier<EndpointHealthState> {
                 .toList()
           : const <LightdEndpoint>[];
 
+      // Auto checks the whole curated pool in one round, including on startup
+      // and periodic checks. A stalled primary cannot delay alternate probes,
+      // and a responsive but stale primary can be detected without manual refresh.
+      final records = await Future.wait([
+        _probe(current, tlsPin: config.tlsPin),
+        ...candidates.map(_probe),
+      ]);
+      if (!ref.mounted || generation != _checkGeneration) return;
+      records.forEach(_storeRecord);
+      final currentRecord = records.first;
+      final candidateRecords = records.skip(1).toList();
       final nextFailureCount = currentRecord.healthy
           ? 0
           : _consecutiveFailures + 1;
-      final shouldProbePool =
-          candidates.isNotEmpty && (probePool || !currentRecord.healthy);
-      final candidateRecords = shouldProbePool
-          ? await Future.wait(candidates.map(_probe))
-          : const <EndpointHealthRecord>[];
-      if (!ref.mounted || generation != _checkGeneration) return;
-      candidateRecords.forEach(_storeRecord);
 
       final healthyCandidates =
           <({LightdEndpoint endpoint, EndpointHealthRecord record})>[];

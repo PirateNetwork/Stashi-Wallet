@@ -121,7 +121,10 @@ void main() {
       container.read(endpointHealthProvider);
       final notifier = container.read(endpointHealthProvider.notifier);
       await notifier.checkNow();
-      expect(container.read(endpointHealthProvider).phase, EndpointHealthPhase.healthy);
+      expect(
+        container.read(endpointHealthProvider).phase,
+        EndpointHealthPhase.healthy,
+      );
 
       expect(selectedUrl, isNull);
       expect(probed, contains('https://lightwalletd1.cryptoforge.cc:443'));
@@ -140,6 +143,75 @@ void main() {
       );
     },
   );
+
+  test('Auto starts all probes before the primary responds', () async {
+    final pending = <String, Completer<NodeTestResult>>{};
+    final container = _container(
+      config: const LightdEndpointConfig(
+        url: 'https://lightd1.pirate.black:443',
+        automaticFailover: true,
+      ),
+      probe: ({required url, tlsPin}) {
+        final result = Completer<NodeTestResult>();
+        pending[url] = result;
+        return result.future;
+      },
+      setEndpoint: ({required url, tlsPin}) async {},
+    );
+    addTearDown(container.dispose);
+    final subscription = container.listen(endpointHealthProvider, (_, _) {});
+    addTearDown(subscription.close);
+    final check = container.read(endpointHealthProvider.notifier).checkNow();
+    await Future<void>.delayed(Duration.zero);
+    final started = pending.keys.toList();
+    // Complete every request before asserting so failures leave no hanging work.
+    for (final entry in pending.entries) {
+      entry.value.complete(
+        _probeResult(
+          success: entry.key != 'https://lightd1.pirate.black:443',
+          height: 4090010,
+        ),
+      );
+    }
+    await check;
+    expect(started, contains('https://lightwalletd1.cryptoforge.cc:443'));
+    expect(started, contains('https://pirate.mathnodes.com:443'));
+    expect(
+      container.read(endpointHealthProvider).phase,
+      EndpointHealthPhase.healthy,
+    );
+  });
+
+  test('routine Auto checks detect a responsive but stale primary', () async {
+    final container = _container(
+      config: const LightdEndpointConfig(
+        url: 'https://lightd1.pirate.black:443',
+        automaticFailover: true,
+      ),
+      probe: ({required url, tlsPin}) async => _probeResult(
+        success: true,
+        height: url == 'https://lightd1.pirate.black:443' ? 4090000 : 4090100,
+      ),
+      setEndpoint: ({required url, tlsPin}) async {},
+    );
+    addTearDown(container.dispose);
+    container.read(endpointHealthProvider);
+    final notifier = container.read(endpointHealthProvider.notifier);
+    await notifier.checkNow();
+    expect(
+      container.read(endpointHealthProvider).phase,
+      EndpointHealthPhase.degraded,
+    );
+    await notifier.checkNow();
+    expect(
+      container.read(endpointHealthProvider).phase,
+      EndpointHealthPhase.healthy,
+    );
+    expect(
+      container.read(endpointHealthProvider).activeUrl,
+      isNot('https://lightd1.pirate.black:443'),
+    );
+  });
 
   test('custom endpoints remain under explicit user control', () async {
     final probed = <String>[];
