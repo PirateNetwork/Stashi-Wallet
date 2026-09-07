@@ -21,14 +21,9 @@ function Sign-ReleaseFile([string]$Path) {
     }
 
 }
-# Sign installed application modules before packaging. Preserve valid signatures
-# supplied by third-party publishers. Do not import certificates into Root.
-Get-ChildItem -LiteralPath $stage -File | Where-Object Extension -In '.exe', '.dll' | ForEach-Object {
-    if ((Get-AuthenticodeSignature -LiteralPath $_.FullName).Status -ne 'Valid') {
-        Sign-ReleaseFile $_.FullName
-    }
-}
-& (Join-Path $PSScriptRoot 'package-windows-installer.ps1') -SourceDir $stage -OutputDir $ArtifactDir -AppVersion $AppVersion -OutputBaseFilename 'Stashi-Wallet-windows-installer'
+# Share the same upstream-signature preservation policy with local builds.
+& (Join-Path $PSScriptRoot 'sign-windows-runtime.ps1') -RuntimeDir $stage -CertificatePath $CertificatePath -SignToolPath $SignToolPath
+& (Join-Path $PSScriptRoot 'package-windows-installer.ps1') -SourceDir $stage -ComponentAssetDir $ArtifactDir -OutputDir $ArtifactDir -AppVersion $AppVersion -OutputBaseFilename 'Stashi-Wallet-windows-installer'
 $installer = Join-Path $ArtifactDir 'Stashi-Wallet-windows-installer.exe'
 Sign-ReleaseFile $installer
 $hash = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()

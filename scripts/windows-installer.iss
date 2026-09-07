@@ -18,20 +18,30 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
+UsePreviousSetupType=no
 UninstallDisplayIcon={app}\Stashi Wallet.exe
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Types]
-Name: "full"; Description: "Wallet with optional privacy tools"
-Name: "compact"; Description: "Wallet with built-in Tor"
+Name: "compact"; Description: "Standard - wallet with built-in Tor (recommended)"
+Name: "full"; Description: "Wallet with all optional privacy tools"
 Name: "custom"; Description: "Choose privacy tools"; Flags: iscustom
 
 [Components]
 Name: "wallet"; Description: "Stashi Wallet (includes Tor)"; Types: full compact custom; Flags: fixed
-Name: "i2p"; Description: "I2P router (optional download)"; Types: full
-Name: "bridges"; Description: "Tor bridge helpers for restricted networks (optional download)"; Types: full
+#if IncludeI2pd == "1"
+Name: "i2p"; Description: "I2P router - an additional privacy network (optional download)"; Types: full
+#endif
+Name: "bridges"; Description: "Tor bridges - Snowflake and obfs4 for restricted networks (optional download)"; Types: full
+
+[Messages]
+#if IncludeI2pd == "1"
+SelectComponentsLabel2=Built-in Tor is included. Add I2P only if you use that network, or Tor bridges if Tor is blocked. Optional tools are downloaded only when selected. You can add them later by running this installer again.
+#else
+SelectComponentsLabel2=Built-in Tor is included. Add Tor bridges only if Tor is blocked on your network. The bridge helper is downloaded only when selected. You can add it later by running this installer again.
+#endif
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Excludes: "\i2p\*,\tor-pt\*,*.lib,*.exp,*.pdb"; Flags: recursesubdirs createallsubdirs ignoreversion; Components: wallet

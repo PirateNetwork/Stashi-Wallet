@@ -69,53 +69,10 @@ normalize_mtime() {
 REPRODUCIBLE="${REPRODUCIBLE:-0}"
 
 zip_dir_deterministic() {
-    local src="$1"
-    local dest="$2"
-    (cd "$src" && normalize_mtime ".")
-    if command -v zip &> /dev/null; then
-        (cd "$src" && LC_ALL=C find . -type f -print | sort | zip -X -@ "$dest")
-        return 0
-    fi
-    if command -v python &> /dev/null; then
-        python - "$src" "$dest" "${SOURCE_DATE_EPOCH:-}" <<'PY'
-import os
-import sys
-import time
-import datetime
-import zipfile
-import shutil
-
-src = sys.argv[1]
-dest = sys.argv[2]
-epoch_raw = sys.argv[3] if len(sys.argv) > 3 else ""
-try:
-    epoch = int(epoch_raw) if epoch_raw else int(time.time())
-except ValueError:
-    epoch = int(time.time())
-
-dt = datetime.datetime.utcfromtimestamp(epoch)
-zip_dt = (dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second)
-
-if os.path.exists(dest):
-    os.remove(dest)
-
-with zipfile.ZipFile(dest, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-    for root, dirs, files in os.walk(src):
-        dirs.sort()
-        files.sort()
-        for name in files:
-            path = os.path.join(root, name)
-            rel = os.path.relpath(path, src).replace(os.sep, "/")
-            info = zipfile.ZipInfo(rel, date_time=zip_dt)
-            info.compress_type = zipfile.ZIP_DEFLATED
-            info.external_attr = 0o100644 << 16
-            with open(path, "rb") as f, zf.open(info, "w") as out:
-                shutil.copyfileobj(f, out, 1024 * 1024)
-        # Only the entries matter, directories are implied.
-PY
-        return 0
-    fi
-    error "zip not found and python not available to create portable archive."
+    local python_cmd
+    python_cmd="$(command -v python || command -v python3 || true)"
+    [ -n "$python_cmd" ] || error "Python is required to package the standard portable wallet."
+    "$python_cmd" "$SCRIPT_DIR/package-windows-portable.py" "$1" "$2" "$SOURCE_DATE_EPOCH"
 }
 
 sign_windows_binaries() {
@@ -135,29 +92,10 @@ sign_windows_binaries() {
         warn "signtool not found. Skipping binary signing."
         return 1
     fi
-    local signed_any=false
-    local failed_any=false
-    while IFS= read -r -d '' file; do
-        # Preserve Microsoft's signatures on the bundled redistributable CRT.
-        case "$(basename "$file")" in
-            msvcp140*.dll|vcruntime140*.dll|concrt140.dll) continue ;;
-        esac
-        if sign_windows_file "$file" "$cert_path" "$cert_password" "$signtool_cmd"; then
-            signed_any=true
-        else
-            failed_any=true
-            warn "Failed to sign $file"
-        fi
-    done < <(find "$release_dir" -maxdepth 1 -type f \( -name "*.exe" -o -name "*.dll" \) -print0)
-    if [ "$failed_any" = "true" ]; then
-        warn "One or more Windows binaries failed to sign."
-        return 1
-    fi
-    if [ "$signed_any" = "true" ]; then
-        return 0
-    fi
-    warn "No Windows binaries found to sign in $release_dir"
-    return 1
+    WINDOWS_SIGN_PASSWORD="$cert_password" powershell.exe -NoProfile \
+        -File "$(cygpath -w "$SCRIPT_DIR/sign-windows-runtime.ps1")" \
+        -RuntimeDir "$(cygpath -w "$release_dir")" \
+        -CertificatePath "$(cygpath -w "$cert_path")" -SignToolPath "$signtool_cmd"
 }
 
 resolve_signtool() {
@@ -219,6 +157,8 @@ elif command -v pwsh &> /dev/null; then
 else
     error "PowerShell not found. Run scripts/fetch-tor-i2p-assets.ps1 manually."
 fi
+
+python "$SCRIPT_DIR/verify-windows-bridge.py" "$APP_DIR/tor-pt/windows/lyrebird.exe"
 
 cd "$APP_DIR"
 
@@ -329,6 +269,9 @@ bash "$SCRIPT_DIR/verify-kdf-artifacts.sh" windows "$OUTPUT_DIR/$PORTABLE_OUTPUT
 log "Creating installer..."
 if ! create_windows_installer "$RELEASE_DIR" "$OUTPUT_DIR" "${INSTALLER_OUTPUT_NAME%.exe}"; then
     warn "Installer artifact was not generated."
+elif [ "$BINARIES_SIGNED" = "true" ]; then
+    sign_windows_file "$OUTPUT_DIR/$INSTALLER_OUTPUT_NAME" "$SIGN_CERT" "$SIGN_PASSWORD" "$(resolve_signtool)" \
+        || error "Installer signing failed."
 fi
 
 # Generate SHA-256 checksums
