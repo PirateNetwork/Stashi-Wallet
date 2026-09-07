@@ -115,7 +115,10 @@ install(DIRECTORY "${PROJECT_BUILD_DIR}/${FLUTTER_ASSET_DIR_NAME}"
 # Bundle Tor pluggable transport binaries (desktop-only).
 set(TOR_PT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../tor-pt/windows")
 if(EXISTS "${TOR_PT_DIR}")
-  install(DIRECTORY "${TOR_PT_DIR}/"
+  install(FILES
+    "${TOR_PT_DIR}/lyrebird.exe"
+    "${TOR_PT_DIR}/lyrebird.LICENSE.txt"
+    "${TOR_PT_DIR}/lyrebird.exe.provenance.json"
     DESTINATION "${CMAKE_INSTALL_PREFIX}/tor-pt"
     COMPONENT Runtime)
 endif()

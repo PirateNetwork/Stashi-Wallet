@@ -999,7 +999,7 @@ fn apply_bridge_config(
                 path.display()
             )));
         }
-    } else if let Some(found) = find_transport_binary(default_bin) {
+    } else if let Some(found) = find_default_bridge_binary(default_bin) {
         log_debug_event(
             "tor.rs:apply_bridge_config",
             "tor_pt_autodetect",
@@ -1026,6 +1026,20 @@ fn apply_bridge_config(
     builder.bridges().transports().push(transport);
 
     Ok(())
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn find_default_bridge_binary(legacy_name: &str) -> Option<PathBuf> {
+    // The official Windows Tor Expert Bundle provides both protocols through
+    // Lyrebird. Keep its upstream filename and bytes, with legacy support for
+    // existing installations and the other desktop distributions.
+    #[cfg(target_os = "windows")]
+    if matches!(legacy_name, "obfs4proxy" | "snowflake-client") {
+        if let Some(path) = find_transport_binary("lyrebird") {
+            return Some(path);
+        }
+    }
+    find_transport_binary(legacy_name)
 }
 
 impl Default for TorClient {
