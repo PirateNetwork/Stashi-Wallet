@@ -581,6 +581,7 @@ jobs:
         run: |
           cd app/android
           chmod +x gradlew
+          ./gradlew --version
           status=1
           for attempt in 1 2 3; do
             if ./gradlew --no-daemon help; then
@@ -1296,6 +1297,14 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
+
+      - name: Setup wallet Gradle wrapper caching
+        uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb
+
+      - name: Report wallet Gradle version
+        run: |
+          chmod +x app/android/gradlew
+          app/android/gradlew --version
 
       - name: Install Android SDK packages
         run: |
