@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/ffi/generated/models.dart';
+import '../../core/formatting/arrr_amount.dart';
 import '../../core/providers/wallet_providers.dart';
 import '../../core/platform/platform_utils.dart';
 
@@ -16,6 +17,7 @@ import '../../design/tokens/colors.dart';
 import '../../design/tokens/spacing.dart';
 import '../../design/tokens/typography.dart';
 import '../../ui/molecules/connection_status_indicator.dart';
+import '../../ui/molecules/p_content_state.dart';
 import '../../ui/atoms/p_input.dart';
 import '../../ui/molecules/transaction_row_v2.dart';
 import '../../ui/molecules/wallet_switcher.dart';
@@ -164,21 +166,42 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     });
   }
 
+  void _clearSearch({bool resetFilter = false}) {
+    _searchDebounce?.cancel();
+    _searchController.clear();
+    setState(() {
+      _query = '';
+      if (resetFilter) _filter = ActivityFilter.all;
+    });
+  }
+
+  String _dateLabel(BuildContext context, DateTime date) {
+    final today = DateUtils.dateOnly(DateTime.now());
+    if (DateUtils.isSameDay(date, today)) return 'Today'.tr;
+    final yesterday = DateTime(today.year, today.month, today.day - 1);
+    if (DateUtils.isSameDay(date, yesterday)) return 'Yesterday'.tr;
+    return MaterialLocalizations.of(context).formatMediumDate(date);
+  }
+
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
     final historyAsync = ref.watch(activityHistoryProvider);
-    final syncProgressStatus = ref
-        .watch(syncProgressStreamProvider)
-        .asData
-        ?.value;
-    final syncStatus = ref.watch(syncStatusProvider).asData?.value;
-    final currentHeight =
-        (syncProgressStatus?.targetHeight ??
-                syncProgressStatus?.localHeight ??
-                syncStatus?.targetHeight ??
-                syncStatus?.localHeight)
-            ?.toInt();
+    // Decryption speed/ETA updates do not change transaction confirmation state.
+    // Observe just the chain height instead of rebuilding/filtering every tick.
+    final progressHeight = ref.watch(
+      syncProgressStreamProvider.select((value) {
+        final status = value.asData?.value;
+        return (status?.targetHeight ?? status?.localHeight)?.toInt();
+      }),
+    );
+    final fallbackHeight = ref.watch(
+      syncStatusProvider.select((value) {
+        final status = value.asData?.value;
+        return (status?.targetHeight ?? status?.localHeight)?.toInt();
+      }),
+    );
+    final currentHeight = progressHeight ?? fallbackHeight;
     final screenWidth = size.width;
     final gutter = PSpacing.responsiveGutter(screenWidth);
 
@@ -207,6 +230,13 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
                 label: 'Search'.tr,
                 hint: 'Search activity'.tr,
                 prefixIcon: const Icon(Icons.search),
+                suffixIcon: _searchController.text.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'Clear search'.tr,
+                        icon: const Icon(Icons.close),
+                        onPressed: _clearSearch,
+                      ),
                 textInputAction: TextInputAction.search,
                 onChanged: _onSearchChanged,
               );
@@ -232,7 +262,25 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
                   ),
                 );
               }
-              return const _ActivityEmptyState();
+              final hasFilters =
+                  _filter != ActivityFilter.all || _query.trim().isNotEmpty;
+              return PContentState(
+                icon: hasFilters
+                    ? Icons.search_off
+                    : Icons.receipt_long_outlined,
+                title: hasFilters
+                    ? 'No matching transactions'.tr
+                    : 'No activity yet'.tr,
+                message: hasFilters
+                    ? 'Try a different search or clear your filters.'.tr
+                    : 'Your sent and received payments will appear here.'.tr,
+                actionLabel: hasFilters
+                    ? 'Clear filters'.tr
+                    : 'Receive ARRR'.tr,
+                onAction: hasFilters
+                    ? () => _clearSearch(resetFilter: true)
+                    : () => context.push('/receive'),
+              );
             }
 
             final txIndex = index - headerCount;
@@ -245,27 +293,73 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
               );
             }
             final tx = filtered[txIndex];
+            final date = _convertPlatformInt64ToDateTime(tx.timestamp);
+            final showDate =
+                txIndex == 0 ||
+                !DateUtils.isSameDay(
+                  date,
+                  _convertPlatformInt64ToDateTime(
+                    filtered[txIndex - 1].timestamp,
+                  ),
+                );
             return Padding(
+              key: ValueKey('${tx.txid}:${tx.amount}'),
               padding: const EdgeInsets.only(bottom: PSpacing.md),
-              child: TransactionRowV2(
-                isReceived: tx.amount >= 0,
-                isConfirmed: _isConfirmedTx(tx, currentHeight),
-                isExpired: tx.expired,
-                amountText:
-                    '${tx.amount >= 0 ? '+' : '-'}${(tx.amount.abs() / 100000000.0).toStringAsFixed(4)} ARRR',
-                timestamp: _convertPlatformInt64ToDateTime(tx.timestamp),
-                memo: tx.memo,
-                onTap: () => context.push(
-                  '/transaction/${tx.txid}?amount=${tx.amount.toInt()}',
-                  extra: tx,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (showDate)
+                    Padding(
+                      padding: EdgeInsets.only(
+                        top: txIndex == 0 ? 0 : PSpacing.xs,
+                        bottom: PSpacing.sm,
+                      ),
+                      child: Semantics(
+                        header: true,
+                        child: Text(
+                          _dateLabel(context, date),
+                          style: PTypography.labelMedium(
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ),
+                    ),
+                  TransactionRowV2(
+                    isReceived: tx.amount >= 0,
+                    isConfirmed: _isConfirmedTx(tx, currentHeight),
+                    isExpired: tx.expired,
+                    amountText:
+                        '${formatArrrAtomic(BigInt.from(tx.amount.toInt()), showPositiveSign: true)} ARRR',
+                    timestamp: date,
+                    memo: tx.memo,
+                    onTap: () => context.push(
+                      '/transaction/${tx.txid}?amount=${tx.amount.toInt()}',
+                      extra: tx,
+                    ),
+                  ),
+                ],
               ),
             );
           },
         );
       },
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, _) => _ActivityErrorState(message: error.toString()),
+      loading: () => SingleChildScrollView(
+        child: PContentState(
+          icon: Icons.history,
+          title: 'Loading activity'.tr,
+          message: 'Your transactions will appear here.'.tr,
+          loading: true,
+        ),
+      ),
+      error: (error, _) => SingleChildScrollView(
+        child: PContentState(
+          icon: Icons.history,
+          title: 'Unable to load activity'.tr,
+          message: 'Your activity could not be loaded. Try again.'.tr,
+          actionLabel: 'Retry'.tr,
+          onAction: () => ref.invalidate(activityHistoryProvider),
+        ),
+      ),
     );
 
     final isMobile = PSpacing.isHandset(size);
@@ -350,52 +444,29 @@ class _FilterChipButton extends StatelessWidget {
         ? AppColors.textPrimary
         : AppColors.textSecondary;
 
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(PSpacing.radiusFull),
-      child: Container(
-        constraints: const BoxConstraints(minHeight: 48),
-        alignment: Alignment.center,
-        padding: const EdgeInsets.symmetric(
-          horizontal: PSpacing.md,
-          vertical: PSpacing.xs,
-        ),
-        decoration: BoxDecoration(
-          color: background,
-          borderRadius: BorderRadius.circular(PSpacing.radiusFull),
-          border: Border.all(color: border),
-        ),
-        child: Text(
-          label,
-          textAlign: TextAlign.center,
-          style: PTypography.labelSmall(color: textColor),
-        ),
-      ),
-    );
-  }
-}
-
-class _ActivityEmptyState extends StatelessWidget {
-  const _ActivityEmptyState();
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: PSpacing.screenPadding(
-          MediaQuery.of(context).size.width,
-          vertical: PSpacing.xl,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.receipt_long, size: 48, color: AppColors.textTertiary),
-            const SizedBox(height: PSpacing.md),
-            Text(
-              'Nothing here yet.'.tr,
-              style: PTypography.titleMedium(color: AppColors.textPrimary),
-            ),
-          ],
+    return Semantics(
+      button: true,
+      selected: isSelected,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(PSpacing.radiusFull),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 48),
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(
+            horizontal: PSpacing.md,
+            vertical: PSpacing.xs,
+          ),
+          decoration: BoxDecoration(
+            color: background,
+            borderRadius: BorderRadius.circular(PSpacing.radiusFull),
+            border: Border.all(color: border),
+          ),
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: PTypography.labelSmall(color: textColor),
+          ),
         ),
       ),
     );
@@ -430,41 +501,6 @@ class _ActivityLoadMoreState extends StatelessWidget {
         child: SizedBox.square(
           dimension: 24,
           child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-      ),
-    );
-  }
-}
-
-class _ActivityErrorState extends StatelessWidget {
-  const _ActivityErrorState({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: PSpacing.screenPadding(
-          MediaQuery.of(context).size.width,
-          vertical: PSpacing.xl,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.error_outline, size: 48, color: AppColors.error),
-            const SizedBox(height: PSpacing.md),
-            Text(
-              'Unable to load activity'.tr,
-              style: PTypography.titleMedium(color: AppColors.textPrimary),
-            ),
-            const SizedBox(height: PSpacing.xs),
-            Text(
-              message,
-              style: PTypography.bodySmall(color: AppColors.textSecondary),
-              textAlign: TextAlign.center,
-            ),
-          ],
         ),
       ),
     );
