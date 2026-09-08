@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:bitsdojo_window/bitsdojo_window.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../../core/desktop/windows_version.dart';
@@ -57,7 +56,7 @@ class PScaffold extends StatelessWidget {
         body: Column(
           children: [
             // Custom titlebar for desktop
-            _CustomTitleBar(title: title ?? 'Stashi Wallet'),
+            PWindowTitleBar(title: title ?? 'Stashi Wallet'),
 
             if (appBar != null)
               SizedBox(height: _appBarHeight(context), child: appBar),
@@ -112,14 +111,15 @@ class _KeyboardDismissArea extends StatelessWidget {
 }
 
 /// Custom titlebar for desktop with window controls
-class _CustomTitleBar extends StatelessWidget {
-  const _CustomTitleBar({required this.title});
+class PWindowTitleBar extends StatelessWidget {
+  const PWindowTitleBar({required this.title, super.key});
 
   final String title;
 
   @override
   Widget build(BuildContext context) {
-    return WindowTitleBarBox(
+    return SizedBox(
+      height: PSpacing.desktopTitlebarHeight,
       child: Container(
         height: PSpacing.desktopTitlebarHeight,
         decoration: BoxDecoration(
@@ -132,7 +132,7 @@ class _CustomTitleBar extends StatelessWidget {
           children: [
             // Draggable area
             Expanded(
-              child: MoveWindow(
+              child: DragToMoveArea(
                 child: Padding(
                   padding: EdgeInsets.only(left: PSpacing.md),
                   child: Align(
@@ -164,11 +164,17 @@ class _WindowControls extends StatelessWidget {
       children: [
         _WindowButton(
           icon: Icons.remove,
-          onPressed: () => appWindow.minimize(),
+          onPressed: () => unawaited(windowManager.minimize()),
         ),
         _WindowButton(
           icon: Icons.crop_square,
-          onPressed: () => appWindow.maximizeOrRestore(),
+          onPressed: () async {
+            if (await windowManager.isMaximized()) {
+              await windowManager.unmaximize();
+            } else {
+              await windowManager.maximize();
+            }
+          },
         ),
         _WindowButton(
           icon: Icons.close,
