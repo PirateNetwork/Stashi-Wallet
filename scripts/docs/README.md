@@ -15,6 +15,9 @@ python scripts/docs/verify_stashi_user_guide.py
 
 The default output is `output/pdf/Stashi-Wallet-User-Guide.pdf`. Use
 `--output <path>` when building a review copy elsewhere.
+The generated `output/` and `_site/` directories are ignored by Git. Commit
+the Markdown, source images and tooling; distribute built PDFs through the
+workflow artifacts or the published guide.
 
 ## Editorial and accessibility requirements
 
