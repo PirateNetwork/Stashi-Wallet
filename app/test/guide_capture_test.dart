@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -7,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:pirate_wallet/features/receive/widgets/address_qr_widget.dart';
+import 'package:pirate_wallet/ui/atoms/p_input.dart';
 import 'package:pirate_wallet/core/ffi/ffi_bridge.dart';
 import 'package:pirate_wallet/core/ffi/generated/models.dart'
     hide AddressInfo, NodeTestResult;
@@ -17,6 +18,7 @@ import 'package:pirate_wallet/core/services/address_rotation_service.dart';
 import 'package:pirate_wallet/core/security/decoy_data.dart';
 import 'package:pirate_wallet/core/swaps/swap_providers.dart';
 import 'package:pirate_wallet/design/theme.dart';
+import 'package:pirate_wallet/design/tokens/colors.dart';
 import 'package:pirate_wallet/features/app_shell/app_shell.dart';
 import 'package:pirate_wallet/features/activity/activity_screen.dart';
 import 'package:pirate_wallet/features/activity/transaction_detail_screen.dart';
@@ -108,6 +110,11 @@ class _DarkThemeMode extends ThemeModeNotifier {
   AppThemeMode build() => AppThemeMode.dark;
 }
 
+class _LightThemeMode extends ThemeModeNotifier {
+  @override
+  AppThemeMode build() => AppThemeMode.light;
+}
+
 class _TorTransport extends TransportConfigNotifier {
   @override
   TransportConfig build() => const TransportConfig(
@@ -187,6 +194,10 @@ Widget _walletApp(
   Widget child, {
   bool includeReceiveState = false,
   bool includeAppVersion = false,
+  bool light = false,
+  double textScale = 1,
+  Balance? balance,
+  SyncStatus? syncStatus,
 }) {
   return ProviderScope(
     overrides: [
@@ -196,17 +207,20 @@ Widget _walletApp(
       walletsProvider.overrideWith((ref) async => const [_walletMeta]),
       balanceStreamProvider.overrideWith(
         (ref) => Stream.value(
-          Balance(
-            total: BigInt.from(2247523456789),
-            spendable: BigInt.from(2247523456789),
-            pending: BigInt.zero,
-          ),
+          balance ??
+              Balance(
+                total: BigInt.from(2247523456789),
+                spendable: BigInt.from(2247523456789),
+                pending: BigInt.zero,
+              ),
         ),
       ),
       syncProgressStreamProvider.overrideWith(
-        (ref) => Stream.value(_syncedStatus),
+        (ref) => Stream.value(syncStatus ?? _syncedStatus),
       ),
-      syncStatusProvider.overrideWith((ref) async => _syncedStatus),
+      syncStatusProvider.overrideWith(
+        (ref) async => syncStatus ?? _syncedStatus,
+      ),
       transactionsProvider.overrideWith((ref) async => _guideTransactions),
       activityHistoryProvider.overrideWith(_GuideActivityHistory.new),
       transactionStreamProvider.overrideWith((ref) => const Stream.empty()),
@@ -216,8 +230,20 @@ Widget _walletApp(
       syncCompletionRotationWatcherProvider.overrideWith((ref) {}),
       walletInitRotationWatcherProvider.overrideWith((ref) {}),
       kdfSwapWarmupProvider.overrideWith((ref) {}),
-      appThemeModeProvider.overrideWith(_DarkThemeMode.new),
-      arrrPriceQuoteProvider.overrideWith((ref) => Stream.value(null)),
+      appThemeModeProvider.overrideWith(
+        light ? _LightThemeMode.new : _DarkThemeMode.new,
+      ),
+      // Representative fixture quote, never a live market-price assertion.
+      arrrPriceQuoteProvider.overrideWith(
+        (ref) => Stream.value(
+          ArrrPriceQuote(
+            currency: CurrencyPreference.usd,
+            pricePerArrr: 0.25,
+            fetchedAt: DateTime(2026, 9, 8),
+            source: ArrrPriceSource.coingecko,
+          ),
+        ),
+      ),
       decoySyncHeightProvider.overrideWith((ref) async => 0),
       tunnelModeProvider.overrideWith(_DirectTunnelMode.new),
       torStatusProvider.overrideWith(_ReadyTorStatus.new),
@@ -236,62 +262,17 @@ Widget _walletApp(
     ],
     child: MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme: PTheme.dark(),
+      theme: light ? PTheme.light() : PTheme.dark(),
+      builder: (context, child) {
+        AppColors.syncWithTheme(Theme.of(context).brightness);
+        return MediaQuery(
+          data: MediaQuery.of(context)
+              .copyWith(textScaler: TextScaler.linear(textScale)),
+          child: child!,
+        );
+      },
       home: RepaintBoundary(key: _captureBoundaryKey, child: child),
     ),
-  );
-}
-
-Widget _redactedReceiveScreen() {
-  return LayoutBuilder(
-    builder: (context, constraints) {
-      final isDesktop = constraints.maxWidth >= 800;
-
-      Widget blurRegion({
-        required double left,
-        required double top,
-        required double width,
-        required double height,
-        required double radius,
-      }) {
-        return Positioned(
-          left: left,
-          top: top,
-          width: width,
-          height: height,
-          child: IgnorePointer(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: BackdropFilter(
-                filter: ui.ImageFilter.blur(sigmaX: radius, sigmaY: radius),
-                child: ColoredBox(color: Colors.black.withValues(alpha: 0.18)),
-              ),
-            ),
-          ),
-        );
-      }
-
-      return Stack(
-        fit: StackFit.expand,
-        children: [
-          const ReceiveScreen(),
-          blurRegion(
-            left: isDesktop ? 586 : 141,
-            top: 235,
-            width: 108,
-            height: 108,
-            radius: 14,
-          ),
-          blurRegion(
-            left: isDesktop ? 377 : 77,
-            top: isDesktop ? 458 : 463,
-            width: isDesktop ? 526 : 236,
-            height: isDesktop ? 34 : 62,
-            radius: 12,
-          ),
-        ],
-      );
-    },
   );
 }
 
@@ -329,6 +310,7 @@ Future<void> _capture(
   TargetPlatform platform = TargetPlatform.android,
   Future<void> Function(WidgetTester tester)? interact,
   bool captureOverlay = false,
+  void Function(WidgetTester)? verify,
 }) async {
   debugDefaultTargetPlatformOverride = platform;
   tester.view.physicalSize = size;
@@ -341,6 +323,7 @@ Future<void> _capture(
     await interact(tester);
     await tester.pumpAndSettle();
   }
+  verify?.call(tester);
 
   final outputDirectory = Platform.environment['PIRATE_UI_CAPTURE_DIR'];
   if (outputDirectory != null && outputDirectory.isNotEmpty) {
@@ -357,6 +340,7 @@ Future<void> _capture(
   await tester.pumpWidget(const SizedBox.shrink());
   await tester.pump(const Duration(milliseconds: 1));
   debugDefaultTargetPlatformOverride = null;
+  AppColors.syncWithTheme(Brightness.dark);
   tester.view.reset();
 }
 
@@ -457,13 +441,14 @@ void main() {
 
     final materialIconsPath =
         Platform.environment['PIRATE_MATERIAL_ICONS_FONT'];
-    if (materialIconsPath != null && File(materialIconsPath).existsSync()) {
-      final materialIcons = FontLoader('MaterialIcons')
-        ..addFont(
-          File(materialIconsPath).readAsBytes().then(ByteData.sublistView),
-        );
-      await materialIcons.load();
-    }
+    // Fail instead of silently rendering missing-glyph squares in screenshots.
+    final materialIcons = FontLoader('MaterialIcons')
+      ..addFont(
+        materialIconsPath == null
+            ? rootBundle.load('fonts/MaterialIcons-Regular.otf')
+            : File(materialIconsPath).readAsBytes().then(ByteData.sublistView),
+      );
+    await materialIcons.load();
   });
 
   tearDown(() {
@@ -481,6 +466,159 @@ void main() {
           const MethodChannel('plugins.flutter.io/local_auth'),
           null,
         );
+  });
+
+  testWidgets('captures changed wallet pages in light mode', (tester) async {
+    for (final desktop in [false, true]) {
+      final suffix = desktop ? 'desktop' : 'phone';
+      final size = desktop ? const Size(1280, 900) : const Size(390, 844);
+      final platform = desktop
+          ? TargetPlatform.windows
+          : TargetPlatform.android;
+      final pages = <String, Widget>{
+        'home': const AppShell(
+          location: '/home',
+          child: HomeScreen(useScaffold: false),
+        ),
+        'activity': const AppShell(
+          location: '/activity',
+          child: ActivityScreen(useScaffold: false),
+        ),
+        'receive': const ReceiveScreen(),
+        'spending-key-import': const ImportSpendingKeyScreen(),
+      };
+      for (final page in pages.entries) {
+        await _capture(
+          tester,
+          size: size,
+          filename: '${page.key}-$suffix-light.png',
+          widget: _walletApp(
+            page.value,
+            light: true,
+            includeReceiveState: page.key == 'receive',
+          ),
+          platform: platform,
+          verify: (tester) {
+            expect(
+              AppColors.backgroundBase,
+              PTheme.light().scaffoldBackgroundColor,
+            );
+            if (page.key == 'home') {
+              expect(find.text(r'USD $5,618.81'), findsOneWidget);
+            }
+          },
+        );
+      }
+    }
+  });
+
+  testWidgets(
+    'captures pending funds and active sync with full balance content',
+    (tester) async {
+      final scanning = SyncStatus(
+        localHeight: BigInt.from(4000000),
+        targetHeight: BigInt.from(4111871),
+        percent: 97.28,
+        eta: BigInt.from(54),
+        stage: SyncStage.notes,
+        lastCheckpoint: null,
+        blocksPerSecond: 2048,
+        notesDecrypted: BigInt.from(120),
+        lastBatchMs: BigInt.from(40),
+      );
+      for (final desktop in [false, true]) {
+        await _capture(
+          tester,
+          size: desktop ? const Size(1280, 900) : const Size(390, 844),
+          filename: desktop
+              ? 'home-pending-desktop.png'
+              : 'home-pending-phone.png',
+          widget: _walletApp(
+            const AppShell(
+              location: '/home',
+              child: HomeScreen(useScaffold: false),
+            ),
+            balance: Balance(
+              total: BigInt.from(2247523456789),
+              spendable: BigInt.from(2246523456789),
+              pending: BigInt.from(1000000000),
+            ),
+            syncStatus: scanning,
+          ),
+          platform: desktop ? TargetPlatform.windows : TargetPlatform.android,
+          verify: (tester) {
+            expect(find.text(r'USD $5,618.81'), findsOneWidget);
+            expect(find.text('Pending: 10.00000000 ARRR'), findsOneWidget);
+            expect(find.text('97.3%'), findsOneWidget);
+          },
+        );
+      }
+    },
+  );
+
+  testWidgets('captures receive request and verifies its complete QR payload', (
+    tester,
+  ) async {
+    await _capture(
+      tester,
+      size: const Size(390, 844),
+      filename: 'receive-request-phone.png',
+      widget: _walletApp(const ReceiveScreen(), includeReceiveState: true),
+      interact: (tester) async {
+        await tester.tap(find.text('Payment request (optional)'));
+        await tester.pumpAndSettle();
+        Finder field(String label) => find.descendant(
+          of: find.widgetWithText(PInput, label),
+          matching: find.byType(TextField),
+        );
+        await tester.enterText(field('Amount'), '1.23456789');
+        await tester.enterText(field('Memo (optional)'), 'Invoice 1042');
+        await tester.pumpAndSettle();
+        final uri = Uri.parse(
+          tester.widget<AddressQRWidget>(find.byType(AddressQRWidget)).qrData!,
+        );
+        expect(uri.scheme, 'pirate');
+        expect(uri.queryParameters, {
+          'amount': '1.23456789',
+          'memo': 'Invoice 1042',
+        });
+        await tester.ensureVisible(find.text('Clear request'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Clear request'));
+        await tester.pumpAndSettle();
+        await tester.scrollUntilVisible(
+          find.text('Payment request (optional)'),
+          -250,
+          scrollable: find
+              .descendant(
+                of: find.byType(CustomScrollView),
+                matching: find.byType(Scrollable),
+              )
+              .first,
+        );
+        await tester.pumpAndSettle();
+        // The sliver can dispose an offscreen request section after its clear
+        // action shrinks it. Reopen it if it was rebuilt in its collapsed state.
+        if (field('Amount').evaluate().isEmpty) {
+          await tester.tap(find.text('Payment request (optional)'));
+          await tester.pumpAndSettle();
+        }
+        expect(
+          tester.widget<TextField>(field('Amount')).controller!.text,
+          isEmpty,
+        );
+        expect(
+          tester.widget<TextField>(field('Memo (optional)')).controller!.text,
+          isEmpty,
+        );
+        await tester.enterText(field('Amount'), '1.23456789');
+        await tester.enterText(field('Memo (optional)'), 'Invoice 1042');
+        FocusManager.instance.primaryFocus?.unfocus();
+        await tester.ensureVisible(find.text('Payment request (optional)'));
+        // Leave breathing room below the fixed app bar in the review capture.
+        await tester.drag(find.byType(CustomScrollView), const Offset(0, 64));
+      },
+    );
   });
 
   testWidgets('captures onboarding on phone and desktop', (tester) async {
@@ -503,13 +641,25 @@ void main() {
       tester,
       size: const Size(390, 844),
       filename: 'home-phone.png',
-      widget: _walletApp(const Scaffold(body: HomeScreen(useScaffold: false))),
+      widget: _walletApp(
+        const AppShell(
+          location: '/home',
+          child: HomeScreen(useScaffold: false),
+        ),
+      ),
+      verify: (tester) => expect(find.text(r'USD $5,618.81'), findsOneWidget),
     );
     await _capture(
       tester,
       size: const Size(1280, 900),
       filename: 'home-desktop.png',
-      widget: _walletApp(const Scaffold(body: HomeScreen(useScaffold: false))),
+      widget: _walletApp(
+        const AppShell(
+          location: '/home',
+          child: HomeScreen(useScaffold: false),
+        ),
+      ),
+      verify: (tester) => expect(find.text(r'USD $5,618.81'), findsOneWidget),
       platform: TargetPlatform.windows,
     );
   });
@@ -561,13 +711,13 @@ void main() {
       tester,
       size: const Size(390, 844),
       filename: 'receive-phone.png',
-      widget: _walletApp(_redactedReceiveScreen(), includeReceiveState: true),
+      widget: _walletApp(const ReceiveScreen(), includeReceiveState: true),
     );
     await _capture(
       tester,
       size: const Size(1280, 900),
       filename: 'receive-desktop.png',
-      widget: _walletApp(_redactedReceiveScreen(), includeReceiveState: true),
+      widget: _walletApp(const ReceiveScreen(), includeReceiveState: true),
       platform: TargetPlatform.windows,
     );
   });
@@ -772,13 +922,23 @@ void main() {
       tester,
       size: const Size(390, 844),
       filename: 'activity-phone.png',
-      widget: _walletApp(const ActivityScreen()),
+      widget: _walletApp(
+        const AppShell(
+          location: '/activity',
+          child: ActivityScreen(useScaffold: false),
+        ),
+      ),
     );
     await _capture(
       tester,
       size: const Size(1280, 900),
       filename: 'activity-desktop.png',
-      widget: _walletApp(const ActivityScreen()),
+      widget: _walletApp(
+        const AppShell(
+          location: '/activity',
+          child: ActivityScreen(useScaffold: false),
+        ),
+      ),
       platform: TargetPlatform.windows,
     );
   });
@@ -874,6 +1034,8 @@ void main() {
     tester,
   ) async {
     Future<void> openViewingKeyImport(WidgetTester tester) async {
+      await tester.ensureVisible(find.text('Viewing Key'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Viewing Key'));
     }
 
