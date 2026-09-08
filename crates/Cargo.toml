@@ -114,7 +114,7 @@ proptest = "1.5"
 tempfile = "3.13"
 
 # FFI
-flutter_rust_bridge = "2.6"
+flutter_rust_bridge = "=2.13.0"
 
 # Utilities
 chrono = "0.4"

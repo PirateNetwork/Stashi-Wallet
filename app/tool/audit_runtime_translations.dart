@@ -134,8 +134,8 @@ final class _TranslationVisitor extends RecursiveAstVisitor<void> {
 
     AstNode? current = node.parent;
     while (current != null && current is! Statement) {
-      if (current is NamedExpression &&
-          uiArgumentNames.contains(current.name.label.name)) {
+      if (current is NamedArgument &&
+          uiArgumentNames.contains(current.name.lexeme)) {
         return true;
       }
       if (current is VariableDeclaration &&

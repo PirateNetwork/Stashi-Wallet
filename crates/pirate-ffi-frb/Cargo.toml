@@ -18,7 +18,7 @@ frb = []
 pirate-wallet-service = { path = "../pirate-wallet-service" }
 pirate-core = { path = "../pirate-core" }
 
-flutter_rust_bridge = "=2.11.1"
+flutter_rust_bridge.workspace = true
 tokio = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }

@@ -1,6 +1,6 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // coverage:ignore-file
-// ignore_for_file: type=lint
+// ignore_for_file: type=lint, type=warning, deprecated_member_use, deprecated_member_use_from_same_package
 // ignore_for_file: unused_element, deprecated_member_use, deprecated_member_use_from_same_package, use_function_type_syntax_for_parameters, unnecessary_const, avoid_init_to_null, invalid_override_different_default_values_named, prefer_expression_function_bodies, annotate_overrides, invalid_annotation_target, unnecessary_question_mark
 
 part of 'models.dart';
@@ -9,6 +9,7 @@ part of 'models.dart';
 // FreezedGenerator
 // **************************************************************************
 
+// GENERATED CODE - DO NOT MODIFY BY HAND
 // dart format off
 T _$identity<T>(T value) => value;
 /// @nodoc
@@ -20,7 +21,7 @@ mixin _$TunnelMode {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is TunnelMode);
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is TunnelMode);
 }
 
 
@@ -29,7 +30,7 @@ int get hashCode => runtimeType.hashCode;
 
 @override
 String toString() {
-  return 'TunnelMode()';
+    return 'TunnelMode()';
 }
 
 
@@ -197,7 +198,7 @@ class TunnelMode_Tor extends TunnelMode {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is TunnelMode_Tor);
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is TunnelMode_Tor);
 }
 
 
@@ -206,7 +207,7 @@ int get hashCode => runtimeType.hashCode;
 
 @override
 String toString() {
-  return 'TunnelMode.tor()';
+    return 'TunnelMode.tor()';
 }
 
 
@@ -229,7 +230,7 @@ class TunnelMode_I2p extends TunnelMode {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is TunnelMode_I2p);
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is TunnelMode_I2p);
 }
 
 
@@ -238,7 +239,7 @@ int get hashCode => runtimeType.hashCode;
 
 @override
 String toString() {
-  return 'TunnelMode.i2P()';
+    return 'TunnelMode.i2P()';
 }
 
 
@@ -267,16 +268,18 @@ $TunnelMode_Socks5CopyWith<TunnelMode_Socks5> get copyWith => _$TunnelMode_Socks
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is TunnelMode_Socks5&&(identical(other.url, url) || other.url == url));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is TunnelMode_Socks5&&(identical(other.url, url) || other.url == url));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,url);
+int get hashCode {
+    return Object.hash(runtimeType,url);
+}
 
 @override
 String toString() {
-  return 'TunnelMode.socks5(url: $url)';
+    return 'TunnelMode.socks5(url: $url)';
 }
 
 
@@ -328,7 +331,7 @@ class TunnelMode_Direct extends TunnelMode {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is TunnelMode_Direct);
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is TunnelMode_Direct);
 }
 
 
@@ -337,7 +340,7 @@ int get hashCode => runtimeType.hashCode;
 
 @override
 String toString() {
-  return 'TunnelMode.direct()';
+    return 'TunnelMode.direct()';
 }
 
 

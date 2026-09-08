@@ -2,7 +2,7 @@
 # Generate Flutter Rust Bridge bindings for Pirate Unified Wallet
 # This script sets up the environment and runs flutter_rust_bridge_codegen
 
-set -e  # Exit on error
+set -eo pipefail  # Do not report success after a failed generator
 
 # Colors for output
 BLUE='\033[0;34m'
@@ -66,11 +66,14 @@ fi
 # Verify flutter_rust_bridge_codegen is available
 CARGO_BIN="${CARGO_HOME:-$HOME/.cargo}/bin"
 FRB_CODEGEN="$CARGO_BIN/flutter_rust_bridge_codegen"
-FRB_VERSION="${FRB_CODEGEN_VERSION:-2.11.1}"
-if [ ! -f "$FRB_CODEGEN" ]; then
-    echo -e "${YELLOW}⚠️  flutter_rust_bridge_codegen not found, installing...${NC}"
-    cargo install flutter_rust_bridge_codegen --locked --version "$FRB_VERSION"
-    FRB_CODEGEN="$CARGO_BIN/flutter_rust_bridge_codegen"
+FRB_VERSION="${FRB_CODEGEN_VERSION:-2.13.0}"
+if [ -f "${FRB_CODEGEN}.exe" ]; then
+    FRB_CODEGEN="${FRB_CODEGEN}.exe"
+fi
+INSTALLED_FRB_VERSION="$("$FRB_CODEGEN" --version 2>/dev/null || true)"
+if [ "$INSTALLED_FRB_VERSION" != "flutter_rust_bridge_codegen $FRB_VERSION" ]; then
+    echo "Installing flutter_rust_bridge_codegen $FRB_VERSION to match the runtime..."
+    cargo install flutter_rust_bridge_codegen --locked --version "$FRB_VERSION" --force
 fi
 
 # Verify Dart is accessible (FRB uses `dart fix` and `dart format` internally)
@@ -108,29 +111,17 @@ echo -e "${BLUE}Generating FFI bindings...${NC}"
 export RUST_LOG="${RUST_LOG:-error}"
 if [ -f "flutter_rust_bridge.yaml" ]; then
     CONFIG_FILE="flutter_rust_bridge.yaml"
-    echo -e "${BLUE}Using config: $CONFIG_FILE${NC}"
-    # Skip ffigen (LLVM not required for basic bindings)
-    export FRB_SIMPLE_BUILD_SKIP=1
-    # Run codegen and capture output, but don't fail on ffigen errors
-    if ! "$FRB_CODEGEN" generate --config-file "$CONFIG_FILE" 2>&1 | tee /tmp/frb_output.log | grep -vE "(ffigen|LLVM|libclang|SEVERE|Couldn't find|cbindgen-[0-9]|cbindgen::|/cbindgen-|/cbindgen/)" || true; then
-        # Check if it's just an ffigen error
-        if grep -q "ffigen\|LLVM" /tmp/frb_output.log && [ -f "app/lib/core/ffi/generated/api.dart" ]; then
-            echo -e "${YELLOW}⚠️  ffigen failed (LLVM not found), but bindings were generated${NC}"
-        fi
-    fi
 elif [ -f "crates/pirate-ffi-frb/frb.toml" ]; then
     CONFIG_FILE="crates/pirate-ffi-frb/frb.toml"
-    echo -e "${BLUE}Using config: $CONFIG_FILE${NC}"
-    export FRB_SIMPLE_BUILD_SKIP=1
-    if ! "$FRB_CODEGEN" generate --config-file "$CONFIG_FILE" 2>&1 | tee /tmp/frb_output.log | grep -vE "(ffigen|LLVM|libclang|SEVERE|Couldn't find|cbindgen-[0-9]|cbindgen::|/cbindgen-|/cbindgen/)" || true; then
-        if grep -q "ffigen\|LLVM" /tmp/frb_output.log && [ -f "app/lib/core/ffi/generated/api.dart" ]; then
-            echo -e "${YELLOW}⚠️  ffigen failed (LLVM not found), but bindings were generated${NC}"
-        fi
-    fi
 else
-    echo -e "${RED}❌ No FRB config file found${NC}"
+    echo "No FRB config file found" >&2
     exit 1
 fi
+
+echo "Using config: $CONFIG_FILE"
+export FRB_SIMPLE_BUILD_SKIP=1
+# Existing checked-in files are not evidence that this generation succeeded.
+"$FRB_CODEGEN" generate --config-file "$CONFIG_FILE"
 
 # Verify generated files exist
 GENERATED_DIR="app/lib/core/ffi/generated"
