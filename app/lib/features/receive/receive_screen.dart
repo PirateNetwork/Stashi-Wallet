@@ -326,45 +326,81 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
 
                           // Payment request options
                           PCard(
-                            backgroundColor: AppColors.backgroundPanel,
-                            child: Padding(
-                              padding: EdgeInsets.all(PSpacing.md),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Payment request (optional)'.tr,
-                                    style: PTypography.labelMedium(
-                                      color: AppColors.textSecondary,
-                                    ),
-                                  ),
-                                  SizedBox(height: PSpacing.sm),
-                                  PInput(
-                                    controller: _amountController,
-                                    label: 'Amount'.tr,
-                                    hint: '0.00 ARRR',
-                                    keyboardType:
-                                        const TextInputType.numberWithOptions(
-                                          decimal: true,
-                                        ),
-                                    inputFormatters: [_amountFormatter],
-                                    helperText: 'Adds amount to the QR code'.tr,
-                                    autocorrect: false,
-                                    enableSuggestions: false,
-                                    textInputAction: TextInputAction.next,
-                                  ),
-                                  SizedBox(height: PSpacing.md),
-                                  PInput(
-                                    controller: _memoController,
-                                    label: 'Memo (optional)'.tr,
-                                    hint: 'Optional note for the sender'.tr,
-                                    maxLines: 3,
-                                    maxLength: 512,
-                                    helperText:
-                                        'Included in the payment request'.tr,
-                                  ),
-                                ],
+                            padding: EdgeInsets.zero,
+                            child: ExpansionTile(
+                              key: const PageStorageKey(
+                                'receive-request-options',
                               ),
+                              maintainState: true,
+                              shape: const Border(),
+                              collapsedShape: const Border(),
+                              tilePadding: const EdgeInsets.symmetric(
+                                horizontal: PSpacing.md,
+                              ),
+                              leading: Icon(
+                                Icons.request_quote_outlined,
+                                color: AppColors.accentPrimary,
+                              ),
+                              title: Text(
+                                'Payment request (optional)'.tr,
+                                style: PTypography.bodyMedium(
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                              subtitle: Text(
+                                hasRequestData
+                                    ? 'Included in the QR code and shared link'
+                                          .tr
+                                    : 'Add an amount or a note'.tr,
+                                style: PTypography.bodySmall(
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                              children: [
+                                Padding(
+                                  padding: EdgeInsets.all(PSpacing.md),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      PInput(
+                                        controller: _amountController,
+                                        label: 'Amount'.tr,
+                                        hint: '0.00 ARRR',
+                                        keyboardType:
+                                            const TextInputType.numberWithOptions(
+                                              decimal: true,
+                                            ),
+                                        inputFormatters: [_amountFormatter],
+                                        helperText:
+                                            'Adds amount to the QR code'.tr,
+                                        autocorrect: false,
+                                        enableSuggestions: false,
+                                        textInputAction: TextInputAction.next,
+                                      ),
+                                      SizedBox(height: PSpacing.md),
+                                      PInput(
+                                        controller: _memoController,
+                                        label: 'Memo (optional)'.tr,
+                                        hint: 'Optional note for the sender'.tr,
+                                        maxLines: 3,
+                                        maxLength: 512,
+                                        helperText:
+                                            'Included in the payment request'
+                                                .tr,
+                                      ),
+                                      if (hasRequestData)
+                                        PTextButton(
+                                          label: 'Clear request'.tr,
+                                          onPressed: () {
+                                            _amountController.clear();
+                                            _memoController.clear();
+                                          },
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
 
@@ -406,41 +442,13 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
                             ),
 
                           // Action Buttons
-                          Row(
-                            children: [
-                              Expanded(
-                                child: PButton(
-                                  onPressed: viewModel.generateNewAddress,
-                                  icon: const Icon(Icons.refresh),
-                                  variant: state.addressWasShared
-                                      ? PButtonVariant.primary
-                                      : PButtonVariant.secondary,
-                                  child: Text('New address'.tr),
-                                ),
-                              ),
-                              SizedBox(width: PSpacing.md),
-                              Expanded(
-                                child: PButton(
-                                  onPressed: () => viewModel.copyAddress(
-                                    context,
-                                    value: requestUri ?? state.currentAddress!,
-                                    successMessage: hasRequestData
-                                        ? 'Payment request copied! Will clear in 60 seconds'
-                                              .tr
-                                        : null,
-                                  ),
-                                  icon: const Icon(Icons.copy),
-                                  variant: state.addressWasShared
-                                      ? PButtonVariant.secondary
-                                      : PButtonVariant.primary,
-                                  child: Text(
-                                    hasRequestData
-                                        ? 'Copy request'.tr
-                                        : 'Copy address'.tr,
-                                  ),
-                                ),
-                              ),
-                            ],
+                          PButton(
+                            onPressed: viewModel.generateNewAddress,
+                            icon: const Icon(Icons.refresh),
+                            variant: state.addressWasShared
+                                ? PButtonVariant.primary
+                                : PButtonVariant.outline,
+                            child: Text('New address'.tr),
                           ),
 
                           SizedBox(height: PSpacing.xl),
