@@ -89,17 +89,15 @@ class BalanceHero extends StatelessWidget {
             ],
           ),
           SizedBox(height: compact ? PSpacing.xxs : PSpacing.sm),
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 120),
-            child: FittedBox(
-              key: ValueKey(displayText),
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerLeft,
-              child: Text(
-                displayText,
-                style: titleStyle.copyWith(
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                ),
+          // Replace values immediately: cross-fading retains the unmasked
+          // balance in both the render and semantics trees while hiding it.
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              displayText,
+              style: titleStyle.copyWith(
+                fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),
           ),
@@ -129,7 +127,7 @@ class BalanceHero extends StatelessWidget {
               ],
             ),
           ],
-          if (helperText != null) ...[
+          if (helperText != null && !isHidden) ...[
             SizedBox(height: compact ? PSpacing.xxs : PSpacing.sm),
             Text(
               helperText!,

@@ -17,6 +17,7 @@ class PInput extends StatefulWidget {
     this.prefixIcon,
     this.suffixIcon,
     this.obscureText = false,
+    this.sensitive = false,
     this.enabled = true,
     this.readOnly = false,
     this.maxLines = 1,
@@ -49,6 +50,9 @@ class PInput extends StatefulWidget {
   final Widget? prefixIcon;
   final Widget? suffixIcon;
   final bool obscureText;
+
+  /// Keeps keyboard learning and text substitutions off, even while revealed.
+  final bool sensitive;
   final bool enabled;
   final bool readOnly;
   final int maxLines;
@@ -140,8 +144,9 @@ class _PInputState extends State<PInput> {
   @override
   Widget build(BuildContext context) {
     final reduceMotion = MediaQuery.of(context).disableAnimations;
-    final autocorrect = !widget.obscureText && widget.autocorrect;
-    final enableSuggestions = !widget.obscureText && widget.enableSuggestions;
+    final privateInput = widget.obscureText || widget.sensitive;
+    final autocorrect = !privateInput && widget.autocorrect;
+    final enableSuggestions = !privateInput && widget.enableSuggestions;
     final effectiveKeyboardType =
         widget.keyboardType ??
         (widget.obscureText ? TextInputType.visiblePassword : null);
@@ -163,11 +168,11 @@ class _PInputState extends State<PInput> {
         autocorrect: autocorrect,
         enableSuggestions: enableSuggestions,
         enableInteractiveSelection: widget.enableInteractiveSelection,
-        enableIMEPersonalizedLearning: !widget.obscureText,
-        smartDashesType: widget.obscureText
+        enableIMEPersonalizedLearning: !privateInput,
+        smartDashesType: privateInput
             ? SmartDashesType.disabled
             : SmartDashesType.enabled,
-        smartQuotesType: widget.obscureText
+        smartQuotesType: privateInput
             ? SmartQuotesType.disabled
             : SmartQuotesType.enabled,
         keyboardType: effectiveKeyboardType,
