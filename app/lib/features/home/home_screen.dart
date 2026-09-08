@@ -1,9 +1,6 @@
 /// Home screen - Main wallet dashboard
 library;
 
-import 'dart:ui';
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -12,13 +9,14 @@ import '../../design/tokens/colors.dart';
 import '../../design/tokens/spacing.dart';
 import '../../design/tokens/typography.dart';
 import '../../core/ffi/ffi_bridge.dart';
+import '../../core/formatting/arrr_amount.dart';
 import '../../core/platform/platform_utils.dart';
 import '../../ui/atoms/p_text_button.dart';
 import '../../ui/molecules/p_card.dart';
+import '../../ui/molecules/p_content_state.dart';
 import '../../ui/molecules/transaction_row_v2.dart';
 import '../../ui/organisms/balance_hero.dart';
 import '../../ui/organisms/p_scaffold.dart';
-import '../../ui/organisms/p_sliver_header.dart';
 import '../../core/ffi/generated/models.dart'
     show
         SyncStage,
@@ -54,93 +52,32 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final mediaQuery = MediaQuery.of(context);
-    final screenSize = mediaQuery.size;
-    final screenWidth = mediaQuery.size.width;
-    final compactLandscape =
-        !isDesktopPlatform && PSpacing.isCompactLandscape(screenSize);
-    final compactDesktopViewport =
-        isDesktopPlatform && PSpacing.isCompactDesktopViewport(screenSize);
-    final balance = ref.watch(balanceStreamProvider).asData?.value;
-    final hasBalanceHelper =
-        balance == null ||
-        balance.total <= BigInt.zero ||
-        balance.pending > BigInt.zero;
-    final textScale = MediaQuery.textScalerOf(context).scale(1.0);
+    final screenWidth = MediaQuery.sizeOf(context).width;
     final gutter = PSpacing.responsiveGutter(screenWidth);
-    final availableHeaderWidth = math.max(0.0, screenWidth - (gutter * 2));
-    final stackedHeaderControls = HomeHeaderControls.shouldStack(
-      availableHeaderWidth,
-    );
-    final headerVerticalPadding = compactLandscape || compactDesktopViewport
-        ? PSpacing.xs
-        : PSpacing.isDesktop(screenWidth)
-        ? PSpacing.md
-        : PSpacing.sm;
-    final standardHeaderExtent = compactLandscape
-        ? 224.0
-        : compactDesktopViewport
-        ? hasBalanceHelper
-              ? 252.0
-              : 228.0
-        : PSpacing.isMobile(screenWidth)
-        ? 280.0
-        : PSpacing.isTablet(screenWidth)
-        ? 300.0
-        : hasBalanceHelper
-        ? 320.0
-        : 284.0;
-    final baseHeaderExtent =
-        standardHeaderExtent +
-        (stackedHeaderControls ? PSpacing.xl + PSpacing.sm : 0.0);
-    final extraHeaderHeight = textScale > 1.0 ? (textScale - 1.0) * 32.0 : 0.0;
-    final headerExtent =
-        baseHeaderExtent + mediaQuery.padding.top + extraHeaderHeight;
-    final enableBackdropBlur =
-        !mediaQuery.disableAnimations && !PSpacing.isHandset(screenSize);
 
     final content = CustomScrollView(
       slivers: [
-        SliverPersistentHeader(
+        SliverToBoxAdapter(
           key: HomeScreen.headerKey,
-          pinned: !compactLandscape,
-          delegate: PSliverHeaderDelegate(
-            maxExtentHeight: headerExtent,
-            minExtentHeight: headerExtent,
-            builder: (context, shrinkOffset, {required overlapsContent}) {
-              return _HomeHeader(
-                padding: EdgeInsets.fromLTRB(
-                  gutter,
-                  headerVerticalPadding,
-                  gutter,
-                  headerVerticalPadding,
-                ),
-                enableBackdropBlur: enableBackdropBlur,
-                hideBalance: _hideBalance,
-                onToggleVisibility: () {
-                  setState(() {
-                    _hideBalance = !_hideBalance;
-                  });
-                },
-                showConnectionStatus: widget.useScaffold || !isDesktopPlatform,
-              );
+          child: _HomeHeader(
+            padding: EdgeInsets.fromLTRB(
+              gutter,
+              PSpacing.sm,
+              gutter,
+              PSpacing.sm,
+            ),
+            hideBalance: _hideBalance,
+            onToggleVisibility: () {
+              setState(() => _hideBalance = !_hideBalance);
             },
+            showConnectionStatus: widget.useScaffold || !isDesktopPlatform,
           ),
-        ),
-        SliverPadding(
-          padding: EdgeInsets.fromLTRB(
-            gutter,
-            PSpacing.md,
-            gutter,
-            PSpacing.md,
-          ),
-          sliver: const SliverToBoxAdapter(child: _HomeSyncIndicator()),
         ),
         SliverToBoxAdapter(
           child: Padding(
             padding: EdgeInsets.fromLTRB(
               gutter,
-              PSpacing.md,
+              PSpacing.xs,
               gutter,
               PSpacing.md,
             ),
@@ -167,11 +104,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
           ),
         ),
+        SliverPadding(
+          padding: EdgeInsets.fromLTRB(gutter, 0, gutter, PSpacing.sm),
+          sliver: const SliverToBoxAdapter(child: _HomeSyncIndicator()),
+        ),
         SliverToBoxAdapter(
           child: Padding(
             padding: EdgeInsets.fromLTRB(
               gutter,
-              PSpacing.xl,
+              PSpacing.md,
               gutter,
               PSpacing.md,
             ),
@@ -225,14 +166,12 @@ SyncStatus _buildDecoySyncStatus(int height) {
 class _HomeHeader extends ConsumerWidget {
   const _HomeHeader({
     required this.padding,
-    required this.enableBackdropBlur,
     required this.hideBalance,
     required this.onToggleVisibility,
     required this.showConnectionStatus,
   });
 
   final EdgeInsets padding;
-  final bool enableBackdropBlur;
   final bool hideBalance;
   final VoidCallback onToggleVisibility;
   final bool showConnectionStatus;
@@ -257,8 +196,8 @@ class _HomeHeader extends ConsumerWidget {
     // Spendability is enforced in send flow, not by zeroing the home balance.
     final displayBalance = totalBalance;
     final balanceArrr = displayBalance.toDouble() / 100000000.0;
-    final pendingArrr = pendingBalance.toDouble() / 100000000.0;
-    final arrrText = ArrrPriceFormatter.formatArrr(balanceArrr);
+    final arrrText =
+        '${formatArrrAtomic(displayBalance, minimumFractionDigits: 8, groupThousands: true)} ARRR';
     final fiatAmount = priceQuote == null
         ? null
         : balanceArrr * priceQuote.pricePerArrr;
@@ -266,16 +205,22 @@ class _HomeHeader extends ConsumerWidget {
         ? null
         : ArrrPriceFormatter.formatCurrency(currency, fiatAmount);
     final showFiatPrimary = primaryFiat && fiatText != null;
-    final primaryText = showFiatPrimary ? fiatText : arrrText;
-    final secondaryText = fiatText == null
+    final primaryText = balanceData == null
+        ? balanceAsync.hasError
+              ? 'Balance unavailable'.tr
+              : 'Loading balance...'.tr
+        : showFiatPrimary
+        ? fiatText
+        : arrrText;
+    final secondaryText = fiatText == null || balanceData == null
         ? null
         : (showFiatPrimary ? arrrText : fiatText);
     String? balanceHelper;
-    if (balanceArrr <= 0) {
+    if (balanceData != null && balanceArrr <= 0) {
       balanceHelper = 'Share your address to get paid.'.tr;
     } else if (pendingBalance > BigInt.zero) {
       balanceHelper = 'Pending: {amount} ARRR'.trArgs({
-        'amount': pendingArrr.toStringAsFixed(8),
+        'amount': formatArrrAtomic(pendingBalance, minimumFractionDigits: 8),
       });
     }
 
@@ -295,53 +240,37 @@ class _HomeHeader extends ConsumerWidget {
                 showConnectionStatus: showConnectionStatus,
               ),
               const SizedBox(height: PSpacing.sm),
-              Expanded(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final isMobile = PSpacing.isHandset(
-                      MediaQuery.sizeOf(context),
-                    );
-                    final compact = constraints.maxHeight < 240;
-                    return Align(
-                      alignment: isMobile
-                          ? Alignment.topCenter
-                          : Alignment.topLeft,
-                      child: SizedBox(
-                        width: constraints.maxWidth,
-                        child: BalanceHero(
-                          compact: compact,
-                          balanceText: primaryText,
-                          secondaryText: secondaryText,
-                          helperText: balanceHelper,
-                          isHidden: hideBalance,
-                          onToggleVisibility: onToggleVisibility,
-                          onSwapDisplay: secondaryText == null
-                              ? null
-                              : () {
-                                  ref
-                                      .read(balancePrimaryFiatProvider.notifier)
-                                      .setPrimaryFiat(enabled: !primaryFiat);
-                                },
-                        ),
-                      ),
-                    );
-                  },
+              SizedBox(
+                width: double.infinity,
+                child: BalanceHero(
+                  label: 'Balance'.tr,
+                  compact: true,
+                  balanceText: primaryText,
+                  secondaryText: secondaryText,
+                  helperText: balanceHelper,
+                  isHidden: hideBalance,
+                  onToggleVisibility: onToggleVisibility,
+                  onSwapDisplay: secondaryText == null
+                      ? null
+                      : () {
+                          ref
+                              .read(balancePrimaryFiatProvider.notifier)
+                              .setPrimaryFiat(enabled: !primaryFiat);
+                        },
                 ),
               ),
+              if (balanceAsync.hasError && balanceData == null)
+                PTextButton(
+                  label: 'Retry'.tr,
+                  onPressed: () => ref.invalidate(balanceStreamProvider),
+                ),
             ],
           ),
         ),
       ),
     );
 
-    final headerContent = enableBackdropBlur
-        ? BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: headerSurface,
-          )
-        : headerSurface;
-
-    return RepaintBoundary(child: ClipRect(child: headerContent));
+    return RepaintBoundary(child: headerSurface);
   }
 }
 
@@ -455,23 +384,44 @@ class _HomeTransactionsSection extends ConsumerWidget {
         ),
       ),
     );
-    final syncProgressStatus = ref
-        .watch(syncProgressStreamProvider)
-        .asData
-        ?.value;
-    final syncStatus = ref.watch(syncStatusProvider).asData?.value;
-    final currentHeight =
-        (syncProgressStatus?.targetHeight ??
-                syncProgressStatus?.localHeight ??
-                syncStatus?.targetHeight ??
-                syncStatus?.localHeight)
-            ?.toInt();
-
-    final transactions = transactionsAsync.when(
-      data: (txs) => txs,
-      loading: () => <TxInfo>[],
-      error: (_, _) => <TxInfo>[],
+    final progressHeight = ref.watch(
+      syncProgressStreamProvider.select((value) {
+        final status = value.asData?.value;
+        return (status?.targetHeight ?? status?.localHeight)?.toInt();
+      }),
     );
+    final fallbackHeight = ref.watch(
+      syncStatusProvider.select((value) {
+        final status = value.asData?.value;
+        return (status?.targetHeight ?? status?.localHeight)?.toInt();
+      }),
+    );
+    final currentHeight = progressHeight ?? fallbackHeight;
+
+    final transactions = transactionsAsync.asData?.value ?? const <TxInfo>[];
+
+    if (transactionsAsync.hasError && transactions.isEmpty) {
+      return SliverToBoxAdapter(
+        child: PContentState(
+          icon: Icons.history,
+          title: 'Unable to load activity'.tr,
+          message: 'Your activity could not be loaded. Try again.'.tr,
+          actionLabel: 'Retry'.tr,
+          onAction: () => ref.invalidate(transactionsProvider),
+        ),
+      );
+    }
+
+    if (transactionsAsync.isLoading && transactions.isEmpty) {
+      return SliverToBoxAdapter(
+        child: PContentState(
+          icon: Icons.history,
+          title: 'Loading activity'.tr,
+          message: 'Your transactions will appear here.'.tr,
+          loading: true,
+        ),
+      );
+    }
 
     if (transactions.isEmpty) {
       return SliverToBoxAdapter(
@@ -482,23 +432,14 @@ class _HomeTransactionsSection extends ConsumerWidget {
             gutter,
             PSpacing.xl,
           ),
-          child: Center(
-            child: Column(
-              children: [
-                Icon(
-                  Icons.history,
-                  size: 48,
-                  color: AppColors.textSecondary.withValues(alpha: 0.5),
-                ),
-                const SizedBox(height: PSpacing.md),
-                Text(
-                  isSyncing ? 'Syncing activity...'.tr : 'No activity yet.'.tr,
-                  style: PTypography.bodyMedium().copyWith(
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ],
-            ),
+          child: PContentState(
+            icon: Icons.arrow_downward,
+            title: isSyncing ? 'Syncing activity...'.tr : 'No activity yet'.tr,
+            message: isSyncing
+                ? 'Transactions will appear as your wallet catches up.'.tr
+                : 'Share your private address to receive ARRR.'.tr,
+            actionLabel: isSyncing ? null : 'Receive ARRR'.tr,
+            onAction: isSyncing ? null : () => context.push('/receive'),
           ),
         ),
       );
@@ -549,27 +490,28 @@ class _QuickActionButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return PCard(
       onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: PSpacing.lg,
-          vertical: PSpacing.xl,
-        ),
-        child: Column(
+      padding: const EdgeInsets.all(PSpacing.md),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 48),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              padding: const EdgeInsets.all(PSpacing.md),
+              padding: const EdgeInsets.all(PSpacing.xs),
               decoration: BoxDecoration(
                 color: color.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon, color: color, size: 28, semanticLabel: label),
+              child: Icon(icon, color: color, size: 24),
             ),
-            const SizedBox(height: PSpacing.sm),
-            Text(
-              label,
-              style: PTypography.bodyMedium().copyWith(
-                fontWeight: FontWeight.w600,
-                color: AppColors.textPrimary,
+            const SizedBox(width: PSpacing.sm),
+            Flexible(
+              child: Text(
+                label,
+                style: PTypography.bodyMedium().copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary,
+                ),
               ),
             ),
           ],
@@ -580,7 +522,7 @@ class _QuickActionButton extends StatelessWidget {
 }
 
 /// Transaction item with address book label lookup
-class _TransactionItemWithLabel extends ConsumerWidget {
+class _TransactionItemWithLabel extends StatelessWidget {
   final TxInfo tx;
   final bool isConfirmed;
   final VoidCallback? onTap;
@@ -593,22 +535,10 @@ class _TransactionItemWithLabel extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // Look up label from address book if this is a sent transaction
-    // Note: TxInfo doesn't have toAddress field - would need transaction details
-    String? addressLabel;
-    // if (walletId != null && tx.amount < 0 && tx.toAddress != null) {
-    //   final addressBookState = ref.watch(addressBookProvider(walletId));
-    //   addressLabel = addressBookState.entries
-    //       .where((e) => e.address == tx.toAddress)
-    //       .map((e) => e.label)
-    //       .firstOrNull;
-    // }
-
+  Widget build(BuildContext context) {
     // Convert PlatformInt64 to int for calculations
     final amountValue = tx.amount;
     final isReceived = amountValue >= 0;
-    final amount = amountValue.abs() / 100000000.0;
 
     // Convert PlatformInt64 timestamp to DateTime
     final timestampValue = tx.timestamp;
@@ -620,10 +550,10 @@ class _TransactionItemWithLabel extends ConsumerWidget {
       isReceived: isReceived,
       isConfirmed: isConfirmed,
       isExpired: tx.expired,
-      amountText: '${isReceived ? '+' : '-'}${amount.toStringAsFixed(4)} ARRR',
+      amountText:
+          '${formatArrrAtomic(BigInt.from(amountValue), showPositiveSign: true)} ARRR',
       timestamp: timestamp,
       memo: tx.memo,
-      addressLabel: addressLabel,
       onTap: onTap,
     );
   }

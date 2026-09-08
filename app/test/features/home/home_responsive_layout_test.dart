@@ -10,8 +10,11 @@ import 'package:pirate_wallet/design/theme.dart';
 import 'package:pirate_wallet/design/tokens/spacing.dart';
 import 'package:pirate_wallet/features/home/home_screen.dart';
 import 'package:pirate_wallet/features/settings/providers/transport_providers.dart';
+import 'package:pirate_wallet/features/settings/providers/preferences_providers.dart';
 import 'package:pirate_wallet/ui/molecules/transaction_row_v2.dart';
-import 'package:pirate_wallet/ui/organisms/p_sliver_header.dart';
+import 'package:pirate_wallet/ui/organisms/balance_hero.dart';
+
+import '../../support/test_font_loader.dart';
 
 class _TestTunnelModeNotifier extends TunnelModeNotifier {
   @override
@@ -46,6 +49,9 @@ Widget _testApp({
   BigInt? pending,
   List<TxInfo> transactions = const [],
   Key? key,
+  double textScale = 1,
+  Future<List<TxInfo>> Function()? loadTransactions,
+  Stream<Balance>? balanceStream,
 }) {
   final syncedStatus = SyncStatus(
     localHeight: BigInt.from(4100000),
@@ -60,6 +66,7 @@ Widget _testApp({
   );
 
   return ProviderScope(
+    retry: (_, _) => null,
     key: key,
     overrides: [
       activeWalletMetaProvider.overrideWithValue(
@@ -73,20 +80,34 @@ Widget _testApp({
         ),
       ),
       balanceStreamProvider.overrideWith(
-        (ref) => Stream.value(
-          Balance(
-            total: total ?? BigInt.from(100000000),
-            spendable: BigInt.from(100000000),
-            pending: pending ?? BigInt.zero,
-          ),
-        ),
+        (ref) =>
+            balanceStream ??
+            Stream.value(
+              Balance(
+                total: total ?? BigInt.from(100000000),
+                spendable: BigInt.from(100000000),
+                pending: pending ?? BigInt.zero,
+              ),
+            ),
       ),
       syncProgressStreamProvider.overrideWith(
         (ref) => Stream.value(syncedStatus),
       ),
       syncStatusProvider.overrideWith((ref) async => syncedStatus),
-      transactionsProvider.overrideWith((ref) async => transactions),
-      arrrPriceQuoteProvider.overrideWith((ref) => Stream.value(null)),
+      transactionsProvider.overrideWith(
+        (ref) async =>
+            loadTransactions == null ? transactions : await loadTransactions(),
+      ),
+      arrrPriceQuoteProvider.overrideWith(
+        (ref) => Stream.value(
+          ArrrPriceQuote(
+            currency: CurrencyPreference.usd,
+            pricePerArrr: 0.25,
+            fetchedAt: DateTime(2026, 9, 8),
+            source: ArrrPriceSource.coingecko,
+          ),
+        ),
+      ),
       decoySyncHeightProvider.overrideWith((ref) async => 0),
       tunnelModeProvider.overrideWith(_TestTunnelModeNotifier.new),
       torStatusProvider.overrideWith(_TestTorStatusNotifier.new),
@@ -98,123 +119,140 @@ Widget _testApp({
     ],
     child: MaterialApp(
       theme: PTheme.dark(),
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context)
+            .copyWith(textScaler: TextScaler.linear(textScale)),
+        child: child!,
+      ),
       home: const Scaffold(body: HomeScreen(useScaffold: false)),
     ),
   );
 }
 
 void main() {
-  testWidgets('reserves balance helper height only when it is needed', (
-    tester,
-  ) async {
-    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
-    addTearDown(() => debugDefaultTargetPlatformOverride = null);
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(1280, 900);
-    addTearDown(tester.view.reset);
-
-    await tester.pumpWidget(_testApp(key: const ValueKey('settled-balance')));
-    await tester.pump(const Duration(milliseconds: 100));
-    final settledHeader = tester.widget<SliverPersistentHeader>(
-      find.byKey(HomeScreen.headerKey),
+  setUpAll(() async {
+    await loadTestFont('Sora', 'assets/fonts/Sora/Sora.ttf');
+    await loadTestFont(
+      'JetBrainsMono',
+      'assets/fonts/JetBrainsMono/JetBrainsMono.ttf',
     );
-    final settledExtent =
-        (settledHeader.delegate as PSliverHeaderDelegate).maxExtent;
-
-    await tester.pumpWidget(
-      _testApp(
-        pending: BigInt.from(50000000),
-        key: const ValueKey('pending-balance'),
-      ),
-    );
-    await tester.pump(const Duration(milliseconds: 100));
-    final pendingHeader = tester.widget<SliverPersistentHeader>(
-      find.byKey(HomeScreen.headerKey),
-    );
-    final pendingExtent =
-        (pendingHeader.delegate as PSliverHeaderDelegate).maxExtent;
-
-    expect(pendingExtent - settledExtent, 36);
-    expect(tester.takeException(), isNull);
-    debugDefaultTargetPlatformOverride = null;
   });
 
-  testWidgets('lets the dashboard header scroll away in phone landscape', (
+  testWidgets('sizes the header to include fiat and pending balance', (
     tester,
   ) async {
-    debugDefaultTargetPlatformOverride = TargetPlatform.android;
-    addTearDown(() => debugDefaultTargetPlatformOverride = null);
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(844, 390);
-    addTearDown(tester.view.reset);
-
-    await tester.pumpWidget(_testApp());
-    await tester.pump(const Duration(milliseconds: 100));
-
-    final header = tester.widget<SliverPersistentHeader>(
-      find.byKey(HomeScreen.headerKey),
-    );
-    expect(header.pinned, isFalse);
-
-    await tester.drag(find.byType(CustomScrollView), const Offset(0, -500));
-    await tester.pumpAndSettle();
-
-    final recentActivity = tester.widget<Text>(
-      find.byKey(HomeScreen.recentActivityTitleKey),
-    );
-    expect(recentActivity.data, 'Recent activity');
-    expect(recentActivity.maxLines, isNull);
-    expect(recentActivity.overflow, isNull);
-    expect(tester.takeException(), isNull);
-    debugDefaultTargetPlatformOverride = null;
-  });
-
-  testWidgets('uses a shorter dashboard header on laptop viewports', (
-    tester,
-  ) async {
-    debugDefaultTargetPlatformOverride = TargetPlatform.linux;
-    addTearDown(() => debugDefaultTargetPlatformOverride = null);
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(1097, 706);
-    addTearDown(tester.view.reset);
-
-    await tester.pumpWidget(_testApp());
-    await tester.pump(const Duration(milliseconds: 100));
-
-    final header = tester.widget<SliverPersistentHeader>(
-      find.byKey(HomeScreen.headerKey),
-    );
-    final extent = (header.delegate as PSliverHeaderDelegate).maxExtent;
-
-    expect(extent, lessThanOrEqualTo(252));
-    expect(extent, lessThan(284));
-    expect(tester.takeException(), isNull);
-    debugDefaultTargetPlatformOverride = null;
-  });
-
-  testWidgets('keeps the pinned phone header opaque while content scrolls', (
-    tester,
-  ) async {
-    debugDefaultTargetPlatformOverride = TargetPlatform.android;
-    addTearDown(() => debugDefaultTargetPlatformOverride = null);
-    tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-
-    await tester.pumpWidget(_testApp());
-    await tester.pump(const Duration(milliseconds: 100));
-    await tester.drag(find.byType(CustomScrollView), const Offset(0, -700));
+    await tester.pumpWidget(_testApp(key: const ValueKey('settled')));
     await tester.pumpAndSettle();
-
-    final surface = tester.widget<DecoratedBox>(
-      find.byKey(HomeScreen.headerSurfaceKey),
+    final settled = tester.getSize(find.byType(BalanceHero)).height;
+    expect(find.text(r'USD $0.25'), findsOneWidget);
+    await tester.pumpWidget(
+      _testApp(pending: BigInt.from(50000000), key: const ValueKey('pending')),
     );
-    final decoration = surface.decoration as BoxDecoration;
-    expect(decoration.color?.a, 1.0);
+    await tester.pumpAndSettle();
+    expect(
+      tester.getSize(find.byType(BalanceHero)).height,
+      greaterThan(settled),
+    );
+    final fiat = tester.getRect(find.text(r'USD $0.25'));
+    final pending = tester.getRect(find.text('Pending: 0.50000000 ARRR'));
+    expect(pending.top, greaterThanOrEqualTo(fiat.bottom));
     expect(tester.takeException(), isNull);
-    debugDefaultTargetPlatformOverride = null;
   });
 
+  for (final size in [
+    const Size(320, 640),
+    const Size(390, 844),
+    const Size(844, 390),
+    const Size(1097, 706),
+    const Size(1280, 900),
+  ]) {
+    testWidgets(
+      'shows fiat and pending without overflow at $size with enlarged text',
+      (tester) async {
+        debugDefaultTargetPlatformOverride = size.width > 1000
+            ? TargetPlatform.linux
+            : TargetPlatform.android;
+        addTearDown(() => debugDefaultTargetPlatformOverride = null);
+        tester.view.physicalSize = size;
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        await tester.pumpWidget(
+          _testApp(pending: BigInt.from(50000000), textScale: 1.6),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text(r'USD $0.25'), findsOneWidget);
+        expect(find.text('Pending: 0.50000000 ARRR'), findsOneWidget);
+        final hero = tester.getRect(find.byType(BalanceHero));
+        final pending = tester.getRect(find.text('Pending: 0.50000000 ARRR'));
+        expect(pending.bottom, lessThanOrEqualTo(hero.bottom));
+        await tester.ensureVisible(find.text('Receive'));
+        await tester.pumpAndSettle();
+        expect(find.text('Receive').hitTestable(), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        debugDefaultTargetPlatformOverride = null;
+      },
+    );
+  }
+
+  testWidgets('lets the balance scroll away to leave room for activity', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(_testApp());
+    await tester.pumpAndSettle();
+    final before = tester
+        .getTopLeft(find.byKey(HomeScreen.headerSurfaceKey))
+        .dy;
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -600));
+    await tester.pumpAndSettle();
+    expect(
+      tester.getTopLeft(find.byKey(HomeScreen.headerSurfaceKey)).dy,
+      lessThan(before),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'failed activity offers retry instead of claiming the wallet is empty',
+    (tester) async {
+      var calls = 0;
+      await tester.pumpWidget(
+        _testApp(
+          loadTransactions: () async {
+            calls++;
+            if (calls == 1) throw StateError('native diagnostics');
+            return [];
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Retry'));
+      await tester.pumpAndSettle();
+      expect(find.text('No activity yet'), findsNothing);
+      expect(find.textContaining('native diagnostics'), findsNothing);
+      await tester.tap(find.text('Retry'));
+      await tester.pumpAndSettle();
+      expect(calls, 2);
+      expect(find.text('No activity yet'), findsOneWidget);
+    },
+  );
+
+  testWidgets('an unavailable balance is never displayed as zero', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _testApp(balanceStream: Stream.error(StateError('unavailable'))),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Balance unavailable'), findsOneWidget);
+    expect(find.text('0.00000000 ARRR'), findsNothing);
+    expect(find.text('Share your address to get paid.'), findsNothing);
+  });
   testWidgets('keeps long recent amounts clear and separates mobile cards', (
     tester,
   ) async {
