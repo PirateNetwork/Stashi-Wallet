@@ -39,6 +39,7 @@ SOFTWARE.
   @override
   Widget build(BuildContext context) {
     return PScaffold(
+      bodyMaxWidth: 760,
       title: 'Open Source Licenses'.tr,
       appBar: PAppBar(title: 'Open Source Licenses'.tr, showBackButton: true),
       body: SingleChildScrollView(
@@ -64,8 +65,15 @@ SOFTWARE.
                 padding: const EdgeInsets.all(AppSpacing.lg),
                 child: SelectionArea(
                   child: SelectableText(
-                    _mitLicense.trim(),
-                    style: AppTypography.code,
+                    _mitLicense
+                        .trim()
+                        .split('\n\n')
+                        .map((paragraph) => paragraph.replaceAll('\n', ' '))
+                        .join('\n\n'),
+                    style: AppTypography.body.copyWith(
+                      color: AppColors.textPrimary,
+                      height: 1.65,
+                    ),
                   ),
                 ),
               ),

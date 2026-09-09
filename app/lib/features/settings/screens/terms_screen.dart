@@ -16,6 +16,7 @@ class TermsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return PScaffold(
+      bodyMaxWidth: 760,
       title: 'Terms and Privacy'.tr,
       appBar: PAppBar(title: 'Terms and Privacy'.tr, showBackButton: true),
       body: SingleChildScrollView(
