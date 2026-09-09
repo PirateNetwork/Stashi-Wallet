@@ -253,6 +253,7 @@ class _VerifyBuildScreenState extends ConsumerState<VerifyBuildScreen> {
   @override
   Widget build(BuildContext context) {
     return PScaffold(
+      bodyMaxWidth: 1180,
       title: 'Verify My Build'.tr,
       appBar: PAppBar(
         title: 'Verify My Build'.tr,
@@ -502,7 +503,7 @@ class _VerifyBuildScreenState extends ConsumerState<VerifyBuildScreen> {
                       PButton(
                         onPressed: () => _copyToClipboard(_localHash!),
                         text: 'Copy Local Hash'.tr,
-                        variant: PButtonVariant.secondary,
+                        variant: PButtonVariant.outline,
                         fullWidth: true,
                       ),
                     ],
@@ -533,7 +534,7 @@ class _VerifyBuildScreenState extends ConsumerState<VerifyBuildScreen> {
                       child: PButton(
                         onPressed: () => _copyToClipboard(_localHash!),
                         text: 'Copy Local Hash'.tr,
-                        variant: PButtonVariant.secondary,
+                        variant: PButtonVariant.outline,
                         fullWidth: true,
                       ),
                     ),

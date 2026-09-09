@@ -147,6 +147,7 @@ class _PaymentDisclosureVerifierScreenState
     }
 
     return PScaffold(
+      bodyMaxWidth: 760,
       title: 'Verify Payment Disclosure'.tr,
       appBar: PAppBar(
         title: 'Verify Payment Disclosure'.tr,
@@ -410,7 +411,7 @@ class _DisclosureInputCard extends StatelessWidget {
               ),
               PButton(
                 text: 'Paste'.tr,
-                variant: PButtonVariant.secondary,
+                variant: PButtonVariant.outline,
                 onPressed: isVerifying ? null : onPaste,
                 icon: const Icon(Icons.content_paste_outlined),
               ),
@@ -624,7 +625,7 @@ class _VerifiedResultCard extends StatelessWidget {
           const SizedBox(height: PSpacing.md),
           PButton(
             text: 'Copy verification summary'.tr,
-            variant: PButtonVariant.secondary,
+            variant: PButtonVariant.outline,
             fullWidth: true,
             icon: const Icon(Icons.copy_all_outlined),
             onPressed: () => onCopy(summary, 'Verification summary'.tr),
