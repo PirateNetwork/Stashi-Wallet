@@ -78,7 +78,7 @@ class SwapOpenOrdersPanel extends StatelessWidget {
                   else if (intent.status == SwapIntentStatus.waitingForDeposit)
                     PButton(
                       text: 'Resume'.tr,
-                      variant: PButtonVariant.secondary,
+                      variant: PButtonVariant.outline,
                       onPressed: () => onResume(intent),
                     ),
                 ],

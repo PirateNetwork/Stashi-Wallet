@@ -296,10 +296,12 @@ class SwapComposeCard extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    'Slippage tolerance'.tr,
-                    style: PTypography.labelMedium(
-                      color: AppColors.textSecondary,
+                  Expanded(
+                    child: Text(
+                      'Slippage tolerance'.tr,
+                      style: PTypography.labelMedium(
+                        color: AppColors.textSecondary,
+                      ),
                     ),
                   ),
                   Text(
@@ -507,7 +509,7 @@ class _PremiumAssetInputState extends State<_PremiumAssetInput> {
                     ),
                   ],
                   style: TextStyle(
-                    fontSize: 36,
+                    fontSize: 26,
                     fontWeight: FontWeight.w600,
                     color: AppColors.textPrimary,
                     letterSpacing: -1,
@@ -516,7 +518,7 @@ class _PremiumAssetInputState extends State<_PremiumAssetInput> {
                   decoration: InputDecoration(
                     hintText: widget.hint,
                     hintStyle: TextStyle(
-                      fontSize: 36,
+                      fontSize: 26,
                       fontWeight: FontWeight.w600,
                       color: AppColors.textSecondary.withValues(alpha: 0.3),
                       letterSpacing: -1,
@@ -572,55 +574,43 @@ class _PremiumAssetInputState extends State<_PremiumAssetInput> {
             ],
           ),
           const SizedBox(height: PSpacing.sm),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Wrap(
+            spacing: PSpacing.xs,
+            runSpacing: PSpacing.sm,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
+              Icon(
+                Icons.account_balance_wallet_outlined,
+                size: 14,
+                color: AppColors.textSecondary,
+              ),
+              const SizedBox(width: 4),
               Text(
-                '', // Placeholder for fiat value if needed later
+                widget.balanceLabel,
                 style: PTypography.bodySmall(color: AppColors.textSecondary),
               ),
-              Row(
-                children: [
-                  Icon(
-                    Icons.account_balance_wallet_outlined,
-                    size: 14,
-                    color: AppColors.textSecondary,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    widget.balanceLabel,
-                    style: PTypography.bodySmall(
-                      color: AppColors.textSecondary,
+              if (widget.onMax != null) ...[
+                const SizedBox(width: PSpacing.sm),
+                GestureDetector(
+                  onTap: widget.onMax,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: PSpacing.sm,
+                      vertical: 2,
                     ),
-                  ),
-                  if (widget.onMax != null) ...[
-                    const SizedBox(width: PSpacing.sm),
-                    GestureDetector(
-                      onTap: widget.onMax,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: PSpacing.sm,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppColors.accentPrimary.withValues(
-                            alpha: 0.12,
-                          ),
-                          borderRadius: BorderRadius.circular(
-                            PSpacing.radiusFull,
-                          ),
-                        ),
-                        child: Text(
-                          'Max'.tr,
-                          style: PTypography.labelSmall(
-                            color: AppColors.accentPrimary,
-                          ),
-                        ),
+                    decoration: BoxDecoration(
+                      color: AppColors.accentPrimary.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(PSpacing.radiusFull),
+                    ),
+                    child: Text(
+                      'Max'.tr,
+                      style: PTypography.labelSmall(
+                        color: AppColors.accentPrimary,
                       ),
                     ),
-                  ],
-                ],
-              ),
+                  ),
+                ),
+              ],
             ],
           ),
         ],

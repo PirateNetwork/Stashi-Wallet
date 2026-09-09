@@ -178,7 +178,7 @@ class SwapFundingBalanceCard extends StatelessWidget {
               PButton(
                 text: 'Deposit'.tr,
                 size: PButtonSize.small,
-                variant: PButtonVariant.secondary,
+                variant: PButtonVariant.outline,
                 onPressed: isActionPending
                     ? null
                     : () => _startDeposit(context),

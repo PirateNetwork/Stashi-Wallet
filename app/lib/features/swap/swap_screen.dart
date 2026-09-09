@@ -107,6 +107,7 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
         : _averageArrrUsdPriceLabel(quote, relUsdPrice);
 
     return PScaffold(
+      bodyMaxWidth: 920,
       title: 'Swap'.tr,
       appBar: PAppBar(
         title: 'Swap'.tr,
@@ -429,7 +430,7 @@ class _SwapScreenState extends ConsumerState<SwapScreen> {
                 Expanded(
                   child: PButton(
                     text: 'Back'.tr,
-                    variant: PButtonVariant.secondary,
+                    variant: PButtonVariant.outline,
                     fullWidth: true,
                     onPressed: vm.backToCompose,
                   ),
