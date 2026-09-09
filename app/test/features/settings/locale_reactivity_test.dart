@@ -240,7 +240,7 @@ void main() {
         home: const SettingsScreen(useScaffold: false),
       ),
     );
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     final biometricsTile = find.widgetWithText(PListTile, 'Biometrics');
     expect(biometricsTile, findsOneWidget);
