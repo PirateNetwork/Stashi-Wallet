@@ -493,6 +493,15 @@ mod tests {
         }
     }
 
+    fn insert_note_with_metadata(db: &Database, note: &NoteRecord) {
+        let repo = Repository::new(db);
+        repo.insert_note(note).unwrap();
+        // Without transaction metadata, history falls back to the wall clock.
+        // Model a fixed block time so snapshots remain stable across seconds.
+        repo.upsert_transaction(&hex::encode(&note.txid), note.height, note.height, 0)
+            .unwrap();
+    }
+
     fn add_final_non_note_semantics(db: &Database) {
         Repository::new(db)
             .upsert_unlinked_spend_nullifiers_with_txid(
@@ -524,8 +533,8 @@ mod tests {
     fn equivalent_semantics_ignore_randomized_ciphertext() {
         let (_left_file, left) = test_db();
         let (_right_file, right) = test_db();
-        Repository::new(&left).insert_note(&note(42, 0)).unwrap();
-        Repository::new(&right).insert_note(&note(42, 0)).unwrap();
+        insert_note_with_metadata(&left, &note(42, 0));
+        insert_note_with_metadata(&right, &note(42, 0));
         SyncStateStorage::new(&left)
             .save_sync_state(100, 100, 0)
             .unwrap();
@@ -535,15 +544,36 @@ mod tests {
 
         let baseline = SemanticOracleSnapshot::capture(&left, 1).unwrap();
         let candidate = SemanticOracleSnapshot::capture(&right, 1).unwrap();
+        assert_eq!(baseline.transactions[0][2], integer(100));
         baseline.ensure_equivalent(&candidate).unwrap();
+    }
+
+    #[test]
+    fn reports_transaction_timestamp_regression() {
+        let (_file, db) = test_db();
+        let note = note(42, 0);
+        insert_note_with_metadata(&db, &note);
+        SyncStateStorage::new(&db)
+            .save_sync_state(100, 100, 0)
+            .unwrap();
+        let baseline = SemanticOracleSnapshot::capture(&db, 1).unwrap();
+
+        Repository::new(&db)
+            .upsert_transaction(&hex::encode(&note.txid), note.height, note.height + 1, 0)
+            .unwrap();
+        let candidate = SemanticOracleSnapshot::capture(&db, 1).unwrap();
+        let differences = baseline.differences(&candidate);
+        assert_eq!(differences.len(), 1);
+        assert_eq!(differences[0].domain, "transactions");
+        assert!(baseline.ensure_equivalent(&candidate).is_err());
     }
 
     #[test]
     fn reports_the_domain_containing_a_regression() {
         let (_left_file, left) = test_db();
         let (_right_file, right) = test_db();
-        Repository::new(&left).insert_note(&note(42, 0)).unwrap();
-        Repository::new(&right).insert_note(&note(43, 0)).unwrap();
+        insert_note_with_metadata(&left, &note(42, 0));
+        insert_note_with_metadata(&right, &note(43, 0));
         SyncStateStorage::new(&left)
             .save_sync_state(100, 100, 0)
             .unwrap();
@@ -565,15 +595,11 @@ mod tests {
     #[test]
     fn optimized_interruption_and_reorg_path_matches_sequential_baseline() {
         let (_baseline_file, baseline) = test_db();
-        Repository::new(&baseline)
-            .insert_note(&note(42, 0))
-            .unwrap();
+        insert_note_with_metadata(&baseline, &note(42, 0));
         let mut second_note = note(24, 1);
         second_note.height = 101;
         second_note.txid = vec![4; 32];
-        Repository::new(&baseline)
-            .insert_note(&second_note)
-            .unwrap();
+        insert_note_with_metadata(&baseline, &second_note);
         let baseline_state = SyncStateStorage::new(&baseline);
         baseline_state
             .save_chain_blocks(&[chain_block(100, 10), chain_block(101, 11)])
@@ -590,9 +616,7 @@ mod tests {
             candidate_master.clone(),
         )
         .unwrap();
-        Repository::new(&candidate)
-            .insert_note(&note(42, 0))
-            .unwrap();
+        insert_note_with_metadata(&candidate, &note(42, 0));
         SyncStateStorage::new(&candidate)
             .save_chain_blocks(&[chain_block(100, 10)])
             .unwrap();
@@ -609,7 +633,7 @@ mod tests {
         let mut orphan = note(999, 9);
         orphan.height = 101;
         orphan.txid = vec![99; 32];
-        Repository::new(&candidate).insert_note(&orphan).unwrap();
+        insert_note_with_metadata(&candidate, &orphan);
         SyncStateStorage::new(&candidate)
             .save_chain_blocks(&[chain_block(101, 99)])
             .unwrap();
@@ -617,9 +641,7 @@ mod tests {
             .save_sync_state(101, 101, 100)
             .unwrap();
         truncate_above_height(&candidate, 100).unwrap();
-        Repository::new(&candidate)
-            .insert_note(&second_note)
-            .unwrap();
+        insert_note_with_metadata(&candidate, &second_note);
         SyncStateStorage::new(&candidate)
             .save_chain_blocks(&[chain_block(101, 11)])
             .unwrap();
