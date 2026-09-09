@@ -17,6 +17,7 @@ import '../../../ui/atoms/p_button.dart';
 import '../../../ui/atoms/p_input.dart';
 import '../../../ui/atoms/p_text_button.dart';
 import '../../../ui/molecules/p_card.dart';
+import '../../../ui/molecules/p_help.dart';
 import '../../../ui/molecules/connection_status_indicator.dart';
 import '../../../ui/molecules/p_snack.dart';
 import '../../../ui/organisms/p_app_bar.dart';
@@ -415,6 +416,7 @@ class _NodeSettingsScreenState extends ConsumerState<NodeSettingsScreen> {
     );
 
     return PScaffold(
+      bodyMaxWidth: 760,
       title: 'Node Configuration'.tr,
       appBar: PAppBar(
         title: 'Node Configuration'.tr,
@@ -498,7 +500,11 @@ class _NodeSettingsScreenState extends ConsumerState<NodeSettingsScreen> {
 
                       // TLS toggle
                       SwitchListTile(
-                        title: Text('Use TLS'.tr),
+                        title: PHelpLabel(
+                          label: 'Use TLS'.tr,
+                          help: 'TLS encrypts the connection to your node. It does not hide your IP address.'
+                              .tr,
+                        ),
                         subtitle: Text(
                           _useTls
                               ? 'Encrypted connection (recommended)'.tr
@@ -569,7 +575,7 @@ class _NodeSettingsScreenState extends ConsumerState<NodeSettingsScreen> {
                         onPressed: _useTls && !_isFetchingSpkiPin && !_isLoading
                             ? _fetchSpkiPin
                             : null,
-                        variant: PButtonVariant.secondary,
+                        variant: PButtonVariant.outline,
                         fullWidth: true,
                       ),
 

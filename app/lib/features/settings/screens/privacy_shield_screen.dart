@@ -13,6 +13,7 @@ import '../../../ui/atoms/p_input.dart';
 import '../../../ui/atoms/p_text_button.dart';
 import '../../../ui/atoms/p_toggle.dart';
 import '../../../ui/molecules/p_card.dart';
+import '../../../ui/molecules/p_help.dart';
 import '../../../ui/molecules/connection_status_indicator.dart';
 import '../../../ui/organisms/p_app_bar.dart';
 import '../../../ui/organisms/p_scaffold.dart';
@@ -97,6 +98,7 @@ class _PrivacyShieldScreenState extends ConsumerState<PrivacyShieldScreen> {
     }
 
     return PScaffold(
+      bodyMaxWidth: 920,
       title: 'Network Privacy'.tr,
       appBar: PAppBar(
         title: 'Network Privacy'.tr,
@@ -121,7 +123,11 @@ class _PrivacyShieldScreenState extends ConsumerState<PrivacyShieldScreen> {
             const SizedBox(height: 16),
 
             // Transport Mode
-            _buildSectionTitle('Transport Mode'.tr),
+            PHelpLabel(
+              label: 'Transport Mode'.tr,
+              help: 'Choose how this wallet connects to its node. Tor hides your IP address from the node; Direct connects without a proxy.'
+                  .tr,
+            ),
             const SizedBox(height: 8),
             _buildTransportModeSelector(context, ref, transportMode),
 
@@ -163,7 +169,7 @@ class _PrivacyShieldScreenState extends ConsumerState<PrivacyShieldScreen> {
                 onPressed: _isTestingConnection || _isChangingTransport
                     ? null
                     : () => _testNodeConnection(context, ref),
-                variant: PButtonVariant.secondary,
+                variant: PButtonVariant.outline,
               ),
             ),
 
@@ -566,7 +572,7 @@ class _PrivacyShieldScreenState extends ConsumerState<PrivacyShieldScreen> {
                         }
                       }
                     },
-              variant: PButtonVariant.secondary,
+              variant: PButtonVariant.outline,
             ),
           ),
         ],
@@ -600,87 +606,37 @@ class _PrivacyShieldScreenState extends ConsumerState<PrivacyShieldScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final title = Text(
+          Wrap(
+            spacing: PirateSpacing.md,
+            runSpacing: PirateSpacing.sm,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Text(
                 'Tor Status'.tr,
                 style: TextStyle(
                   color: AppColors.textPrimary,
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
                 ),
-              );
-              final description = Text(
-                'Tor provides the strongest privacy by routing traffic through multiple relays, making it very difficult to trace.'
-                    .tr,
-                style: TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 14,
-                  height: 1.45,
-                ),
-              );
-              final isWide = constraints.maxWidth >= 760;
-              final switchExitButton = PTextButton(
-                text: 'Switch exit node'.tr,
-                compact: true,
-                onPressed: torStatus.isReady ? _switchTorExit : null,
-              );
-              final controls = isWide
-                  ? Row(
-                      children: [
-                        _buildTorStatusIndicator(torStatus),
-                        const SizedBox(width: PirateSpacing.sm),
-                        Expanded(child: switchExitButton),
-                      ],
-                    )
-                  : Wrap(
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      spacing: PirateSpacing.sm,
-                      runSpacing: PirateSpacing.xs,
-                      children: [
-                        _buildTorStatusIndicator(torStatus),
-                        switchExitButton,
-                      ],
-                    );
-              if (!isWide) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    title,
-                    const SizedBox(height: PirateSpacing.sm),
-                    controls,
-                    const SizedBox(height: PirateSpacing.md),
-                    description,
-                  ],
-                );
-              }
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 720),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          title,
-                          const SizedBox(height: PirateSpacing.sm),
-                          description,
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: PirateSpacing.xl),
-                  SizedBox(
-                    width: 320,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [controls],
-                    ),
-                  ),
-                ],
-              );
-            },
+              ),
+              _buildTorStatusIndicator(torStatus),
+            ],
+          ),
+          const SizedBox(height: PirateSpacing.sm),
+          Text(
+            'Tor provides the strongest privacy by routing traffic through multiple relays, making it very difficult to trace.'
+                .tr,
+            style: TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 14,
+              height: 1.5,
+            ),
+          ),
+          const SizedBox(height: PirateSpacing.md),
+          PTextButton(
+            text: 'Switch exit node'.tr,
+            compact: true,
+            onPressed: torStatus.isReady ? _switchTorExit : null,
           ),
           if (isBootstrapping) ...[
             const SizedBox(height: PirateSpacing.md),
@@ -883,7 +839,7 @@ class _PrivacyShieldScreenState extends ConsumerState<PrivacyShieldScreen> {
             Expanded(
               child: PButton(
                 text: 'Apply & Restart Tor'.tr,
-                variant: PButtonVariant.secondary,
+                variant: PButtonVariant.outline,
                 onPressed: () => _applyTorBridgeSettings(ref),
               ),
             ),

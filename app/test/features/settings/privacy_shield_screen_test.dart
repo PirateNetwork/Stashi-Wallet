@@ -152,7 +152,8 @@ void main() {
     final actionRect = tester.getRect(find.text('Switch exit node'));
     expect(statusRect.left, greaterThan(titleRect.right));
     expect(descriptionRect.left, lessThan(statusRect.left));
-    expect((statusRect.center.dy - actionRect.center.dy).abs(), lessThan(8));
+    expect((statusRect.center.dy - titleRect.center.dy).abs(), lessThan(8));
+    expect(actionRect.top, greaterThan(descriptionRect.bottom));
     expect(tester.takeException(), isNull);
     debugDefaultTargetPlatformOverride = null;
   });
