@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/i18n/arb_text_localizer.dart';
 import '../../../design/deep_space_theme.dart';
 import '../../../ui/molecules/p_card.dart';
+import '../../../ui/molecules/p_help.dart';
 import '../../../ui/organisms/p_app_bar.dart';
 import '../../../ui/organisms/p_scaffold.dart';
 import '../providers/preferences_providers.dart';
@@ -27,9 +28,10 @@ class OutboundApiScreen extends ConsumerWidget {
         platform == TargetPlatform.linux;
 
     return PScaffold(
-      title: 'Outbound API Calls'.tr,
+      bodyMaxWidth: 760,
+      title: 'External connections'.tr,
       appBar: PAppBar(
-        title: 'Outbound API Calls'.tr,
+        title: 'External connections'.tr,
         subtitle: 'Control non-lightserver internet requests'.tr,
         showBackButton: true,
       ),
@@ -46,12 +48,12 @@ class OutboundApiScreen extends ConsumerWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Allow non-lightserver API calls'.tr,
+                          'Allow external services'.tr,
                           style: AppTypography.bodyBold,
                         ),
                         const SizedBox(height: AppSpacing.xs),
                         Text(
-                          'Master switch for all outbound connections except your configured lightwalletd server.'
+                          'Allow prices, updates and swap services. Your wallet can still connect to its node when this is off.'
                               .tr,
                           style: AppTypography.caption.copyWith(
                             color: AppColors.textSecondary,
@@ -128,18 +130,6 @@ class OutboundApiScreen extends ConsumerWidget {
             ),
           ],
           const SizedBox(height: AppSpacing.md),
-          PCard(
-            child: Padding(
-              padding: const EdgeInsets.all(AppSpacing.md),
-              child: Text(
-                'Current non-lightserver network features: live price feeds, Verify Build GitHub checks, Komodo swap order books and quotes, and desktop release checks. These outbound calls use your selected transport where supported and can be disabled in Settings.'
-                    .tr,
-                style: AppTypography.caption.copyWith(
-                  color: AppColors.textSecondary,
-                ),
-              ),
-            ),
-          ),
         ],
       ),
     );
@@ -174,23 +164,7 @@ class _ApiToggleCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    title,
-                    style: AppTypography.bodyBold.copyWith(
-                      color: available
-                          ? AppColors.textPrimary
-                          : AppColors.textTertiary,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
-                  Text(
-                    subtitle,
-                    style: AppTypography.caption.copyWith(
-                      color: available
-                          ? AppColors.textSecondary
-                          : AppColors.textTertiary,
-                    ),
-                  ),
+                  PHelpLabel(label: title, help: subtitle),
                   if (!available) ...[
                     const SizedBox(height: AppSpacing.xs),
                     Text(

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pirate_wallet/design/theme.dart';
+import 'package:pirate_wallet/ui/molecules/p_help.dart';
 import 'package:pirate_wallet/features/settings/providers/preferences_providers.dart';
 import 'package:pirate_wallet/features/settings/screens/outbound_api_screen.dart';
 
@@ -104,7 +105,15 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.text('Live Price Feeds'), findsOneWidget);
+    await tester.tap(
+      find.byWidgetPredicate(
+        (widget) => widget is PHelpButton && widget.topic == 'Live Price Feeds',
+      ),
+    );
+    await tester.pumpAndSettle();
     expect(find.textContaining('CoinPaprika'), findsOneWidget);
+    Tooltip.dismissAllToolTips();
+    await tester.pumpAndSettle();
     expect(find.text('Desktop Update Checks'), findsNothing);
     expect(tester.takeException(), isNull);
     await _captureIfRequested(tester, 'outbound-api-phone.png');
@@ -127,7 +136,15 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
 
     expect(find.text('Live Price Feeds'), findsOneWidget);
+    await tester.tap(
+      find.byWidgetPredicate(
+        (widget) => widget is PHelpButton && widget.topic == 'Live Price Feeds',
+      ),
+    );
+    await tester.pumpAndSettle();
     expect(find.textContaining('CoinPaprika'), findsOneWidget);
+    Tooltip.dismissAllToolTips();
+    await tester.pumpAndSettle();
     expect(find.text('Desktop Update Checks'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await _captureIfRequested(tester, 'outbound-api-desktop.png');
