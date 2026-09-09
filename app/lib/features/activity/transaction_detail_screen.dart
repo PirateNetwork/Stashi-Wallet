@@ -3,7 +3,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:timeago/timeago.dart' as timeago;
 
 import '../../core/ffi/ffi_bridge.dart';
 import '../../core/ffi/generated/models.dart';
@@ -15,7 +14,7 @@ import '../../design/tokens/colors.dart';
 import '../../design/tokens/spacing.dart';
 import '../../design/tokens/typography.dart';
 import '../../ui/molecules/p_card.dart';
-import '../../ui/molecules/wallet_switcher.dart';
+import '../../core/formatting/arrr_amount.dart';
 import '../../ui/organisms/p_app_bar.dart';
 import '../../ui/organisms/p_scaffold.dart';
 import '../../ui/organisms/p_skeleton.dart';
@@ -71,10 +70,8 @@ class TransactionDetailScreen extends ConsumerWidget {
 
     return PScaffold(
       title: 'Transaction'.tr,
-      appBar: PAppBar(
-        title: 'Transaction'.tr,
-        actions: [WalletSwitcherButton(compact: true)],
-      ),
+      appBar: PAppBar(title: 'Transaction'.tr, showBackButton: true),
+      bodyMaxWidth: 760,
       body: content,
     );
   }
@@ -217,86 +214,105 @@ class _TransactionDetailsState extends ConsumerState<_TransactionDetails> {
     final timeText = localizations.formatTimeOfDay(
       TimeOfDay.fromDateTime(timestamp),
     );
-    final relativeText = timeago.format(timestamp);
-    final timestampValue = '$dateText at $timeText ($relativeText)';
 
     return ListView(
       padding: padding,
       children: [
-        PCard(
-          child: Padding(
-            padding: const EdgeInsets.all(PSpacing.md),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  isReceived ? 'Received'.tr : 'Sent'.tr,
-                  style: PTypography.heading4(color: AppColors.textPrimary),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: PSpacing.lg),
+          child: Column(
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: statusColor.withValues(alpha: 0.10),
+                  shape: BoxShape.circle,
                 ),
-                const SizedBox(height: PSpacing.xs),
-                Text(
-                  amountArrr,
-                  style: PTypography.displaySmall(color: AppColors.textPrimary),
+                child: Icon(
+                  tx.expired
+                      ? Icons.timer_off_outlined
+                      : (isReceived
+                            ? Icons.south_west_rounded
+                            : Icons.north_east_rounded),
+                  color: statusColor,
+                  size: 26,
                 ),
-                const SizedBox(height: PSpacing.md),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: PSpacing.sm,
-                    vertical: PSpacing.xxs,
-                  ),
-                  decoration: BoxDecoration(
-                    color: statusColor.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(PSpacing.radiusFull),
-                  ),
-                  child: Text(
-                    statusText,
-                    style: PTypography.labelSmall(color: statusColor),
-                  ),
+              ),
+              const SizedBox(height: PSpacing.md),
+              Text(
+                isReceived ? 'Received'.tr : 'Sent'.tr,
+                style: PTypography.bodyMedium(color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: PSpacing.xs),
+              Semantics(
+                label: amountArrr,
+                excludeSemantics: true,
+                child: Column(
+                  children: [
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        formatArrrAtomic(
+                          BigInt.from(tx.amount.toInt()).abs(),
+                          minimumFractionDigits: 0,
+                          groupThousands: true,
+                        ),
+                        maxLines: 1,
+                        softWrap: false,
+                        style:
+                            PTypography.displaySmall(
+                              color: AppColors.textPrimary,
+                            ).copyWith(
+                              fontSize: 40,
+                              fontFeatures: const [
+                                FontFeature.tabularFigures(),
+                              ],
+                            ),
+                      ),
+                    ),
+                    const SizedBox(height: PSpacing.xxs),
+                    Text(
+                      'ARRR',
+                      style: PTypography.bodyMedium(
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(height: PSpacing.md),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: PSpacing.sm,
+                  vertical: PSpacing.xs,
+                ),
+                decoration: BoxDecoration(
+                  color: statusColor.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(PSpacing.radiusFull),
+                ),
+                child: Text(
+                  statusText,
+                  style: PTypography.labelSmall(color: statusColor),
+                ),
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: PSpacing.lg),
+        const SizedBox(height: PSpacing.md),
         PCard(
-          child: Padding(
-            padding: const EdgeInsets.all(PSpacing.md),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Summary'.tr,
-                  style: PTypography.titleMedium(color: AppColors.textPrimary),
-                ),
+          padding: const EdgeInsets.all(PSpacing.lg),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _DetailRow(label: 'Date'.tr, value: dateText),
+              const SizedBox(height: PSpacing.md),
+              _DetailRow(label: 'Time'.tr, value: timeText),
+              if (showNetworkFee) ...[
                 const SizedBox(height: PSpacing.md),
-                _DetailRow(label: 'Amount'.tr, value: amountArrr),
-                if (showNetworkFee) ...[
-                  const SizedBox(height: PSpacing.sm),
-                  _DetailRow(label: 'Network fee'.tr, value: feeArrr),
-                ],
-                const SizedBox(height: PSpacing.sm),
-                _DetailRow(label: 'Date and time'.tr, value: timestampValue),
-                if (tx.height != null) ...[
-                  const SizedBox(height: PSpacing.sm),
-                  _DetailRow(
-                    label: 'Block height'.tr,
-                    value: tx.height.toString(),
-                  ),
-                  const SizedBox(height: PSpacing.sm),
-                  _DetailRow(
-                    label: 'Confirmations'.tr,
-                    value: confirmations.toString(),
-                  ),
-                ],
-                if (tx.expiryHeight != null) ...[
-                  const SizedBox(height: PSpacing.sm),
-                  _DetailRow(
-                    label: 'Expiry'.tr,
-                    value: tx.expiryHeight.toString(),
-                  ),
-                ],
+                _DetailRow(label: 'Network fee'.tr, value: feeArrr),
               ],
-            ),
+            ],
           ),
         ),
         if (tx.expired) ...[
@@ -375,29 +391,6 @@ class _TransactionDetailsState extends ConsumerState<_TransactionDetails> {
             ),
           ),
         ],
-        // Note: TxInfo doesn't have toAddress field - address info would need to come from transaction details
-        // if (tx.toAddress != null) ...[
-        //   const SizedBox(height: PSpacing.lg),
-        //   PCard(
-        //     child: Padding(
-        //       padding: const EdgeInsets.all(PSpacing.md),
-        //       child: Column(
-        //         crossAxisAlignment: CrossAxisAlignment.start,
-        //         children: [
-        //           Text(
-        //             isReceived ? 'From' : 'To',
-        //             style: PTypography.titleMedium(color: AppColors.textPrimary),
-        //           ),
-        //           const SizedBox(height: PSpacing.sm),
-        //           SelectableText(
-        //             tx.toAddress!,
-        //             style: PTypography.codeMedium(color: AppColors.textSecondary),
-        //           ),
-        //         ],
-        //       ),
-        //     ),
-        //   ),
-        // ],
         if (tx.memo != null && tx.memo!.isNotEmpty) ...[
           const SizedBox(height: PSpacing.lg),
           _MemoCard(memo: tx.memo!),
@@ -419,41 +412,72 @@ class _TransactionDetailsState extends ConsumerState<_TransactionDetails> {
         ],
         const SizedBox(height: PSpacing.lg),
         PCard(
-          child: Padding(
-            padding: const EdgeInsets.all(PSpacing.md),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Transaction ID'.tr,
-                        style: PTypography.titleMedium(
-                          color: AppColors.textPrimary,
-                        ),
+          padding: EdgeInsets.zero,
+          child: ExpansionTile(
+            key: const PageStorageKey('transaction-technical-details'),
+            shape: const Border(),
+            collapsedShape: const Border(),
+            tilePadding: const EdgeInsets.symmetric(
+              horizontal: PSpacing.lg,
+              vertical: PSpacing.xs,
+            ),
+            title: Text(
+              'Technical details'.tr,
+              style: PTypography.bodyMedium(color: AppColors.textPrimary),
+            ),
+            childrenPadding: const EdgeInsets.fromLTRB(
+              PSpacing.lg,
+              0,
+              PSpacing.lg,
+              PSpacing.lg,
+            ),
+            children: [
+              if (tx.height != null) ...[
+                _DetailRow(
+                  label: 'Block height'.tr,
+                  value: tx.height.toString(),
+                ),
+                const SizedBox(height: PSpacing.md),
+                _DetailRow(
+                  label: 'Confirmations'.tr,
+                  value: confirmations.toString(),
+                ),
+                const SizedBox(height: PSpacing.md),
+              ],
+              if (tx.expiryHeight != null) ...[
+                _DetailRow(
+                  label: 'Expiry'.tr,
+                  value: tx.expiryHeight.toString(),
+                ),
+                const SizedBox(height: PSpacing.md),
+              ],
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Transaction ID'.tr,
+                      style: PTypography.bodySmall(
+                        color: AppColors.textSecondary,
                       ),
                     ),
-                    IconButton(
-                      onPressed: () {
-                        Clipboard.setData(ClipboardData(text: tx.txid));
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Transaction ID copied'.tr)),
-                        );
-                      },
-                      icon: const Icon(Icons.copy, size: 18),
-                      tooltip: 'Copy transaction ID'.tr,
-                      color: AppColors.textSecondary,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: PSpacing.sm),
-                SelectableText(
-                  tx.txid,
-                  style: PTypography.codeMedium(color: AppColors.textSecondary),
-                ),
-              ],
-            ),
+                  ),
+                  IconButton(
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: tx.txid));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Transaction ID copied'.tr)),
+                      );
+                    },
+                    icon: const Icon(Icons.copy, size: 18),
+                    tooltip: 'Copy transaction ID'.tr,
+                  ),
+                ],
+              ),
+              SelectableText(
+                tx.txid,
+                style: PTypography.codeMedium(color: AppColors.textPrimary),
+              ),
+            ],
           ),
         ),
         if (!isReceived && _paymentDisclosuresFuture != null) ...[
@@ -480,7 +504,7 @@ class _TransactionDetailsState extends ConsumerState<_TransactionDetails> {
   }
 
   String _formatArrr(int arrrtoshis) {
-    return '${(arrrtoshis / 100000000).toStringAsFixed(8)} ARRR';
+    return '${formatArrrAtomic(BigInt.from(arrrtoshis), minimumFractionDigits: 0, groupThousands: true)} ARRR';
   }
 }
 
@@ -586,7 +610,7 @@ class _PaymentDisclosureTile extends StatelessWidget {
   }
 
   String _formatArrr(int arrrtoshis) {
-    return '${(arrrtoshis / 100000000).toStringAsFixed(8)} ARRR';
+    return '${formatArrrAtomic(BigInt.from(arrrtoshis), minimumFractionDigits: 0, groupThousands: true)} ARRR';
   }
 
   String _middleEllipsis(String value) {
@@ -675,12 +699,11 @@ class _DetailRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
           child: Text(
             label,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
             style: PTypography.bodySmall(color: AppColors.textSecondary),
           ),
         ),
@@ -688,8 +711,6 @@ class _DetailRow extends StatelessWidget {
         Expanded(
           child: Text(
             value,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.right,
             style: PTypography.bodySmall(color: AppColors.textPrimary),
           ),
