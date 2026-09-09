@@ -151,6 +151,7 @@ class _SeedDisplayScreenState extends ConsumerState<SeedDisplayScreen> {
   @override
   Widget build(BuildContext context) {
     return PScaffold(
+      bodyMaxWidth: 760,
       title: 'Your seed phrase'.tr,
       appBar: PAppBar(
         title: 'Back up your seed'.tr,
@@ -313,7 +314,7 @@ class _SeedDisplayScreenState extends ConsumerState<SeedDisplayScreen> {
                         PButton(
                           text: 'Copy to clipboard'.tr,
                           onPressed: _copyToClipboard,
-                          variant: PButtonVariant.secondary,
+                          variant: PButtonVariant.outline,
                           size: PButtonSize.medium,
                         ),
                       ],

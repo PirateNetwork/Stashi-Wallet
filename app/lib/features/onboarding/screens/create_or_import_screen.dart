@@ -47,6 +47,7 @@ class _CreateOrImportScreenState extends ConsumerState<CreateOrImportScreen> {
     final totalSteps = onboardingState.mode == OnboardingMode.import ? 5 : 6;
 
     return PScaffold(
+      bodyMaxWidth: 760,
       title: 'New wallet'.tr,
       appBar: PAppBar(
         title: 'New wallet'.tr,
@@ -68,18 +69,6 @@ class _CreateOrImportScreenState extends ConsumerState<CreateOrImportScreen> {
               OnboardingProgressIndicator(
                 currentStep: 1,
                 totalSteps: totalSteps,
-              ),
-              const SizedBox(height: AppSpacing.xxl),
-              Text(
-                'Create or import wallet'.tr,
-                style: AppTypography.h2.copyWith(color: AppColors.textPrimary),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              Text(
-                "Choose how you'd like to set up your wallet".tr,
-                style: AppTypography.body.copyWith(
-                  color: AppColors.textSecondary,
-                ),
               ),
               const SizedBox(height: AppSpacing.xxl),
               PCard(
@@ -109,7 +98,7 @@ class _CreateOrImportScreenState extends ConsumerState<CreateOrImportScreen> {
                   },
                   borderRadius: BorderRadius.circular(16),
                   child: Padding(
-                    padding: const EdgeInsets.all(AppSpacing.lg),
+                    padding: const EdgeInsets.all(AppSpacing.sm),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -190,7 +179,7 @@ class _CreateOrImportScreenState extends ConsumerState<CreateOrImportScreen> {
                   },
                   borderRadius: BorderRadius.circular(16),
                   child: Padding(
-                    padding: const EdgeInsets.all(AppSpacing.lg),
+                    padding: const EdgeInsets.all(AppSpacing.sm),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -226,7 +215,8 @@ class _CreateOrImportScreenState extends ConsumerState<CreateOrImportScreen> {
                                   ),
                                   const SizedBox(height: AppSpacing.xs),
                                   Text(
-                                    'Restore from 24-word seed phrase'.tr,
+                                    'Restore from a 12- or 24-word seed phrase'
+                                        .tr,
                                     style: AppTypography.caption.copyWith(
                                       color: AppColors.textSecondary,
                                     ),
@@ -281,7 +271,7 @@ class _CreateOrImportScreenState extends ConsumerState<CreateOrImportScreen> {
                   },
                   borderRadius: BorderRadius.circular(16),
                   child: Padding(
-                    padding: const EdgeInsets.all(AppSpacing.lg),
+                    padding: const EdgeInsets.all(AppSpacing.sm),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [

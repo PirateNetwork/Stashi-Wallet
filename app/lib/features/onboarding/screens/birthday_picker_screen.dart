@@ -250,6 +250,7 @@ class _BirthdayPickerScreenState extends ConsumerState<BirthdayPickerScreen> {
         : null;
 
     return PScaffold(
+      bodyMaxWidth: 760,
       title: 'Birthday picker'.tr,
       appBar: PAppBar(
         title: isRestore ? 'Wallet birthday'.tr : 'Almost done'.tr,

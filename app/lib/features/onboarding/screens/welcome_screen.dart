@@ -35,6 +35,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
   @override
   Widget build(BuildContext context) {
     return PScaffold(
+      bodyMaxWidth: 760,
       title: 'Stashi Wallet',
       body: LayoutBuilder(
         builder: (context, constraints) {

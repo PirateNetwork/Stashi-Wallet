@@ -191,6 +191,7 @@ class _PassphraseSetupScreenState extends ConsumerState<PassphraseSetupScreen> {
       bottom: basePadding.bottom + MediaQuery.of(context).viewInsets.bottom,
     );
     return PScaffold(
+      bodyMaxWidth: 760,
       title: 'Set a passphrase'.tr,
       appBar: PAppBar(
         title: 'Set a passphrase'.tr,
@@ -459,10 +460,12 @@ class _RequirementItem extends StatelessWidget {
                 : 'Requirement not met'.tr,
           ),
           const SizedBox(width: AppSpacing.sm),
-          Text(
-            text,
-            style: AppTypography.body.copyWith(
-              color: met ? AppColors.textPrimary : AppColors.textSecondary,
+          Expanded(
+            child: Text(
+              text,
+              style: AppTypography.body.copyWith(
+                color: met ? AppColors.textPrimary : AppColors.textSecondary,
+              ),
             ),
           ),
         ],

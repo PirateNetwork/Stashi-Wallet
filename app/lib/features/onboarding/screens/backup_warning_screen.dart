@@ -38,6 +38,7 @@ class _BackupWarningScreenState extends ConsumerState<BackupWarningScreen> {
     );
 
     return PScaffold(
+      bodyMaxWidth: 760,
       title: 'Backup warning'.tr,
       appBar: PAppBar(
         title: 'Back up your seed'.tr,

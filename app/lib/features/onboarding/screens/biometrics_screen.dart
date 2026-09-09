@@ -165,6 +165,7 @@ class _OnboardingBiometricsScreenState
     );
 
     return PScaffold(
+      bodyMaxWidth: 760,
       title: 'Biometrics'.tr,
       appBar: PAppBar(
         title: 'Enable biometrics'.tr,
