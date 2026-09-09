@@ -12,13 +12,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+
 import '../../design/deep_space_theme.dart';
 import '../../ui/atoms/p_gradient_button.dart';
-import '../../ui/atoms/p_icon_button.dart';
 import '../../ui/atoms/p_text_button.dart';
 import '../../ui/organisms/p_app_bar.dart';
 import '../../ui/organisms/p_scaffold.dart';
-import '../../ui/organisms/p_sliver_header.dart';
 import 'models/address_entry.dart';
 import 'providers/address_book_provider.dart';
 import '../../core/i18n/arb_text_localizer.dart';
@@ -108,83 +107,30 @@ class _AddressBookDetailScreenState
 
   @override
   Widget build(BuildContext context) {
-    final gutter = AppSpacing.responsiveGutter(
-      MediaQuery.of(context).size.width,
-    );
     final sectionPadding = AppSpacing.screenPadding(
       MediaQuery.of(context).size.width,
     );
     return PScaffold(
+      bodyMaxWidth: 760,
       title: _entry.label,
+      appBar: PAppBar(
+        title: _entry.label,
+        showBackButton: true,
+        actions: [
+          IconButton(
+            tooltip: 'Edit'.tr,
+            icon: const Icon(Icons.edit_outlined),
+            onPressed: _editEntry,
+          ),
+          IconButton(
+            tooltip: 'Delete'.tr,
+            icon: const Icon(Icons.delete_outline),
+            onPressed: _deleteEntry,
+          ),
+        ],
+      ),
       body: CustomScrollView(
         slivers: [
-          SliverPersistentHeader(
-            pinned: true,
-            delegate: PSliverHeaderDelegate(
-              maxExtentHeight: 180,
-              minExtentHeight: 120,
-              builder: (context, shrinkOffset, {required overlapsContent}) {
-                final progress = (shrinkOffset / (180 - 120)).clamp(0.0, 1.0);
-                return ColoredBox(
-                  color: AppColors.voidBlack,
-                  child: SafeArea(
-                    bottom: false,
-                    child: Padding(
-                      padding: EdgeInsets.only(
-                        left: gutter,
-                        right: gutter,
-                        top: AppSpacing.md,
-                        bottom: AppSpacing.md,
-                      ),
-                      child: Row(
-                        children: [
-                          PIconButton(
-                            icon: Icon(
-                              Icons.arrow_back,
-                              color: AppColors.textPrimary,
-                            ),
-                            onPressed: () => Navigator.of(context).pop(),
-                            tooltip: 'Back'.tr,
-                          ),
-                          const SizedBox(width: AppSpacing.md),
-                          Expanded(
-                            child: Opacity(
-                              opacity: 1 - (progress * 0.3),
-                              child: Text(
-                                _entry.label,
-                                style: AppTypography.h3.copyWith(
-                                  color: AppColors.textPrimary,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: AppSpacing.sm),
-                          PIconButton(
-                            icon: Icon(
-                              Icons.edit_outlined,
-                              color: AppColors.textSecondary,
-                            ),
-                            onPressed: _editEntry,
-                            tooltip: 'Edit'.tr,
-                          ),
-                          PIconButton(
-                            icon: Icon(
-                              Icons.delete_outline,
-                              color: AppColors.error,
-                            ),
-                            onPressed: _deleteEntry,
-                            tooltip: 'Delete'.tr,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
           SliverToBoxAdapter(
             child: Padding(
               padding: sectionPadding,
@@ -439,11 +385,14 @@ class _ActionChip extends StatelessWidget {
             children: [
               Icon(icon, size: 18, color: color),
               const SizedBox(width: AppSpacing.xs),
-              Text(
-                label,
-                style: AppTypography.caption.copyWith(
-                  color: color,
-                  fontWeight: FontWeight.w600,
+              Flexible(
+                child: Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  style: AppTypography.caption.copyWith(
+                    color: color,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ],
@@ -633,6 +582,7 @@ class _AddressBookEditScreenState extends ConsumerState<AddressBookEditScreen> {
   @override
   Widget build(BuildContext context) {
     return PScaffold(
+      bodyMaxWidth: 760,
       appBar: PAppBar(
         title: _isEditing ? 'Edit Address'.tr : 'Add Address'.tr,
         subtitle: 'Edit label, notes, and color'.tr,

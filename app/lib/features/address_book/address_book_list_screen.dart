@@ -11,11 +11,14 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../design/deep_space_theme.dart';
 import '../../ui/atoms/p_button.dart';
 import '../../ui/atoms/p_gradient_button.dart';
 import '../../ui/molecules/p_dialog.dart';
 import '../../ui/molecules/wallet_switcher.dart';
+import '../../ui/organisms/p_app_bar.dart';
+import '../../ui/organisms/p_scaffold.dart';
 import '../../core/providers/wallet_providers.dart';
 import 'address_book_detail_screen.dart';
 import 'models/address_entry.dart';
@@ -133,38 +136,34 @@ class _AddressBookListScreenState extends ConsumerState<AddressBookListScreen> {
     final state = ref.watch(addressBookProvider(walletId));
     final filteredEntries = _applyFilter(state.entries);
 
-    return Scaffold(
-      backgroundColor: AppColors.deepSpace,
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Hero Header
-            PGradientHeroHeader(
-              title: 'Address Book'.tr,
-              subtitle: '{count} saved addresses'.trArgs({
-                'count': state.entries.length,
-              }),
-              actions: [
-                const WalletSwitcherButton(compact: true),
-                PGradientButton(
-                  text: 'Add'.tr,
-                  icon: Icons.add,
-                  size: PGradientButtonSize.small,
-                  onPressed: () => _navigateToAdd(walletId),
-                ),
-              ],
-            ),
+    return PScaffold(
+      bodyMaxWidth: 760,
+      appBar: PAppBar(
+        title: 'Address Book'.tr,
+        showBackButton: true,
+        actions: [
+          IconButton(
+            tooltip: 'Add'.tr,
+            icon: const Icon(Icons.person_add_outlined),
+            onPressed: () => _navigateToAdd(walletId),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          const Padding(
+            padding: EdgeInsets.all(AppSpacing.md),
+            child: WalletSwitcherButton(),
+          ),
+          // Search and Filter Bar
+          _buildSearchBar(),
 
-            // Search and Filter Bar
-            _buildSearchBar(),
+          // Color Filter Chips
+          _buildColorFilters(),
 
-            // Color Filter Chips
-            _buildColorFilters(),
-
-            // List
-            Expanded(child: _buildContent(state, filteredEntries, walletId)),
-          ],
-        ),
+          // List
+          Expanded(child: _buildContent(state, filteredEntries, walletId)),
+        ],
       ),
     );
   }

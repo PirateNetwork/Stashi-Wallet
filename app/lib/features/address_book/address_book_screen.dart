@@ -65,43 +65,49 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
         .setSearchQuery(_searchController.text);
   }
 
-  void _showAddSheet() {
-    final walletId = _walletId;
-    if (walletId == null) {
-      _showSnackBar('No active wallet');
-      return;
-    }
-    PBottomSheet.show<void>(
-      context: context,
-      title: 'Add Address'.tr,
-      content: AddEditAddressSheet(
-        walletId: walletId,
-        onSave: (entry) {
-          Navigator.of(context).pop();
-          _showSnackBar('Address saved'.tr);
-        },
-      ),
-    );
-  }
+  void _showAddSheet() => _showEditor();
 
-  void _showEditSheet(AddressEntry entry) {
+  void _showEditSheet(AddressEntry entry) => _showEditor(entry: entry);
+
+  void _showEditor({AddressEntry? entry}) {
     final walletId = _walletId;
     if (walletId == null) {
-      _showSnackBar('No active wallet');
+      _showSnackBar('No active wallet'.tr);
       return;
     }
-    PBottomSheet.show<void>(
-      context: context,
-      title: 'Edit Address'.tr,
-      content: AddEditAddressSheet(
-        walletId: walletId,
-        entry: entry,
-        onSave: (updated) {
-          Navigator.of(context).pop();
-          _showSnackBar('Address updated'.tr);
-        },
-      ),
+    final content = AddEditAddressSheet(
+      walletId: walletId,
+      entry: entry,
+      onSave: (_) {
+        Navigator.of(context).pop();
+        _showSnackBar(
+          entry == null ? 'Address saved'.tr : 'Address updated'.tr,
+        );
+      },
     );
+    if (MediaQuery.sizeOf(context).width >= 600) {
+      showDialog<void>(
+        context: context,
+        builder: (context) => Dialog(
+          backgroundColor: AppColors.backgroundElevated,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: 560,
+              maxHeight: MediaQuery.sizeOf(context).height * 0.9,
+            ),
+            child: content,
+          ),
+        ),
+      );
+    } else {
+      PBottomSheet.showAdaptive<void>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        backgroundColor: AppColors.backgroundElevated,
+        builder: (_) => content,
+      );
+    }
   }
 
   void _showDetailsSheet(AddressEntry entry) {
@@ -144,7 +150,7 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
           PDialogAction<bool>(
             label: 'Cancel'.tr,
             onPressed: () => Navigator.of(context).pop(false),
-            variant: PButtonVariant.secondary,
+            variant: PButtonVariant.outline,
             result: false,
           ),
           PDialogAction<bool>(
@@ -168,9 +174,8 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
   }
 
   void _showSnackBar(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _showFilterSheet() {
@@ -253,6 +258,7 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
     final walletId = _walletId;
     if (walletId == null) {
       return PScaffold(
+        bodyMaxWidth: 760,
         title: 'Address Book'.tr,
         appBar: PAppBar(
           title: 'Address Book'.tr,
@@ -274,6 +280,7 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
     );
 
     return PScaffold(
+      bodyMaxWidth: 760,
       title: 'Address Book'.tr,
       appBar: PAppBar(
         title: 'Address Book'.tr,
@@ -281,7 +288,6 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
             ? 'Tap an entry to autofill the send form'.tr
             : 'Manage your trusted contacts'.tr,
         actions: [
-          const WalletSwitcherButton(compact: true),
           PIconButton(
             icon: _buildFilterIcon(hasFilters),
             onPressed: _showFilterSheet,
@@ -291,6 +297,11 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
       ),
       body: Column(
         children: [
+          if (widget.onSelectAddress == null)
+            const Padding(
+              padding: EdgeInsets.all(AppSpacing.md),
+              child: WalletSwitcherButton(),
+            ),
           // Search bar
           Padding(
             padding: EdgeInsets.fromLTRB(
@@ -340,7 +351,7 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
                             .read(addressBookProvider(walletId).notifier)
                             .refresh();
                       },
-                      variant: PButtonVariant.secondary,
+                      variant: PButtonVariant.outline,
                     ),
                   ],
                 ),
@@ -375,7 +386,9 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
                   return AddressCard(
                     key: ValueKey(entry.id),
                     entry: entry,
-                    onTap: () => _showDetailsSheet(entry),
+                    onTap: () => widget.onSelectAddress != null
+                        ? widget.onSelectAddress!(entry)
+                        : _showDetailsSheet(entry),
                     onFavoriteToggle: () {
                       ref
                           .read(addressBookProvider(walletId).notifier)
@@ -387,11 +400,10 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
             ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
+      floatingActionButton: PButton(
         onPressed: _showAddSheet,
         icon: const Icon(Icons.add),
-        label: Text('Add Address'.tr),
-        backgroundColor: AppColors.accentPrimary,
+        text: 'Add Address'.tr,
       ),
     );
   }
@@ -413,6 +425,7 @@ class AddressCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return PCard(
+      padding: EdgeInsets.zero,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(16),
@@ -424,7 +437,7 @@ class AddressCard extends StatelessWidget {
               Stack(
                 children: [
                   CircleAvatar(
-                    radius: 24,
+                    radius: 20,
                     backgroundColor: entry.colorTag.color.withValues(
                       alpha: 0.2,
                     ),
@@ -475,13 +488,13 @@ class AddressCard extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        if (entry.isFavorite)
-                          Icon(Icons.star, size: 16, color: AppColors.warning),
                       ],
                     ),
                     const SizedBox(height: 4),
                     Text(
                       entry.truncatedAddress,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: AppTypography.caption.copyWith(
                         color: AppColors.textSecondary,
                         fontFamily: 'monospace',
@@ -571,7 +584,7 @@ class EmptyAddressBookState extends StatelessWidget {
               PButton(
                 text: 'Clear Filters'.tr,
                 onPressed: onClearFilters,
-                variant: PButtonVariant.secondary,
+                variant: PButtonVariant.outline,
               ),
             ],
           ],
@@ -944,7 +957,7 @@ class _AddEditAddressSheetState extends ConsumerState<AddEditAddressSheet> {
                   child: PButton(
                     text: 'Cancel'.tr,
                     onPressed: () => Navigator.of(context).pop(),
-                    variant: PButtonVariant.secondary,
+                    variant: PButtonVariant.outline,
                     size: PButtonSize.large,
                   ),
                 ),
@@ -1321,6 +1334,7 @@ class _AddressQrScannerScreenState extends State<_AddressQrScannerScreen> {
   @override
   Widget build(BuildContext context) {
     return PScaffold(
+      bodyMaxWidth: 760,
       title: 'Scan QR'.tr,
       appBar: PAppBar(
         title: 'Scan QR'.tr,
