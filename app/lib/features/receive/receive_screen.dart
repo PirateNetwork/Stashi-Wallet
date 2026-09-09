@@ -187,6 +187,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
       final archivedAddressCount = groupAddresses.length - visibleAddressCount;
 
       return PScaffold(
+        bodyMaxWidth: 760,
         appBar: PAppBar(
           title: 'Receive'.tr,
           subtitle: 'Share a QR code to get paid.'.tr,
@@ -251,7 +252,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
                                   SizedBox(height: PSpacing.md),
                                   PButton(
                                     onPressed: viewModel.loadCurrentAddress,
-                                    variant: PButtonVariant.secondary,
+                                    variant: PButtonVariant.outline,
                                     child: Text('Retry'.tr),
                                   ),
                                 ],
@@ -733,6 +734,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
       debugPrint('Error in ReceiveScreen build: $e');
       debugPrint('Stack trace: $stackTrace');
       return PScaffold(
+        bodyMaxWidth: 760,
         body: Center(
           child: Padding(
             padding: PSpacing.screenPadding(

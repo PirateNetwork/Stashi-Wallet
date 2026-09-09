@@ -89,7 +89,7 @@ class AddressQRWidget extends StatelessWidget {
                     child: PButton(
                       onPressed: onCopy,
                       icon: const Icon(Icons.copy, size: 20),
-                      text: 'Copy'.tr,
+                      text: qrData != null ? 'Copy request'.tr : 'Copy'.tr,
                       fullWidth: true,
                     ),
                   );
@@ -98,12 +98,12 @@ class AddressQRWidget extends StatelessWidget {
                     child: PButton(
                       onPressed: onShare,
                       icon: const Icon(Icons.share, size: 20),
-                      text: 'Share'.tr,
+                      text: qrData != null ? 'Share request'.tr : 'Share'.tr,
                       fullWidth: true,
                       variant: PButtonVariant.outline,
                     ),
                   );
-                  if (constraints.maxWidth < 300 ||
+                  if (constraints.maxWidth < (qrData != null ? 400 : 300) ||
                       MediaQuery.textScalerOf(context).scale(1) > 1.3) {
                     return Column(
                       children: [
