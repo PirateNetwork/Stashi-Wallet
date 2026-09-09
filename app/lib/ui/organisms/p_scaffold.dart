@@ -12,6 +12,9 @@ import 'p_app_bar.dart';
 
 /// Stashi Wallet Scaffold with custom titlebar for desktop
 class PScaffold extends StatelessWidget {
+  @visibleForTesting
+  static bool debugShowDesktopTitleBar = false;
+
   const PScaffold({
     required this.body,
     this.title,
@@ -20,6 +23,7 @@ class PScaffold extends StatelessWidget {
     this.floatingActionButton,
     this.bottomNavigationBar,
     this.useSafeArea = true,
+    this.bodyMaxWidth,
     super.key,
   });
 
@@ -30,6 +34,9 @@ class PScaffold extends StatelessWidget {
   final Widget? floatingActionButton;
   final Widget? bottomNavigationBar;
   final bool useSafeArea;
+
+  /// Bounds task-focused forms while leaving dashboards and lists independent.
+  final double? bodyMaxWidth;
 
   bool get _isTest => Platform.environment.containsKey('FLUTTER_TEST');
 
@@ -46,9 +53,19 @@ class PScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final content = useSafeArea ? SafeArea(child: body) : body;
+    final boundedBody = bodyMaxWidth == null
+        ? body
+        : Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: bodyMaxWidth!),
+              child: SizedBox(width: double.infinity, child: body),
+            ),
+          );
+    final content = useSafeArea ? SafeArea(child: boundedBody) : boundedBody;
     final dismissibleContent = _KeyboardDismissArea(child: content);
-    final useCustomTitleBar = _isDesktop && shouldUseCustomTitleBar();
+    final useCustomTitleBar =
+        debugShowDesktopTitleBar || (_isDesktop && shouldUseCustomTitleBar());
 
     if (useCustomTitleBar) {
       return Scaffold(
@@ -56,7 +73,7 @@ class PScaffold extends StatelessWidget {
         body: Column(
           children: [
             // Custom titlebar for desktop
-            PWindowTitleBar(title: title ?? 'Stashi Wallet'),
+            const PWindowTitleBar(title: 'Stashi Wallet'),
 
             if (appBar != null)
               SizedBox(height: _appBarHeight(context), child: appBar),

@@ -93,7 +93,11 @@ void main() {
       const ProviderScope(
         child: MaterialApp(
           home: Scaffold(
-            appBar: PAppBar(title: 'Send', showBackButton: false),
+            appBar: PAppBar(
+              title: 'Send',
+              showBackButton: false,
+              showThemeToggle: true,
+            ),
           ),
         ),
       ),

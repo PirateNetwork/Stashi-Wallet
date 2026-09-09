@@ -110,6 +110,7 @@ class AppShell extends ConsumerWidget {
     }
     if (path.startsWith('/pay')) {
       return PAppBar(
+        preserveLayout: true,
         title: 'Wallets'.tr,
         subtitle: 'Send, receive, swap, or verify in a few steps.'.tr,
         actions: [WalletSwitcherButton(compact: true)],

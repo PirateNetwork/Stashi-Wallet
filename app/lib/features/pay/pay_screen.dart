@@ -47,6 +47,8 @@ class PayScreen extends StatelessWidget {
         title: 'Wallets'.tr,
         useSafeArea: false,
         appBar: PAppBar(
+          preserveLayout: true,
+          showThemeToggle: true,
           title: 'Wallets'.tr,
           subtitle: 'Send, receive, swap, or verify in a few steps.'.tr,
           actions: appBarActions,
@@ -60,6 +62,8 @@ class PayScreen extends StatelessWidget {
       appBar: desktopPlatform
           ? null
           : PAppBar(
+              preserveLayout: true,
+              showThemeToggle: true,
               title: 'Wallets'.tr,
               subtitle: 'Send, receive, swap, or verify in a few steps.'.tr,
               actions: appBarActions,

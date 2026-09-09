@@ -21,7 +21,8 @@ class PAppBar extends StatelessWidget implements PreferredSizeWidget {
     this.useGradientBackground = false,
     this.centerTitle = false,
     this.surfaceColor,
-    this.showThemeToggle = true,
+    this.showThemeToggle = false,
+    this.preserveLayout = false,
     super.key,
   });
 
@@ -36,11 +37,19 @@ class PAppBar extends StatelessWidget implements PreferredSizeWidget {
   final Color? surfaceColor;
   final bool showThemeToggle;
 
+  /// Preserve the approved dashboard/action-hub presentation.
+  final bool preserveLayout;
+
   @override
-  Size get preferredSize => const Size.fromHeight(82);
+  Size get preferredSize => Size.fromHeight(preserveLayout ? 82 : 72);
 
   double preferredHeightFor(BuildContext context) {
     final size = MediaQuery.sizeOf(context);
+    if (!preserveLayout) {
+      final scaled = MediaQuery.textScalerOf(context).scale(1);
+      if (scaled > 1.3) return (54 * scaled + 16).clamp(88, 160);
+      return PSpacing.isCompactLandscape(size) ? 64 : 72;
+    }
     if (PSpacing.isCompactLandscape(size)) return 64;
     if (isDesktopPlatform && PSpacing.isCompactDesktopViewport(size)) {
       return 68;
@@ -52,6 +61,7 @@ class PAppBar extends StatelessWidget implements PreferredSizeWidget {
     if (showBackButton != null) {
       return showBackButton!;
     }
+    if (onBack != null) return true;
     final navigator = Navigator.maybeOf(context);
     if (navigator == null) {
       return false;
@@ -83,7 +93,9 @@ class PAppBar extends StatelessWidget implements PreferredSizeWidget {
         isDesktopPlatform && PSpacing.isCompactDesktopViewport(mediaQuery.size);
     final compactViewport = compactLandscape || compactDesktop;
     final textScale = mediaQuery.textScaler.scale(1);
-    final verticalPadding = compactViewport
+    final verticalPadding = !preserveLayout
+        ? PSpacing.xs
+        : compactViewport
         ? PSpacing.xs
         : isMobile
         ? PSpacing.sm
@@ -117,28 +129,39 @@ class PAppBar extends StatelessWidget implements PreferredSizeWidget {
 
     final decoration = BoxDecoration(
       color: gradient == null
-          ? (surfaceColor ?? AppColors.backgroundSurface)
+          ? (surfaceColor ??
+                (preserveLayout
+                    ? AppColors.backgroundSurface
+                    : AppColors.backgroundBase))
           : null,
       gradient: gradient,
       border: Border(bottom: BorderSide(color: AppColors.borderSubtle)),
-      boxShadow: [
-        BoxShadow(
-          color: AppColors.shadow,
-          blurRadius: 12,
-          offset: const Offset(0, 6),
-        ),
-      ],
+      boxShadow: preserveLayout
+          ? [
+              BoxShadow(
+                color: AppColors.shadow,
+                blurRadius: 12,
+                offset: const Offset(0, 6),
+              ),
+            ]
+          : null,
     );
 
     final titleStyle = PTypography.titleMedium(color: AppColors.textPrimary)
         .copyWith(
-          fontSize: isMobile ? 16 : (isNarrow ? 15 : 17),
+          fontSize: preserveLayout
+              ? (isMobile ? 16 : (isNarrow ? 15 : 17))
+              : 18,
           fontWeight: FontWeight.w600,
+          height: preserveLayout ? 1.5 : 1.2,
         );
     final subtitleStyle = PTypography.caption(color: AppColors.textSecondary)
         .copyWith(fontSize: isMobile ? 10 : 11);
     final showSubtitle =
-        subtitle != null && textScale <= 1.3 && !compactLandscape;
+        preserveLayout &&
+        subtitle != null &&
+        textScale <= 1.3 &&
+        !compactLandscape;
 
     final titleColumn = Column(
       crossAxisAlignment: centerTitle
@@ -150,7 +173,7 @@ class PAppBar extends StatelessWidget implements PreferredSizeWidget {
           title,
           style: titleStyle,
           textAlign: centerTitle ? TextAlign.center : TextAlign.left,
-          maxLines: 1,
+          maxLines: preserveLayout ? 1 : 2,
           overflow: TextOverflow.ellipsis,
         ),
         if (showSubtitle) ...[
