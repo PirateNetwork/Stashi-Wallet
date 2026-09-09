@@ -16,6 +16,22 @@ class DebugLogController {
 
   static bool get isEnabled => _enabled;
 
+  static Future<void> openLogFolder() async {
+    if (!(Platform.isWindows || Platform.isMacOS || Platform.isLinux)) return;
+    final folder = File(await resolveDebugLogPath()).absolute.parent;
+    await folder.create(recursive: true);
+    final command = Platform.isWindows
+        ? 'explorer.exe'
+        : Platform.isMacOS
+        ? 'open'
+        : 'xdg-open';
+    final result = await Process.run(command, [folder.path]);
+    // Explorer may return 1 after handing the folder to an existing process.
+    if (result.exitCode != 0 && !(Platform.isWindows && result.exitCode == 1)) {
+      throw StateError('Unable to open log folder');
+    }
+  }
+
   static Future<void> initialize() async {
     final enabled = await _readEnabled();
     _enabled = enabled;

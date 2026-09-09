@@ -694,39 +694,73 @@ class SettingsScreen extends ConsumerWidget {
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
+        scrollable: true,
         backgroundColor: AppColors.surface,
         title: Text('Debug logging'.tr),
-        content: Text('Share a redacted copy or clear the current log.'.tr),
+        content: SizedBox(
+          width: 440,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('Share a redacted copy or clear the current log.'.tr),
+              const SizedBox(height: AppSpacing.md),
+              if (isDesktopPlatform)
+                ListTile(
+                  onTap: () async {
+                    Navigator.of(dialogContext).pop();
+                    try {
+                      await DebugLogController.openLogFolder();
+                    } catch (_) {
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Could not open log folder'.tr)),
+                      );
+                    }
+                  },
+                  leading: const Icon(Icons.folder_open_outlined),
+                  contentPadding: EdgeInsets.zero,
+                  title: Text('Open log folder'.tr),
+                ),
+              ListTile(
+                onTap: () async {
+                  Navigator.of(dialogContext).pop();
+                  await DebugLogController.clearAllLogs();
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Debug logs cleared'.tr),
+                        backgroundColor: AppColors.info,
+                      ),
+                    );
+                  }
+                },
+                leading: const Icon(Icons.delete_outline),
+                contentPadding: EdgeInsets.zero,
+                title: Text('Clear'.tr),
+              ),
+              ListTile(
+                onTap: () async {
+                  Navigator.of(dialogContext).pop();
+                  await _shareDebugLog(context);
+                },
+                leading: const Icon(Icons.ios_share),
+                contentPadding: EdgeInsets.zero,
+                title: Text('Share'.tr),
+              ),
+              ListTile(
+                onTap: () async {
+                  Navigator.of(dialogContext).pop();
+                  await _setDebugLogging(context, ref, false);
+                },
+                leading: const Icon(Icons.power_settings_new),
+                contentPadding: EdgeInsets.zero,
+                title: Text('Disable'.tr),
+              ),
+            ],
+          ),
+        ),
         actions: [
-          TextButton(
-            onPressed: () async {
-              Navigator.of(dialogContext).pop();
-              await DebugLogController.clearAllLogs();
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Debug logs cleared'.tr),
-                    backgroundColor: AppColors.info,
-                  ),
-                );
-              }
-            },
-            child: Text('Clear'.tr),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.of(dialogContext).pop();
-              await _shareDebugLog(context);
-            },
-            child: Text('Share'.tr),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.of(dialogContext).pop();
-              await _setDebugLogging(context, ref, false);
-            },
-            child: Text('Disable'.tr),
-          ),
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
             child: Text('Close'.tr),
