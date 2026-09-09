@@ -2,6 +2,7 @@
 library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../models/address_entry.dart';
 import '../../../core/ffi/ffi_bridge.dart';
 
@@ -43,7 +44,7 @@ class AddressBookState {
 
   /// Get filtered entries
   List<AddressEntry> get filteredEntries {
-    var result = entries;
+    var result = List<AddressEntry>.of(entries);
 
     // Filter by favorites
     if (showFavoritesOnly) {
@@ -164,8 +165,11 @@ class AddressBookNotifier extends Notifier<AddressBookState> {
 
   @override
   AddressBookState build() {
-    _loadEntries();
-    return const AddressBookState();
+    // A Notifier cannot read its state until build has returned.
+    Future.microtask(() {
+      if (ref.mounted) _loadEntries();
+    });
+    return const AddressBookState(isLoading: true);
   }
 
   /// Load entries from FFI storage
@@ -175,9 +179,10 @@ class AddressBookNotifier extends Notifier<AddressBookState> {
     try {
       final ffiEntries = await AddressBookEntryFfi.listAddressBook(walletId);
       final entries = ffiEntries.map(_ffiEntryToModel).toList();
-
+      if (!ref.mounted) return;
       state = state.copyWith(entries: entries, isLoading: false);
     } catch (e) {
+      if (!ref.mounted) return;
       state = state.copyWith(isLoading: false, error: e.toString());
     }
   }
