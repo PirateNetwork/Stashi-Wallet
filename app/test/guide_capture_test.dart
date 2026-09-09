@@ -1,4 +1,38 @@
+import 'package:pirate_wallet/routes/app_router.dart';
+import 'package:pirate_wallet/ui/organisms/p_scaffold.dart';
+
 import 'dart:io';
+
+import 'package:decimal/decimal.dart';
+import 'package:pirate_wallet/core/ffi/generated/frb_generated.dart';
+import 'package:pirate_wallet/core/ffi/generated/models.dart' as native;
+import 'package:pirate_wallet/features/address_book/address_book_screen.dart';
+import 'package:pirate_wallet/features/address_book/address_book_detail_screen.dart';
+import 'package:pirate_wallet/features/address_book/models/address_entry.dart';
+import 'package:pirate_wallet/features/address_book/providers/address_book_provider.dart';
+import 'package:pirate_wallet/features/keys/key_detail_screen.dart';
+import 'package:pirate_wallet/features/keys/consolidate_key_screen.dart';
+import 'package:pirate_wallet/features/keys/sweep_key_screen.dart';
+import 'package:pirate_wallet/features/unlock/unlock_screen.dart';
+import 'package:pirate_wallet/features/payment_disclosure/payment_disclosure_verifier_screen.dart';
+import 'package:pirate_wallet/features/onboarding/screens/passphrase_setup_screen.dart';
+import 'package:pirate_wallet/features/onboarding/screens/biometrics_screen.dart';
+import 'package:pirate_wallet/features/settings/export_seed_screen.dart';
+import 'package:pirate_wallet/features/settings/panic_pin_screen.dart';
+import 'package:pirate_wallet/features/settings/watch_only_screen.dart';
+import 'package:pirate_wallet/features/settings/screens/biometrics_screen.dart';
+import 'package:pirate_wallet/features/settings/screens/passphrase_change_screen.dart';
+import 'package:pirate_wallet/features/settings/screens/theme_screen.dart';
+import 'package:pirate_wallet/features/settings/screens/currency_screen.dart';
+import 'package:pirate_wallet/features/settings/screens/language_screen.dart';
+import 'package:pirate_wallet/features/settings/screens/seed_phrase_language_screen.dart';
+import 'package:pirate_wallet/features/settings/screens/swap_interface_screen.dart';
+import 'package:pirate_wallet/features/settings/screens/terms_screen.dart';
+import 'package:pirate_wallet/features/settings/screens/licenses_screen.dart';
+import 'package:pirate_wallet/features/swap/swap_screen.dart';
+import 'package:pirate_wallet/features/swap/swap_viewmodel.dart';
+
+import 'support/restored_wallet_api.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -192,6 +226,7 @@ final _syncedStatus = SyncStatus(
 
 Widget _walletApp(
   Widget child, {
+  bool unlocked = false,
   bool includeReceiveState = false,
   bool includeAppVersion = false,
   bool light = false,
@@ -201,6 +236,11 @@ Widget _walletApp(
 }) {
   return ProviderScope(
     overrides: [
+      if (unlocked) ...[
+        walletsExistProvider.overrideWith((ref) async => true),
+        hasAppPassphraseProvider.overrideWith((ref) async => true),
+        appUnlockedProvider.overrideWith(_ReviewUnlocked.new),
+      ],
       activeWalletProvider.overrideWith(_ActiveWallet.new),
       decoyModeProvider.overrideWith(_NormalMode.new),
       activeWalletMetaProvider.overrideWithValue(_walletMeta),
@@ -310,9 +350,11 @@ Future<void> _capture(
   TargetPlatform platform = TargetPlatform.android,
   Future<void> Function(WidgetTester tester)? interact,
   bool captureOverlay = false,
+  bool allowKnownBaselineOverflow = false,
   void Function(WidgetTester)? verify,
 }) async {
   debugDefaultTargetPlatformOverride = platform;
+  PScaffold.debugShowDesktopTitleBar = platform == TargetPlatform.windows;
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   await tester.pumpWidget(widget);
@@ -336,9 +378,15 @@ Future<void> _capture(
     );
   }
 
-  expect(tester.takeException(), isNull);
+  final exception = tester.takeException();
+  if (allowKnownBaselineOverflow && exception != null) {
+    expect(exception.toString(), contains('overflowed'));
+  } else {
+    expect(exception, isNull);
+  }
   await tester.pumpWidget(const SizedBox.shrink());
   await tester.pump(const Duration(milliseconds: 1));
+  PScaffold.debugShowDesktopTitleBar = false;
   debugDefaultTargetPlatformOverride = null;
   AppColors.syncWithTheme(Brightness.dark);
   tester.view.reset();
@@ -351,6 +399,7 @@ Future<void> _captureWelcome(
   required TargetPlatform platform,
 }) async {
   debugDefaultTargetPlatformOverride = platform;
+  PScaffold.debugShowDesktopTitleBar = platform == TargetPlatform.windows;
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   final router = GoRouter(
@@ -409,11 +458,153 @@ Future<void> _captureWelcome(
   expect(tester.takeException(), isNull);
   router.dispose();
   await tester.pumpWidget(const SizedBox.shrink());
+  PScaffold.debugShowDesktopTitleBar = false;
   debugDefaultTargetPlatformOverride = null;
   tester.view.reset();
 }
 
+class _ReviewUnlocked extends AppUnlockedNotifier {
+  @override
+  bool build() => true;
+}
+
+class _ReviewRoutes extends ConsumerStatefulWidget {
+  const _ReviewRoutes();
+  @override
+  ConsumerState<_ReviewRoutes> createState() => _ReviewRoutesState();
+}
+
+class _ReviewRoutesState extends ConsumerState<_ReviewRoutes> {
+  late final GoRouter _router;
+  @override
+  void initState() {
+    super.initState();
+    _router = ref.read(appRouterProvider);
+    _router.go('/settings/address-book');
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      MaterialApp.router(theme: PTheme.dark(), routerConfig: _router);
+}
+
 void main() {
+  testWidgets(
+    'address book Send opens the real Send route with its recipient',
+    (tester) async {
+      RustLib.initMock(api: _ReviewApi());
+      addTearDown(RustLib.dispose);
+      await tester.pumpWidget(
+        _walletApp(const _ReviewRoutes(), unlocked: true),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Alex'));
+      await tester.pumpAndSettle();
+      final send = find.text('Send to This Address');
+      await tester.ensureVisible(send);
+      await tester.pumpAndSettle();
+      await tester.tap(send);
+      await tester.pumpAndSettle();
+      expect(find.byType(SendScreen), findsOneWidget);
+      expect(
+        tester.widget<TextField>(find.byType(TextField).first).controller!.text,
+        'zs1samplecontactaddressnotforpayments',
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'contact picker fills only the chosen recipient and preserves amounts',
+    (tester) async {
+      tester.view.physicalSize = const Size(800, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      RustLib.initMock(api: _ReviewApi());
+      addTearDown(RustLib.dispose);
+      await tester.pumpWidget(_walletApp(const SendScreen()));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).at(1), '10');
+      await tester.ensureVisible(find.text('Add recipient'));
+      await tester.tap(find.text('Add recipient'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).at(3), '3');
+      final picker = find.byTooltip('Address Book').last;
+      await tester.ensureVisible(picker);
+      await tester.pumpAndSettle();
+      await tester.tap(picker);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Alex'));
+      await tester.pumpAndSettle();
+      final fields = tester
+          .widgetList<TextField>(find.byType(TextField))
+          .toList();
+      expect(fields[0].controller!.text, isEmpty);
+      expect(fields[1].controller!.text, '10');
+      expect(
+        fields[2].controller!.text,
+        'zs1samplecontactaddressnotforpayments',
+      );
+      expect(fields[3].controller!.text, '3');
+      expect(tester.takeException(), isNull);
+    },
+  );
+  _registerReviewCaptures();
+  testWidgets('send review stays reachable above keyboard', (tester) async {
+    addTearDown(tester.view.reset);
+    RustLib.initMock(api: _ReviewApi());
+    addTearDown(RustLib.dispose);
+    await _capture(
+      tester,
+      size: const Size(320, 640),
+      filename: 'send-keyboard-phone.png',
+      widget: _walletApp(const SendScreen()),
+      interact: (tester) async {
+        tester.view.viewInsets = const FakeViewPadding(bottom: 280);
+        await tester.pump();
+        await tester.enterText(find.byType(TextField).at(1), '10');
+        await tester.scrollUntilVisible(
+          find.text('Review transaction'),
+          180,
+          scrollable: find
+              .byWidgetPredicate(
+                (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
+              )
+              .first,
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Review transaction').hitTestable(), findsOneWidget);
+      },
+    );
+  });
+
+  testWidgets('captures send review states', (tester) async {
+    RustLib.initMock(api: _ReviewApi());
+    addTearDown(RustLib.dispose);
+    for (final desktop in [false, true]) {
+      await _capture(
+        tester,
+        size: desktop ? const Size(1280, 900) : const Size(390, 844),
+        filename: 'send-review-${desktop ? 'desktop' : 'phone'}.png',
+        platform: desktop ? TargetPlatform.windows : TargetPlatform.android,
+        widget: _walletApp(const SendScreen()),
+        interact: (tester) async {
+          final fields = find.byType(TextField);
+          await tester.enterText(
+            fields.at(0),
+            'zs1stashi9x4y0ku3z7g5m2r8e6p0q4w7t9n3c5v8b2x6a0s4d7f9h3j5k8l2p6q0w4e7r9t',
+          );
+          await tester.enterText(fields.at(1), '12345.12345678');
+          FocusManager.instance.primaryFocus?.unfocus();
+          await tester.ensureVisible(find.text('Review transaction'));
+          await tester.tap(find.text('Review transaction'));
+          await tester.pumpAndSettle();
+          expect(find.text('Unlock to send'), findsOneWidget);
+        },
+      );
+    }
+  });
+
   setUpAll(() async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
@@ -438,6 +629,10 @@ void main() {
       'JetBrainsMono',
     )..addFont(rootBundle.load('assets/fonts/JetBrainsMono/JetBrainsMono.ttf'));
     await monospace.load();
+    final systemMono = FontLoader(
+      'monospace',
+    )..addFont(rootBundle.load('assets/fonts/JetBrainsMono/JetBrainsMono.ttf'));
+    await systemMono.load();
 
     final materialIconsPath =
         Platform.environment['PIRATE_MATERIAL_ICONS_FONT'];
@@ -452,6 +647,7 @@ void main() {
   });
 
   tearDown(() {
+    PScaffold.debugShowDesktopTitleBar = false;
     debugDefaultTargetPlatformOverride = null;
   });
 
@@ -1125,3 +1321,288 @@ Future<NodeTestResult> _guideNodeTester({
   serverVersion: 'lightwalletd',
   chainName: 'main',
 );
+
+// Read-only fixtures for visual review. No real wallet, secrets or network.
+class _ReviewApi extends RestoredWalletApi {
+  @override
+  Future<SpendabilityStatus> crateApiGetSpendabilityStatus({
+    required String walletId,
+  }) async => SpendabilityStatus(
+    spendable: true,
+    rescanRequired: false,
+    targetHeight: BigInt.from(4111871),
+    anchorHeight: BigInt.from(4111871),
+    validatedAnchorHeight: BigInt.from(4111871),
+    repairQueued: false,
+    reasonCode: '',
+  );
+  @override
+  Future<PendingTx> crateApiBuildTx({
+    required String walletId,
+    required List<Output> outputs,
+    BigInt? feeOpt,
+  }) async {
+    final total = outputs.fold(
+      BigInt.zero,
+      (sum, output) => sum + output.amount,
+    );
+    final fee = feeOpt ?? BigInt.from(10000);
+    return PendingTx(
+      id: 'visual-review-only',
+      outputs: outputs,
+      totalAmount: total,
+      fee: fee,
+      change: BigInt.zero,
+      inputTotal: total + fee,
+      numInputs: 2,
+      expiryHeight: 4111891,
+      createdAt: 1788134400,
+    );
+  }
+
+  @override
+  Future<bool> crateApiHasDuressPassphrase() async => false;
+
+  @override
+  Future<bool> crateApiHasAppPassphrase() async => true;
+
+  @override
+  Future<List<native.AddressBookEntryFfi>> crateApiListAddressBook({
+    required String walletId,
+  }) async => [
+    native.AddressBookEntryFfi(
+      id: 1,
+      walletId: walletId,
+      address: 'zs1samplecontactaddressnotforpayments',
+      label: 'Alex',
+      notes: 'Monthly studio rent',
+      colorTag: native.AddressBookColorTag.blue,
+      isFavorite: true,
+      createdAt: 1788220800,
+      updatedAt: 1788220800,
+      useCount: 3,
+    ),
+  ];
+}
+
+class _ReviewSwap extends SwapViewModel {
+  @override
+  SwapViewModelState build() => SwapViewModelState(
+    payAmountText: '0.25',
+    fundingLtcBalance: Decimal.parse('1.5'),
+    fundingArrrBalance: Decimal.parse('250'),
+  );
+
+  @override
+  Future<void> refreshFundingBalances({bool clearMessages = true}) async {}
+
+  @override
+  Future<void> refreshOrderbook() async {}
+}
+
+class _ReviewContacts extends AddressBookNotifier {
+  _ReviewContacts(this.contact);
+  final AddressEntry contact;
+  @override
+  AddressBookState build() => AddressBookState(entries: [contact]);
+}
+
+class _ReviewDebugLogging extends DebugLoggingPreferenceNotifier {
+  @override
+  bool build() => true;
+}
+
+Future<void> _openReviewOverlay(WidgetTester tester, String page) async {
+  if (page == 'send-contact-picker') {
+    await tester.tap(find.byTooltip('Address Book'));
+    await tester.pumpAndSettle();
+    expect(find.text('Alex'), findsOneWidget);
+  } else if (page == 'contact-add') {
+    await tester.tap(find.text('Add Address'));
+  } else if (page == 'debug-logging') {
+    await tester.scrollUntilVisible(
+      find.text('Debug logging'),
+      400,
+      scrollable: find
+          .descendant(
+            of: find.byType(SettingsScreen),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Debug logging'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Debug logging'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Share a redacted copy or clear the current log.'),
+      findsOneWidget,
+    );
+  }
+}
+
+void _registerReviewCaptures() {
+  final contact = AddressEntry(
+    id: 1,
+    walletId: 'guide-wallet',
+    address: 'zs1samplecontactaddressnotforpayments',
+    label: 'Alex',
+    notes: 'Monthly studio rent',
+    createdAt: DateTime(2026, 8, 30),
+    updatedAt: DateTime(2026, 8, 30),
+    colorTag: ColorTag.blue,
+  );
+  final pages = <String, Widget Function()>{
+    'transaction': () => TransactionDetailScreen(
+      txid: _guideTransactions.first.txid,
+      transaction: _guideTransactions.first,
+    ),
+    'send': () => const SendScreen(),
+    'send-contact-picker': () => const SendScreen(),
+    'receive': () => const ReceiveScreen(),
+    'activity': () => const AppShell(
+      location: '/activity',
+      child: ActivityScreen(useScaffold: false),
+    ),
+    'contact-picker': () => const AddressBookScreen(),
+    'contact-add': () => const AddressBookScreen(),
+    'debug-logging': () => const AppShell(
+      location: '/settings',
+      child: SettingsScreen(useScaffold: false),
+    ),
+    'contact-detail': () => AddressBookDetailScreen(entry: contact),
+    'contact-edit': () =>
+        AddressBookEditScreen(walletId: 'guide-wallet', entry: contact),
+    'keys': () => const KeyManagementScreen(),
+    'key-detail': () => const KeyDetailScreen(keyId: 1),
+    'consolidate': () => const ConsolidateKeyScreen(keyId: 1),
+    'sweep': () => const SweepKeyScreen(keyId: 1),
+    'private-key': () => const ImportSpendingKeyScreen(),
+    'viewing-key': () => const ViewingKeysImportScreen(),
+    'watch-only': () => const WatchOnlyScreen(),
+    'settings': () => const AppShell(
+      location: '/settings',
+      child: SettingsScreen(useScaffold: false),
+    ),
+    'network': () => const PrivacyShieldScreen(),
+    'external-connections': () => const OutboundApiScreen(),
+    'node': () => const NodeSettingsScreen(),
+    'recovery-height': () => BirthdayHeightScreen(nodeTester: _guideNodeTester),
+    'unlock': () => const UnlockScreen(),
+    'duress': () => const PanicPinScreen(),
+    'backup': () => const ExportSeedScreen(
+      walletId: 'guide-wallet',
+      walletName: 'My ARRR Wallet',
+    ),
+    'biometrics': () => const BiometricsScreen(),
+    'passphrase': () => const PassphraseChangeScreen(),
+    'setup-passphrase': () => const PassphraseSetupScreen(),
+    'setup-biometrics': () => const OnboardingBiometricsScreen(),
+    'setup-choices': () => const CreateOrImportScreen(),
+    'restore-phrase': () => const SeedImportScreen(),
+    'backup-warning': () => const BackupWarningScreen(),
+    'theme': () => const ThemeScreen(),
+    'currency': () => const CurrencyScreen(),
+    'language': () => const LanguageScreen(),
+    'phrase-language': () => const SeedPhraseLanguageScreen(),
+    'swap-preferences': () => const SwapInterfaceScreen(),
+    'terms': () => const TermsScreen(),
+    'licenses': () => const LicensesScreen(),
+    'payment-proof': () => const PaymentDisclosureVerifierScreen(),
+    'swap': () => const SwapScreen(),
+  };
+  for (final page in pages.entries) {
+    testWidgets('responsive review ${page.key}', (tester) async {
+      RustLib.initMock(api: _ReviewApi());
+      addTearDown(RustLib.dispose);
+      await _capture(
+        tester,
+        size: const Size(320, 844),
+        filename: 'responsive-${page.key}-phone.png',
+        captureOverlay:
+            page.key == 'contact-add' ||
+            page.key == 'debug-logging' ||
+            page.key == 'send-contact-picker',
+        interact:
+            page.key == 'contact-add' ||
+                page.key == 'debug-logging' ||
+                page.key == 'send-contact-picker'
+            ? (tester) => _openReviewOverlay(tester, page.key)
+            : null,
+        widget: _walletApp(
+          ProviderScope(
+            overrides: [
+              debugLoggingProvider.overrideWith(_ReviewDebugLogging.new),
+              addressBookProvider('guide-wallet')
+                  .overrideWith(() => _ReviewContacts(contact)),
+              swapViewModelProvider.overrideWith(_ReviewSwap.new),
+              syncLogsProvider.overrideWith((ref) async => []),
+              lastCheckpointProvider.overrideWith((ref) async => null),
+              arrrUsdPriceQuoteProvider.overrideWith(
+                (ref) => const Stream.empty(),
+              ),
+              ltcUsdPriceQuoteProvider.overrideWith(
+                (ref) => const Stream.empty(),
+              ),
+            ],
+            child: page.value(),
+          ),
+          textScale: 1.6,
+          includeReceiveState: true,
+          includeAppVersion: true,
+        ),
+      );
+    });
+    testWidgets('review capture ${page.key}', (tester) async {
+      RustLib.initMock(api: _ReviewApi());
+      addTearDown(RustLib.dispose);
+      for (final light in [false, true]) {
+        for (final desktop in [false, true]) {
+          await _capture(
+            tester,
+            size: desktop ? const Size(1280, 900) : const Size(390, 844),
+            filename:
+                'review-${page.key}-${desktop ? 'desktop' : 'phone'}-${light ? 'light' : 'dark'}.png',
+            allowKnownBaselineOverflow:
+                page.key == 'contacts' &&
+                Platform.environment['PIRATE_REVIEW_BASELINE'] == 'true',
+            platform: desktop ? TargetPlatform.windows : TargetPlatform.android,
+            captureOverlay:
+                page.key == 'contact-add' ||
+                page.key == 'debug-logging' ||
+                page.key == 'send-contact-picker',
+            interact:
+                page.key == 'contact-add' ||
+                    page.key == 'debug-logging' ||
+                    page.key == 'send-contact-picker'
+                ? (tester) => _openReviewOverlay(tester, page.key)
+                : null,
+            widget: _walletApp(
+              ProviderScope(
+                overrides: [
+                  debugLoggingProvider.overrideWith(_ReviewDebugLogging.new),
+                  addressBookProvider('guide-wallet')
+                      .overrideWith(() => _ReviewContacts(contact)),
+                  swapViewModelProvider.overrideWith(_ReviewSwap.new),
+                  syncLogsProvider.overrideWith((ref) async => []),
+                  lastCheckpointProvider.overrideWith((ref) async => null),
+                  arrrUsdPriceQuoteProvider.overrideWith(
+                    (ref) => const Stream.empty(),
+                  ),
+                  ltcUsdPriceQuoteProvider.overrideWith(
+                    (ref) => const Stream.empty(),
+                  ),
+                ],
+                child: page.value(),
+              ),
+              light: light,
+              includeReceiveState: true,
+              includeAppVersion: true,
+            ),
+          );
+        }
+      }
+    });
+  }
+}
