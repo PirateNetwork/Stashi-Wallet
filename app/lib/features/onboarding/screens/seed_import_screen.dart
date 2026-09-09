@@ -323,19 +323,16 @@ class _SeedImportScreenState extends ConsumerState<SeedImportScreen> {
     );
     final viewInsets = MediaQuery.of(context).viewInsets.bottom;
     return PScaffold(
+      bodyMaxWidth: 760,
       title: 'Import seed'.tr,
       appBar: PAppBar(
         title: 'Import seed phrase'.tr,
         subtitle: 'Restore a wallet with your seed phrase'.tr,
         onBack: () => context.pop(),
         actions: [
-          PTextButton(
-            label: MediaQuery.of(context).size.width < 420
-                ? 'Paste phrase'.tr
-                : 'Paste seed phrase'.tr,
-            leadingIcon: Icons.content_paste,
-            variant: PTextButtonVariant.accent,
-            compact: true,
+          IconButton(
+            tooltip: 'Paste seed phrase'.tr,
+            icon: const Icon(Icons.content_paste),
             onPressed: _pasteFromClipboard,
           ),
         ],
@@ -439,7 +436,9 @@ class _SeedImportScreenState extends ConsumerState<SeedImportScreen> {
                             const SizedBox(height: AppSpacing.md),
 
                             // Word count toggle
-                            Row(
+                            Wrap(
+                              spacing: AppSpacing.sm,
+                              runSpacing: AppSpacing.sm,
                               children: [
                                 _WordCountChip(
                                   label: '12 words'.tr,
@@ -452,7 +451,6 @@ class _SeedImportScreenState extends ConsumerState<SeedImportScreen> {
                                   selected: _wordCount == 24,
                                   onTap: () => setState(() => _wordCount = 24),
                                 ),
-                                const Spacer(),
                                 PTextButton(
                                   label: 'Clear all'.tr,
                                   leadingIcon: Icons.clear,
@@ -470,9 +468,17 @@ class _SeedImportScreenState extends ConsumerState<SeedImportScreen> {
                               shrinkWrap: true,
                               physics: const NeverScrollableScrollPhysics(),
                               gridDelegate:
-                                  const SliverGridDelegateWithFixedCrossAxisCount(
-                                    crossAxisCount: 3,
-                                    childAspectRatio: 2.5,
+                                  SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount:
+                                        MediaQuery.textScalerOf(context)
+                                                .scale(1) >
+                                            1.3
+                                        ? 2
+                                        : 3,
+                                    mainAxisExtent:
+                                        52 *
+                                        MediaQuery.textScalerOf(context)
+                                            .scale(1),
                                     crossAxisSpacing: AppSpacing.sm,
                                     mainAxisSpacing: AppSpacing.sm,
                                   ),

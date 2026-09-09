@@ -111,7 +111,7 @@ Future<void> _pumpSeedImport(
 }
 
 Future<void> _pasteAndContinue(WidgetTester tester) async {
-  await tester.tap(find.text('Paste seed phrase'));
+  await tester.tap(find.byTooltip('Paste seed phrase'));
   await tester.pump();
   final continueButton = find.text('Continue');
   await tester.dragUntilVisible(
