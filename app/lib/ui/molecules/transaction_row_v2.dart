@@ -17,6 +17,7 @@ class TransactionRowV2 extends StatelessWidget {
     this.memo,
     this.addressLabel,
     this.onTap,
+    this.compactHistory = false,
     super.key,
   });
 
@@ -28,6 +29,7 @@ class TransactionRowV2 extends StatelessWidget {
   final String? memo;
   final String? addressLabel;
   final VoidCallback? onTap;
+  final bool compactHistory;
 
   static const Key semanticsKey = Key('transaction-row-semantics');
   static const Key directionKey = Key('transaction-row-direction');
@@ -50,6 +52,165 @@ class TransactionRowV2 extends StatelessWidget {
         : AppColors.warning;
     final directionLabel = isReceived ? 'Received'.tr : 'Sent'.tr;
     final timeLabel = timeago.format(timestamp);
+
+    if (compactHistory) {
+      final clock = MaterialLocalizations.of(context)
+          .formatTimeOfDay(TimeOfDay.fromDateTime(timestamp));
+      return Semantics(
+        button: onTap != null,
+        label: '$directionLabel, $amountText, $statusText, $clock',
+        excludeSemantics: true,
+        onTap: onTap,
+        child: PCard(
+          onTap: onTap,
+          padding: const EdgeInsets.all(PSpacing.md),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final wide =
+                  constraints.maxWidth >= 600 &&
+                  MediaQuery.textScalerOf(context).scale(1) <= 1.3;
+              final identity = Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    addressLabel ?? directionLabel,
+                    style: PTypography.titleMedium(),
+                  ),
+                  const SizedBox(height: PSpacing.xs),
+                  Text(
+                    clock,
+                    style: PTypography.bodySmall(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              );
+              final amount = _TransactionAmount(
+                amountText: amountText,
+                color: isReceived ? AppColors.success : AppColors.textPrimary,
+                compact: !wide,
+              );
+              final status = Text(
+                statusText,
+                style: PTypography.bodySmall(color: statusColor),
+              );
+              if (!wide) {
+                final largeText =
+                    MediaQuery.textScalerOf(context).scale(1) > 1.3;
+                final heading = Text(
+                  addressLabel ?? directionLabel,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: PTypography.bodyMedium(color: AppColors.textPrimary)
+                      .copyWith(fontWeight: FontWeight.w600),
+                );
+                final value = Text(
+                  amountText,
+                  maxLines: 1,
+                  softWrap: false,
+                  style: PTypography.bodyMedium(color: AppColors.textPrimary)
+                      .copyWith(
+                        fontWeight: FontWeight.w600,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                );
+                return Row(
+                  children: [
+                    Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color:
+                            (isReceived
+                                    ? AppColors.success
+                                    : AppColors.accentPrimary)
+                                .withValues(alpha: 0.10),
+                      ),
+                      child: Icon(
+                        isReceived ? Icons.south_west : Icons.north_east,
+                        size: 18,
+                        color: isReceived
+                            ? AppColors.success
+                            : AppColors.accentPrimary,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (largeText) ...[
+                            heading,
+                            const SizedBox(height: 4),
+                            FittedBox(fit: BoxFit.scaleDown, child: value),
+                          ] else
+                            Row(
+                              children: [
+                                Expanded(flex: 2, child: heading),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  flex: 3,
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    alignment: AlignmentDirectional.centerEnd,
+                                    child: value,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  clock,
+                                  style: PTypography.caption(
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  statusText,
+                                  textAlign: TextAlign.end,
+                                  style: PTypography.caption(
+                                    color: isConfirmed
+                                        ? AppColors.textSecondary
+                                        : statusColor,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  _TransactionDirectionIcon(isReceived: isReceived),
+                  const SizedBox(width: PSpacing.md),
+                  Expanded(flex: 3, child: identity),
+                  Expanded(flex: 2, child: status),
+                  Expanded(flex: 3, child: amount),
+                  const SizedBox(width: PSpacing.md),
+                  Icon(
+                    Icons.chevron_right,
+                    size: 18,
+                    color: AppColors.textTertiary,
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      );
+    }
 
     final semanticLabel = <String>[
       directionLabel,

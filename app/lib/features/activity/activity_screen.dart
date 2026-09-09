@@ -325,11 +325,12 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
                       ),
                     ),
                   TransactionRowV2(
+                    compactHistory: true,
                     isReceived: tx.amount >= 0,
                     isConfirmed: _isConfirmedTx(tx, currentHeight),
                     isExpired: tx.expired,
                     amountText:
-                        '${formatArrrAtomic(BigInt.from(tx.amount.toInt()), showPositiveSign: true)} ARRR',
+                        '${formatArrrAtomic(BigInt.from(tx.amount.toInt()), minimumFractionDigits: 0, groupThousands: true, showPositiveSign: true)} ARRR',
                     timestamp: date,
                     memo: tx.memo,
                     onTap: () => context.push(
@@ -374,9 +375,16 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
 
     if (!widget.useScaffold) {
       if (isDesktop) {
-        return content;
+        return Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 920),
+            child: content,
+          ),
+        );
       }
       return PScaffold(
+        bodyMaxWidth: 920,
         title: 'Activity'.tr,
         useSafeArea: false,
         appBar: PAppBar(title: 'Activity'.tr, actions: appBarActions),
@@ -385,6 +393,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
     }
 
     return PScaffold(
+      bodyMaxWidth: 920,
       title: 'Activity'.tr,
       appBar: isDesktop
           ? null
