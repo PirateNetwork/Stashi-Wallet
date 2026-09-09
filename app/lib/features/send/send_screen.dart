@@ -21,7 +21,8 @@ import '../../ui/atoms/p_input.dart';
 import '../../ui/atoms/p_text_button.dart';
 import '../../ui/molecules/p_card.dart';
 import '../../ui/molecules/p_bottom_sheet.dart';
-import '../../ui/molecules/connection_status_indicator.dart';
+import '../../ui/molecules/p_help.dart';
+import '../../ui/organisms/primary_action_dock.dart';
 import '../../ui/molecules/p_dialog.dart';
 import '../../ui/molecules/wallet_switcher.dart';
 import '../../ui/molecules/watch_only_banner.dart';
@@ -34,6 +35,8 @@ import '../../core/providers/price_providers.dart';
 import '../../core/errors/transaction_errors.dart';
 import '../../core/security/biometric_auth.dart';
 import '../settings/providers/preferences_providers.dart';
+import '../address_book/address_book_screen.dart';
+import '../address_book/models/address_entry.dart';
 import '../../core/i18n/arb_text_localizer.dart';
 import 'send_fee.dart';
 import 'send_fee_selector.dart';
@@ -195,7 +198,9 @@ enum _SendHeaderAction { addRecipient, resetForm }
 
 /// Send screen with multi-output support
 class SendScreen extends ConsumerStatefulWidget {
-  const SendScreen({super.key});
+  const SendScreen({super.key, this.initialAddress});
+
+  final String? initialAddress;
 
   @override
   ConsumerState<SendScreen> createState() => _SendScreenState();
@@ -250,6 +255,11 @@ class _SendScreenState extends ConsumerState<SendScreen> {
   @override
   void initState() {
     super.initState();
+    final initialAddress = widget.initialAddress?.trim();
+    if (initialAddress != null && initialAddress.isNotEmpty) {
+      _outputs.first.addressController.text = initialAddress;
+      _outputs.first.address = initialAddress;
+    }
     _checkWatchOnlyStatus();
     _updateFeePreview();
     _loadFeeInfo();
@@ -537,7 +547,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
         actions: [
           PDialogAction(
             label: 'Not now'.tr,
-            variant: PButtonVariant.secondary,
+            variant: PButtonVariant.outline,
             result: false,
           ),
           PDialogAction(
@@ -1979,7 +1989,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
       actions: [
         PDialogAction(
           label: 'Copy transaction ID'.tr,
-          variant: PButtonVariant.secondary,
+          variant: PButtonVariant.outline,
           onPressed: () {
             Clipboard.setData(ClipboardData(text: _txId ?? ''));
             ScaffoldMessenger.of(
@@ -2109,7 +2119,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
                     : null),
           onBack: _isSending ? null : _handleBackNavigation,
           showBackButton: true,
-          showThemeToggle: !isMobile,
+          showThemeToggle: false,
           actions: [
             if (isMobile && _currentStep == SendStep.recipients)
               _buildMobileHeaderMenu(),
@@ -2131,13 +2141,9 @@ class _SendScreenState extends ConsumerState<SendScreen> {
                     : () => _sendFormKey.currentState?.reset(),
                 shape: PIconButtonShape.circle,
               ),
-            ConnectionStatusIndicator(
-              full: !isMobile,
-              onTap: () => context.push('/settings/privacy-shield'),
-            ),
-            if (!isMobile) const WalletSwitcherButton(compact: true),
           ],
         ),
+        bodyMaxWidth: 1180,
         body: _buildStepContent(),
       ),
     );
@@ -2318,195 +2324,209 @@ class _RecipientsStep extends StatelessWidget {
   Widget build(BuildContext context) {
     final total = totalAmount + calculatedFee;
     final estimateSuggestsEnough = total <= availableBalance;
-    final spendableAfterFee = availableBalance - calculatedFee;
-    final spendableForPercent =
-        spendableAfterFee.isFinite && spendableAfterFee > 0
-        ? spendableAfterFee
-        : 0.0;
     final availableText = formatDisplayAmount(availableBalance);
     final feeText = formatDisplayAmount(calculatedFee);
     final totalText = formatDisplayAmount(total);
-    final bottomInset = MediaQuery.of(context).padding.bottom;
-
-    return ListView(
-      padding: EdgeInsets.fromLTRB(
-        AppSpacing.md,
-        AppSpacing.md,
-        AppSpacing.md,
-        AppSpacing.md + bottomInset,
-      ),
-      children: [
-        PCard(
-          onTap: spendFromEnabled ? onSelectSpendFrom : null,
-          child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.account_balance_wallet_outlined,
-                  color: AppColors.textSecondary,
+    final fields = <Widget>[
+      const WalletSwitcherButton(compact: true, fullWidth: true),
+      const SizedBox(height: AppSpacing.md),
+      Row(
+        children: [
+          Text('Available:'.tr, style: AppTypography.body),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: AlignmentDirectional.centerEnd,
+              child: Text(
+                availableText,
+                maxLines: 1,
+                softWrap: false,
+                textAlign: TextAlign.end,
+                style: AppTypography.bodyMedium.copyWith(
+                  fontWeight: FontWeight.w600,
+                  fontFeatures: const [ui.FontFeature.tabularFigures()],
                 ),
-                const SizedBox(width: AppSpacing.sm),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Spend from'.tr, style: AppTypography.bodyMedium),
-                      const SizedBox(height: 2),
-                      Text(
-                        spendFromLabel,
-                        style: AppTypography.bodySmall.copyWith(
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Icon(Icons.chevron_right, color: AppColors.textTertiary),
-              ],
+              ),
             ),
+          ),
+        ],
+      ),
+      const SizedBox(height: AppSpacing.md),
+      ...outputs.asMap().entries.map((entry) {
+        final index = entry.key;
+        final output = entry.value;
+        final scanHandler = onScan == null ? null : () => onScan!(index);
+        final importHandler = onImport == null ? null : () => onImport!(index);
+        return Padding(
+          padding: const EdgeInsets.only(bottom: AppSpacing.md),
+          child: _OutputCard(
+            key: ObjectKey(output),
+            index: index,
+            output: output,
+            addressSuggestions: addressSuggestions,
+            maxAmount: _maxAmountForOutput(index),
+            canRemove: outputs.length > 1,
+            onRemove: () => onRemoveOutput(index),
+            onChanged: () => onOutputChanged(index),
+            onScan: scanHandler,
+            onImport: importHandler,
+            showFiatAmounts: showFiatAmounts,
+            canToggleFiatAmounts: canToggleFiatAmounts,
+            currency: currency,
+            quote: quote,
+            parseAmountInputToArrr: parseAmountInputToArrr,
+            formatAmountInput: formatAmountInput,
+            onToggleFiatAmounts: onToggleFiatAmounts,
+          ),
+        );
+      }),
+      Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: PTextButton(
+          label: 'Add recipient'.tr,
+          onPressed: outputs.length < kMaxRecipients ? onAddOutput : null,
+        ),
+      ),
+      const SizedBox(height: AppSpacing.sm),
+      PCard(
+        padding: EdgeInsets.zero,
+        child: ExpansionTile(
+          key: const PageStorageKey('send-options'),
+          shape: const Border(),
+          collapsedShape: const Border(),
+          title: Text('Additional options'.tr, style: AppTypography.bodyMedium),
+          subtitle: Text(spendFromLabel, style: AppTypography.caption),
+          leading: Icon(
+            Icons.tune_rounded,
+            color: AppColors.textSecondary,
+            size: 20,
+          ),
+          childrenPadding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+          ),
+          children: [
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text('Spend from'.tr),
+              subtitle: Text(spendFromLabel),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: spendFromEnabled ? onSelectSpendFrom : null,
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text('Network fee'.tr),
+              subtitle: Text(feePreset.label),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: onEditFee,
+            ),
+            const SizedBox(height: AppSpacing.sm),
+          ],
+        ),
+      ),
+      if (errorMessage != null) ...[
+        const SizedBox(height: AppSpacing.md),
+        SendErrorBanner(message: errorMessage!),
+      ],
+    ];
+    final summary = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text('Network fee'.tr, style: AppTypography.caption),
+            ),
+            Flexible(
+              child: Text(
+                feeText,
+                textAlign: TextAlign.end,
+                style: AppTypography.mono.copyWith(fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        Text('Total'.tr, style: AppTypography.labelMedium),
+        const SizedBox(height: AppSpacing.xs),
+        Text(
+          totalText,
+          textAlign: TextAlign.end,
+          style: AppTypography.bodyMedium.copyWith(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            fontFeatures: const [ui.FontFeature.tabularFigures()],
+            color: estimateSuggestsEnough
+                ? AppColors.textPrimary
+                : AppColors.textSecondary,
           ),
         ),
         const SizedBox(height: AppSpacing.md),
-        ...outputs.asMap().entries.map((entry) {
-          final index = entry.key;
-          final output = entry.value;
-          final scanHandler = onScan == null ? null : () => onScan!(index);
-          final importHandler = onImport == null
-              ? null
-              : () => onImport!(index);
-          return Padding(
-            padding: const EdgeInsets.only(bottom: AppSpacing.md),
-            child: _OutputCard(
-              key: ObjectKey(output),
-              index: index,
-              output: output,
-              addressSuggestions: addressSuggestions,
-              maxAmount: _maxAmountForOutput(index),
-              spendableForPercent: spendableForPercent,
-              canRemove: outputs.length > 1,
-              onRemove: () => onRemoveOutput(index),
-              onChanged: () => onOutputChanged(index),
-              onScan: scanHandler,
-              onImport: importHandler,
-              showFiatAmounts: showFiatAmounts,
-              canToggleFiatAmounts: canToggleFiatAmounts,
-              currency: currency,
-              quote: quote,
-              parseAmountInputToArrr: parseAmountInputToArrr,
-              formatAmountInput: formatAmountInput,
-              onToggleFiatAmounts: onToggleFiatAmounts,
-            ),
-          );
-        }),
         PButton(
-          onPressed: outputs.length < kMaxRecipients ? onAddOutput : null,
-          variant: PButtonVariant.outline,
+          text: isValidating ? 'Validating...'.tr : 'Review transaction'.tr,
+          onPressed: isValidating ? null : onContinue,
           fullWidth: true,
-          icon: const Icon(Icons.add),
-          child: Text('Add recipient'.tr),
-        ),
-        const SizedBox(height: AppSpacing.lg),
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                'Available:'.tr,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: AppTypography.caption,
-              ),
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            Text(
-              availableText,
-              style: AppTypography.mono.copyWith(fontSize: 12),
-            ),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Network fee'.tr, style: AppTypography.caption),
-                  Text(
-                    feePreset.label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTypography.caption.copyWith(
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            Wrap(
-              spacing: AppSpacing.xs,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                Text(feeText, style: AppTypography.mono.copyWith(fontSize: 12)),
-                PTextButton(
-                  label: 'Edit'.tr,
-                  compact: true,
-                  variant: PTextButtonVariant.subtle,
-                  onPressed: onEditFee,
-                ),
-              ],
-            ),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                'Total:'.tr,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: AppTypography.caption.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            Text(
-              totalText,
-              style: AppTypography.mono.copyWith(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-                // The displayed balance is an asynchronous estimate. Only the
-                // Rust builder can authoritatively reject the selected notes.
-                color: estimateSuggestsEnough
-                    ? AppColors.success
-                    : AppColors.textPrimary,
-              ),
-            ),
-          ],
-        ),
-        if (errorMessage != null) ...[
-          const SizedBox(height: AppSpacing.sm),
-          SendErrorBanner(message: errorMessage!),
-        ],
-        const SizedBox(height: AppSpacing.lg),
-        Semantics(
-          button: true,
-          label: isValidating
-              ? 'Validating transaction details'.tr
-              : 'Review transaction'.tr,
-          value: isValidating ? 'In progress'.tr : 'Ready'.tr,
-          child: PButton(
-            text: isValidating ? 'Validating...'.tr : 'Review'.tr,
-            onPressed: isValidating ? null : onContinue,
-            variant: PButtonVariant.primary,
-            size: PButtonSize.large,
-            loading: isValidating,
-          ),
+          loading: isValidating,
         ),
       ],
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth >= 1000 &&
+            MediaQuery.textScalerOf(context).scale(1) <= 1.3) {
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.all(AppSpacing.lg),
+                  children: fields,
+                ),
+              ),
+              SizedBox(
+                width: 320,
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(
+                    0,
+                    AppSpacing.lg,
+                    AppSpacing.lg,
+                    AppSpacing.lg,
+                  ),
+                  child: PCard(child: summary),
+                ),
+              ),
+            ],
+          );
+        }
+        // Let everything scroll when the keyboard or enlarged text leaves little
+        // room. Otherwise keep the payment total and review action in view.
+        if (constraints.maxHeight < 500 ||
+            MediaQuery.textScalerOf(context).scale(1) > 1.3) {
+          return ListView(
+            padding: const EdgeInsets.all(AppSpacing.md),
+            children: [
+              ...fields,
+              const SizedBox(height: AppSpacing.lg),
+              summary,
+            ],
+          );
+        }
+        return Column(
+          children: [
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                children: fields,
+              ),
+            ),
+            PrimaryActionDock(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              child: summary,
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -2517,7 +2537,6 @@ class _OutputCard extends StatelessWidget {
   final OutputEntry output;
   final List<_RecipientSuggestion> addressSuggestions;
   final double maxAmount;
-  final double spendableForPercent;
   final bool canRemove;
   final VoidCallback onRemove;
   final VoidCallback onChanged;
@@ -2537,7 +2556,6 @@ class _OutputCard extends StatelessWidget {
     required this.output,
     required this.addressSuggestions,
     required this.maxAmount,
-    required this.spendableForPercent,
     required this.canRemove,
     required this.onRemove,
     required this.onChanged,
@@ -2565,42 +2583,44 @@ class _OutputCard extends StatelessWidget {
         : '0.00000000';
 
     return PCard(
+      padding: const EdgeInsets.all(AppSpacing.md),
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.md),
+        padding: EdgeInsets.zero,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Header
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 16,
-                  backgroundColor: AppColors.accentPrimary.withValues(
-                    alpha: 0.2,
-                  ),
-                  child: Text(
-                    '${index + 1}',
-                    style: AppTypography.labelMedium.copyWith(
-                      color: AppColors.accentPrimary,
+            if (canRemove)
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 16,
+                    backgroundColor: AppColors.accentPrimary.withValues(
+                      alpha: 0.2,
+                    ),
+                    child: Text(
+                      '${index + 1}',
+                      style: AppTypography.labelMedium.copyWith(
+                        color: AppColors.accentPrimary,
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: AppSpacing.sm),
-                Text(
-                  'Recipient {number}'.trArgs({'number': index + 1}),
-                  style: AppTypography.labelMedium,
-                ),
-                const Spacer(),
-                if (canRemove)
-                  IconButton(
-                    icon: const Icon(Icons.remove_circle_outline),
-                    onPressed: onRemove,
-                    color: AppColors.error,
-                    iconSize: 20,
-                    tooltip: 'Remove'.tr,
+                  const SizedBox(width: AppSpacing.sm),
+                  Text(
+                    'Recipient {number}'.trArgs({'number': index + 1}),
+                    style: AppTypography.labelMedium,
                   ),
-              ],
-            ),
+                  const Spacer(),
+                  if (canRemove)
+                    IconButton(
+                      icon: const Icon(Icons.remove_circle_outline),
+                      onPressed: onRemove,
+                      color: AppColors.error,
+                      iconSize: 20,
+                      tooltip: 'Remove'.tr,
+                    ),
+                ],
+              ),
 
             if (output.error != null) ...[
               const SizedBox(height: AppSpacing.sm),
@@ -2663,28 +2683,35 @@ class _OutputCard extends StatelessWidget {
               ),
             ),
 
-            const SizedBox(height: AppSpacing.xs),
-            _AmountPresetSlider(
-              maxAmount: maxAmount,
-              spendableForPercent: spendableForPercent,
-              controller: output.amountController,
-              onCommit: onChanged,
-              enabled: canMax,
-              parseInputAmount: parseAmountInputToArrr,
-              formatInputAmount: formatAmountInput,
-            ),
-
             const SizedBox(height: AppSpacing.md),
-
-            // Memo input
-            PInput(
-              controller: output.memoController,
-              label: 'Memo (optional)'.tr,
-              hint: 'Add a private note'.tr,
-              helperText: 'A private note only the receiver can read.'.tr,
-              maxLines: 2,
-              maxLength: kMaxMemoBytes,
-              onChanged: (_) => onChanged(),
+            ExpansionTile(
+              key: ObjectKey(output.memoController),
+              initiallyExpanded: output.memo.isNotEmpty,
+              maintainState: true,
+              tilePadding: EdgeInsets.zero,
+              shape: const Border(),
+              collapsedShape: const Border(),
+              title: Text(
+                'Memo (optional)'.tr,
+                style: AppTypography.bodyMedium,
+              ),
+              leading: Icon(
+                Icons.edit_note_rounded,
+                color: AppColors.textSecondary,
+              ),
+              children: [
+                PInput(
+                  controller: output.memoController,
+                  hint: 'Add a private note'.tr,
+                  maxLines: 2,
+                  maxLength: kMaxMemoBytes,
+                  onChanged: (_) => onChanged(),
+                ),
+                PHelpLabel(
+                  label: 'Private note'.tr,
+                  help: 'A private note only the receiver can read.'.tr,
+                ),
+              ],
             ),
 
             if (output.isMemoNearLimit)
@@ -2771,6 +2798,19 @@ class _RecipientAddressAutocompleteFieldState
     widget.onChanged(value);
   }
 
+  Future<void> _pickContact() async {
+    _focusNode.unfocus();
+    final entry = await Navigator.of(context).push<AddressEntry>(
+      MaterialPageRoute(
+        builder: (pickerContext) => AddressBookScreen(
+          onSelectAddress: (entry) => Navigator.of(pickerContext).pop(entry),
+        ),
+      ),
+    );
+    if (!mounted || entry == null) return;
+    _applyValue(entry.address);
+  }
+
   @override
   Widget build(BuildContext context) {
     return RawAutocomplete<_RecipientSuggestion>(
@@ -2782,42 +2822,61 @@ class _RecipientAddressAutocompleteFieldState
           _filterSuggestions(textEditingValue.text),
       onSelected: (selection) => _applyValue(selection.address),
       fieldViewBuilder: (context, textController, focusNode, onFieldSubmitted) {
-        return PInput(
-          controller: textController,
-          focusNode: focusNode,
-          label: 'Recipient address'.tr,
-          hint: 'Paste address'.tr,
-          maxLines: 1,
-          onChanged: widget.onChanged,
-          onSubmitted: (_) => onFieldSubmitted(),
-          suffixIcon: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              IconButton(
-                icon: const Icon(Icons.content_paste, size: 20),
-                onPressed: () async {
-                  final data = await Clipboard.getData('text/plain');
-                  final pasted = data?.text?.trim();
-                  if (pasted != null && pasted.isNotEmpty) {
-                    _applyValue(pasted);
-                  }
-                },
-                tooltip: 'Paste'.tr,
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Recipient address'.tr,
+                    style: AppTypography.body,
+                  ),
+                ),
+                IconButton(
+                  onPressed: _pickContact,
+                  tooltip: 'Address Book'.tr,
+                  icon: const Icon(Icons.contacts_outlined, size: 20),
+                ),
+              ],
+            ),
+            PInput(
+              controller: textController,
+              focusNode: focusNode,
+              hint: 'Paste address'.tr,
+              maxLines: 1,
+              onChanged: widget.onChanged,
+              onSubmitted: (_) => onFieldSubmitted(),
+              suffixIcon: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.content_paste, size: 20),
+                    onPressed: () async {
+                      final data = await Clipboard.getData('text/plain');
+                      final pasted = data?.text?.trim();
+                      if (pasted != null && pasted.isNotEmpty) {
+                        _applyValue(pasted);
+                      }
+                    },
+                    tooltip: 'Paste'.tr,
+                  ),
+                  if (widget.onImport != null)
+                    IconButton(
+                      icon: const Icon(Icons.image_search, size: 20),
+                      onPressed: widget.onImport,
+                      tooltip: 'Import QR image'.tr,
+                    ),
+                  if (widget.onScan != null)
+                    IconButton(
+                      icon: const Icon(Icons.qr_code_scanner, size: 20),
+                      onPressed: widget.onScan,
+                      tooltip: 'Scan QR'.tr,
+                    ),
+                ],
               ),
-              if (widget.onImport != null)
-                IconButton(
-                  icon: const Icon(Icons.image_search, size: 20),
-                  onPressed: widget.onImport,
-                  tooltip: 'Import QR image'.tr,
-                ),
-              if (widget.onScan != null)
-                IconButton(
-                  icon: const Icon(Icons.qr_code_scanner, size: 20),
-                  onPressed: widget.onScan,
-                  tooltip: 'Scan QR'.tr,
-                ),
-            ],
-          ),
+            ),
+          ],
         );
       },
       optionsViewBuilder: (context, onSelected, options) {
@@ -3003,244 +3062,6 @@ class _AmountInputSuffix extends StatelessWidget {
   }
 }
 
-class _AmountPresetSlider extends StatefulWidget {
-  final double maxAmount;
-  final double spendableForPercent;
-  final TextEditingController controller;
-  final VoidCallback onCommit;
-  final bool enabled;
-  final double Function(String raw) parseInputAmount;
-  final String Function(double amountArrr) formatInputAmount;
-
-  const _AmountPresetSlider({
-    required this.maxAmount,
-    required this.spendableForPercent,
-    required this.controller,
-    required this.onCommit,
-    required this.enabled,
-    required this.parseInputAmount,
-    required this.formatInputAmount,
-  });
-  @override
-  State<_AmountPresetSlider> createState() => _AmountPresetSliderState();
-}
-
-class _AmountPresetSliderState extends State<_AmountPresetSlider> {
-  double _value = 0.0;
-  static const double _presetEpsilon = 0.02;
-
-  @override
-  void initState() {
-    super.initState();
-    _value = _valueFromController();
-  }
-
-  @override
-  void didUpdateWidget(covariant _AmountPresetSlider oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    final newValue = _valueFromController();
-    if ((_value - newValue).abs() >= 0.001) {
-      _value = newValue;
-    }
-  }
-
-  double _valueFromController() {
-    final maxAmount = widget.maxAmount;
-    if (maxAmount <= 0) return 0.0;
-
-    final amount = widget.parseInputAmount(widget.controller.text);
-    if (amount <= 0) return 0.0;
-    if (amount >= maxAmount) return 1.0;
-
-    final ratio = amount / maxAmount;
-    if (ratio.isNaN || ratio.isInfinite) return 0.0;
-    return ratio.clamp(0.0, 1.0);
-  }
-
-  double _currentAmount() {
-    return widget.parseInputAmount(widget.controller.text);
-  }
-
-  String _percentLabel() {
-    final total = widget.spendableForPercent;
-    if (total <= 0) return '0%';
-    final ratio = (_currentAmount() / total).clamp(0.0, 1.0);
-    final pct = ratio * 100.0;
-    if (pct < 1) return '${pct.toStringAsFixed(2)}%';
-    if (pct < 10) return '${pct.toStringAsFixed(1)}%';
-    return '${pct.toStringAsFixed(0)}%';
-  }
-
-  void _setValue(double rawValue, {required bool commit}) {
-    final preset = rawValue.clamp(0.0, 1.0);
-    setState(() => _value = preset);
-
-    if (widget.maxAmount <= 0) {
-      widget.controller.text = '';
-      if (commit) widget.onCommit();
-      return;
-    }
-
-    if (preset <= 0) {
-      widget.controller.text = '';
-    } else {
-      final amount = (widget.maxAmount * preset).clamp(0.0, widget.maxAmount);
-      widget.controller.text = widget.formatInputAmount(amount);
-    }
-    if (commit) widget.onCommit();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final enabled = widget.enabled && widget.maxAmount > 0;
-    final label = _percentLabel();
-    final isAt0 = (_value - 0.0).abs() <= _presetEpsilon;
-    final isAtHalf = (_value - 0.5).abs() <= _presetEpsilon;
-    final isAtMax = (_value - 1.0).abs() <= _presetEpsilon;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
-          child: SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              trackHeight: 3,
-              activeTrackColor: AppColors.accentPrimary,
-              inactiveTrackColor: AppColors.borderSubtle,
-              thumbColor: AppColors.accentPrimary,
-              overlayColor: AppColors.accentPrimary.withValues(alpha: 0.16),
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
-              overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-              showValueIndicator: ShowValueIndicator.onlyForContinuous,
-              valueIndicatorColor: AppColors.accentPrimary,
-              valueIndicatorTextStyle: PTypography.labelSmall(
-                color: Colors.white,
-              ),
-            ),
-            child: Slider(
-              value: _value,
-              min: 0,
-              max: 1,
-              label: label,
-              onChanged: enabled ? (v) => _setValue(v, commit: false) : null,
-              onChangeEnd: enabled ? (_) => widget.onCommit() : null,
-            ),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              // Match Flutter's default track insets (based on overlay radius).
-              const trackInset = 14.0;
-              final width = constraints.maxWidth;
-              final trackWidth = (width - (trackInset * 2)).clamp(0.0, width);
-
-              double xFor(double fraction) {
-                return trackInset + (trackWidth * fraction);
-              }
-
-              double labelWidth(String label) {
-                final painter = TextPainter(
-                  text: TextSpan(
-                    text: label,
-                    style: PTypography.labelSmall(color: Colors.white),
-                  ),
-                  maxLines: 1,
-                  textDirection: Directionality.of(context),
-                )..layout();
-                // _AmountPresetLabel uses horizontal padding AppSpacing.sm on both sides.
-                return painter.width + (AppSpacing.sm * 2);
-              }
-
-              double clampLeft(double left, double w) {
-                if (!left.isFinite) return 0.0;
-                // Keep labels inside the card so they don't get clipped.
-                final maxLeft = width - w;
-                if (maxLeft <= 0) return 0.0;
-                return left.clamp(0.0, maxLeft);
-              }
-
-              final w0 = labelWidth('0');
-              final wHalf = labelWidth('1/2');
-              final wMax = labelWidth('MAX');
-
-              return SizedBox(
-                height: 34,
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Positioned(
-                      left: clampLeft(xFor(0.0) - (w0 / 2), w0),
-                      child: _AmountPresetLabel(
-                        label: '0',
-                        isSelected: isAt0,
-                        onTap: enabled
-                            ? () => _setValue(0.0, commit: true)
-                            : null,
-                      ),
-                    ),
-                    Positioned(
-                      left: clampLeft(xFor(0.5) - (wHalf / 2), wHalf),
-                      child: _AmountPresetLabel(
-                        label: '1/2',
-                        isSelected: isAtHalf,
-                        onTap: enabled
-                            ? () => _setValue(0.5, commit: true)
-                            : null,
-                      ),
-                    ),
-                    Positioned(
-                      left: clampLeft(xFor(1.0) - (wMax / 2), wMax),
-                      child: _AmountPresetLabel(
-                        label: 'MAX'.tr,
-                        isSelected: isAtMax,
-                        onTap: enabled
-                            ? () => _setValue(1.0, commit: true)
-                            : null,
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _AmountPresetLabel extends StatelessWidget {
-  final String label;
-  final bool isSelected;
-  final VoidCallback? onTap;
-
-  const _AmountPresetLabel({
-    required this.label,
-    required this.isSelected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final color = isSelected ? AppColors.accentPrimary : AppColors.textTertiary;
-
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppSpacing.sm,
-          vertical: AppSpacing.xs,
-        ),
-        child: Text(label, style: PTypography.labelSmall(color: color)),
-      ),
-    );
-  }
-}
-
 class _SendQrScannerScreen extends StatefulWidget {
   const _SendQrScannerScreen();
 
@@ -3396,13 +3217,6 @@ class _ReviewStep extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            'Review'.tr,
-            style: AppTypography.h3.copyWith(color: AppColors.textPrimary),
-          ),
-
-          const SizedBox(height: AppSpacing.lg),
-
           // Output summaries
           ...outputs.asMap().entries.map((entry) {
             final i = entry.key;
@@ -3629,7 +3443,7 @@ class _ReviewStep extends StatelessWidget {
                 child: PButton(
                   text: 'Edit'.tr,
                   onPressed: onEdit,
-                  variant: PButtonVariant.secondary,
+                  variant: PButtonVariant.outline,
                   size: PButtonSize.large,
                 ),
               ),

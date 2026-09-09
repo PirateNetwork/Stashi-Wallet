@@ -22,6 +22,7 @@ import '../features/keys/sweep_key_screen.dart';
 import '../features/settings/export_seed_screen.dart';
 import '../features/settings/panic_pin_screen.dart';
 import '../features/settings/watch_only_screen.dart';
+import '../features/address_book/address_book_screen.dart';
 import '../features/settings/verify_build_screen.dart';
 import '../features/settings/screens/node_settings_screen.dart';
 import '../features/settings/settings_screen.dart';
@@ -343,7 +344,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         pageBuilder: (context, state) => _buildPageWithTransition(
           context: context,
           state: state,
-          child: const SendScreen(),
+          child: SendScreen(
+            initialAddress: state.uri.queryParameters['address'],
+          ),
         ),
       ),
 
@@ -396,6 +399,15 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
 
       // Settings - Security Features
+      GoRoute(
+        path: '/settings/address-book',
+        name: 'address-book',
+        pageBuilder: (context, state) => _buildPageWithTransition(
+          context: context,
+          state: state,
+          child: const AddressBookScreen(),
+        ),
+      ),
       GoRoute(
         path: '/settings/export-seed',
         name: 'export-seed',

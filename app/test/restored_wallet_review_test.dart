@@ -346,6 +346,10 @@ void main() {
         filename: '03-send-sources.png',
         widget: _walletApp(const SendScreen()),
         interact: (tester) async {
+          await tester.tap(find.text('Additional options'));
+          await tester.pumpAndSettle();
+          await tester.ensureVisible(find.text('Spend from'));
+          await tester.pumpAndSettle();
           await tester.tap(find.text('Spend from').first);
           await tester.pumpAndSettle();
           expect(find.text('Auto (all keys)'), findsWidgets);

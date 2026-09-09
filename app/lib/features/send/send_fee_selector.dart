@@ -160,9 +160,8 @@ Future<SendFeeSelection?> showSendFeeSelectorSheet({
               PInput(
                 label: 'Custom fee (ARRR)'.tr,
                 controller: controller,
-                hint: feeArrrFromArrrtoshis(
-                  feeState.minFeeArrrtoshis,
-                ).toStringAsFixed(8),
+                hint: feeArrrFromArrrtoshis(feeState.minFeeArrrtoshis)
+                    .toStringAsFixed(8),
                 errorText: feeError,
                 keyboardType: const TextInputType.numberWithOptions(
                   decimal: true,
@@ -194,7 +193,7 @@ Future<SendFeeSelection?> showSendFeeSelectorSheet({
                   Expanded(
                     child: PButton(
                       text: 'Cancel'.tr,
-                      variant: PButtonVariant.secondary,
+                      variant: PButtonVariant.outline,
                       onPressed: () => Navigator.of(context).pop(),
                     ),
                   ),
