@@ -3,13 +3,13 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../design/deep_space_theme.dart';
 import '../../../ui/atoms/p_button.dart';
 import '../../../ui/atoms/p_input.dart';
+import '../../../ui/molecules/viewing_key_fields.dart';
 import '../../../ui/organisms/p_app_bar.dart';
 import '../../../ui/organisms/p_scaffold.dart';
 import '../../../core/ffi/ffi_bridge.dart';
@@ -87,14 +87,6 @@ class _ViewingKeysImportScreenState
         _birthdayController.text = defaultBirthday.toString();
       }
     } catch (_) {}
-  }
-
-  Future<void> _pasteIvk(TextEditingController controller) async {
-    final data = await Clipboard.getData(Clipboard.kTextPlain);
-    if (data?.text != null) {
-      controller.text = data!.text!.trim();
-      setState(() {});
-    }
   }
 
   Future<void> _importViewingKeys() async {
@@ -207,6 +199,7 @@ class _ViewingKeysImportScreenState
       bottom: basePadding.bottom + MediaQuery.of(context).viewInsets.bottom,
     );
     return PScaffold(
+      bodyMaxWidth: 760,
       title: 'Import viewing keys'.tr,
       appBar: PAppBar(
         title: 'Import viewing keys'.tr,
@@ -218,83 +211,13 @@ class _ViewingKeysImportScreenState
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Watch-only info banner
-            Container(
-              padding: const EdgeInsets.all(AppSpacing.md),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    AppColors.accentPrimary.withValues(alpha: 0.1),
-                    AppColors.accentSecondary.withValues(alpha: 0.1),
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: AppColors.accentPrimary.withValues(alpha: 0.3),
-                ),
-              ),
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(AppSpacing.sm),
-                        decoration: BoxDecoration(
-                          color: AppColors.accentPrimary.withValues(alpha: 0.2),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Icon(
-                          Icons.visibility,
-                          color: AppColors.accentPrimary,
-                          size: 24,
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.md),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              kWatchOnlyLabel,
-                              style: AppTypography.h4.copyWith(
-                                color: AppColors.accentPrimary,
-                              ),
-                            ),
-                            Text(
-                              'View only'.tr,
-                              style: AppTypography.caption.copyWith(
-                                color: AppColors.textSecondary,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  const Divider(),
-                  const SizedBox(height: AppSpacing.sm),
-                  _InfoRow(
-                    icon: Icons.check_circle_outline,
-                    iconColor: AppColors.success,
-                    text: 'View incoming transactions'.tr,
-                  ),
-                  _InfoRow(
-                    icon: Icons.check_circle_outline,
-                    iconColor: AppColors.success,
-                    text: 'See balance and incoming activity'.tr,
-                  ),
-                  _InfoRow(
-                    icon: Icons.cancel_outlined,
-                    iconColor: AppColors.error,
-                    text: 'Cannot spend funds'.tr,
-                  ),
-                ],
+            Text(
+              'View incoming transactions without spending access.'.tr,
+              style: AppTypography.body.copyWith(
+                color: AppColors.textSecondary,
               ),
             ),
-
-            const SizedBox(height: AppSpacing.xxl),
-
+            const SizedBox(height: AppSpacing.lg),
             // Wallet name input
             PInput(
               controller: _nameController,
@@ -304,35 +227,11 @@ class _ViewingKeysImportScreenState
 
             const SizedBox(height: AppSpacing.lg),
 
-            // Viewing key input
-            PInput(
-              controller: _saplingIvkController,
-              label: 'Sapling viewing key (optional)'.tr,
-              hint: 'Starts with zxviews1…'.tr,
-              maxLines: 3,
-              suffixIcon: IconButton(
-                icon: const Icon(Icons.content_paste),
-                onPressed: () => _pasteIvk(_saplingIvkController),
-                tooltip: 'Paste from clipboard'.tr,
-              ),
+            ViewingKeyFields(
+              saplingController: _saplingIvkController,
+              ironwoodController: _ironwoodIvkController,
             ),
-
-            const SizedBox(height: AppSpacing.md),
-
-            PInput(
-              controller: _ironwoodIvkController,
-              label: 'Ironwood viewing key (optional)'.tr,
-              hint: 'Starts with pirate-extended-viewing-key1…'.tr,
-              maxLines: 3,
-              suffixIcon: IconButton(
-                icon: const Icon(Icons.content_paste),
-                onPressed: () => _pasteIvk(_ironwoodIvkController),
-                tooltip: 'Paste from clipboard'.tr,
-              ),
-            ),
-
             const SizedBox(height: AppSpacing.lg),
-
             // Birthday height input
             PInput(
               controller: _birthdayController,
@@ -415,41 +314,6 @@ class _ViewingKeysImportScreenState
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-/// Info row for watch-only capabilities
-class _InfoRow extends StatelessWidget {
-  final IconData icon;
-  final Color iconColor;
-  final String text;
-
-  const _InfoRow({
-    required this.icon,
-    required this.iconColor,
-    required this.text,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
-      child: Row(
-        children: [
-          Icon(icon, color: iconColor, size: 18),
-          const SizedBox(width: AppSpacing.sm),
-          Expanded(
-            child: Text(
-              text,
-              style: AppTypography.body.copyWith(
-                color: AppColors.textSecondary,
-                fontSize: 14,
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }

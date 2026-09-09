@@ -94,7 +94,7 @@ void main() {
 
     final fields = find.byType(TextField);
     await tester.enterText(fields.at(1), 'zxviews1test');
-    await tester.enterText(fields.at(3), '1');
+    await tester.enterText(fields.at(2), '1');
     final importButton = find.text('Import view only wallet');
     await tester.ensureVisible(importButton);
     await tester.pumpAndSettle();
