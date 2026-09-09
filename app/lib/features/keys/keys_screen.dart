@@ -13,6 +13,7 @@ import '../../design/tokens/spacing.dart';
 import '../../design/tokens/typography.dart';
 import '../../ui/atoms/p_button.dart';
 import '../../ui/atoms/p_input.dart';
+import '../../ui/molecules/viewing_key_fields.dart';
 import '../../ui/atoms/p_text_button.dart';
 import '../../ui/molecules/p_card.dart';
 import '../../ui/organisms/p_app_bar.dart';
@@ -227,18 +228,9 @@ class _KeyManagementScreenState extends ConsumerState<KeyManagementScreen> {
                               hint: 'e.g. View only wallet'.tr,
                             ),
                             SizedBox(height: PSpacing.md),
-                            PInput(
-                              controller: saplingController,
-                              label: 'Sapling viewing key (optional)'.tr,
-                              hint: 'Paste your Sapling viewing key'.tr,
-                              maxLines: 4,
-                            ),
-                            SizedBox(height: PSpacing.md),
-                            PInput(
-                              controller: ironwoodController,
-                              label: 'Ironwood viewing key (optional)'.tr,
-                              hint: 'Paste your Ironwood viewing key'.tr,
-                              maxLines: 4,
+                            ViewingKeyFields(
+                              saplingController: saplingController,
+                              ironwoodController: ironwoodController,
                             ),
                             SizedBox(height: PSpacing.md),
                             PInput(
@@ -268,7 +260,7 @@ class _KeyManagementScreenState extends ConsumerState<KeyManagementScreen> {
                       children: [
                         PButton(
                           onPressed: () => Navigator.of(context).pop(false),
-                          variant: PButtonVariant.secondary,
+                          variant: PButtonVariant.soft,
                           child: Text('Cancel'.tr),
                         ),
                         PButton(
@@ -470,9 +462,7 @@ class _KeyManagementScreenState extends ConsumerState<KeyManagementScreen> {
         child: PButton(
           onPressed: enabled ? () => _addSeedAccounts(keys, count) : null,
           fullWidth: true,
-          variant: count == 1
-              ? PButtonVariant.primary
-              : PButtonVariant.secondary,
+          variant: count == 1 ? PButtonVariant.primary : PButtonVariant.soft,
           icon: Icon(icon),
           child: Text(label),
         ),
@@ -712,6 +702,7 @@ class _KeyManagementScreenState extends ConsumerState<KeyManagementScreen> {
     _setWallet(walletId, isDecoy);
 
     return PScaffold(
+      bodyMaxWidth: 1180,
       appBar: PAppBar(
         title: 'Keys & Addresses'.tr,
         subtitle: 'Manage keys & addresses'.tr,
@@ -876,7 +867,7 @@ class _KeyManagementScreenState extends ConsumerState<KeyManagementScreen> {
             SizedBox(height: PSpacing.md),
             PButton(
               onPressed: _refresh,
-              variant: PButtonVariant.secondary,
+              variant: PButtonVariant.soft,
               child: Text('Retry'.tr),
             ),
           ],

@@ -259,7 +259,7 @@ class _KeyDetailScreenState extends ConsumerState<KeyDetailScreen> {
                       children: [
                         PButton(
                           onPressed: () => Navigator.of(context).pop(false),
-                          variant: PButtonVariant.secondary,
+                          variant: PButtonVariant.soft,
                           child: Text('Cancel'.tr),
                         ),
                         PButton(
@@ -436,6 +436,7 @@ class _KeyDetailScreenState extends ConsumerState<KeyDetailScreen> {
     _setWallet(walletId);
 
     return PScaffold(
+      bodyMaxWidth: 760,
       appBar: PAppBar(
         title: 'Key details'.tr,
         subtitle: 'Manage addresses for this key'.tr,
@@ -535,7 +536,7 @@ class _KeyDetailScreenState extends ConsumerState<KeyDetailScreen> {
       if (canGenerateSapling)
         _ActionItem(
           label: 'New Sapling address'.tr,
-          variant: PButtonVariant.secondary,
+          variant: PButtonVariant.soft,
           onPressed: _isGenerating
               ? null
               : () => _generateAddress(useIronwood: false),
@@ -543,7 +544,7 @@ class _KeyDetailScreenState extends ConsumerState<KeyDetailScreen> {
       if (canGenerateIronwood)
         _ActionItem(
           label: 'New Ironwood address'.tr,
-          variant: PButtonVariant.secondary,
+          variant: PButtonVariant.soft,
           onPressed: _isGenerating
               ? null
               : () => _generateAddress(useIronwood: true),
@@ -551,7 +552,7 @@ class _KeyDetailScreenState extends ConsumerState<KeyDetailScreen> {
       if (key.spendable)
         _ActionItem(
           label: 'Consolidate balances'.tr,
-          variant: PButtonVariant.secondary,
+          variant: PButtonVariant.soft,
           onPressed: () =>
               context.push('/settings/keys/consolidate?keyId=${key.id}'),
         ),
@@ -563,7 +564,7 @@ class _KeyDetailScreenState extends ConsumerState<KeyDetailScreen> {
         ),
       _ActionItem(
         label: 'Export keys'.tr,
-        variant: PButtonVariant.secondary,
+        variant: PButtonVariant.soft,
         onPressed: () => _exportKeys(key),
       ),
     ];
@@ -657,7 +658,7 @@ class _KeyDetailScreenState extends ConsumerState<KeyDetailScreen> {
             SizedBox(height: PSpacing.md),
             PButton(
               onPressed: _refresh,
-              variant: PButtonVariant.secondary,
+              variant: PButtonVariant.soft,
               child: Text('Retry'.tr),
             ),
           ],

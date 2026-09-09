@@ -221,6 +221,7 @@ class _SweepKeyScreenState extends ConsumerState<SweepKeyScreen> {
   Widget build(BuildContext context) {
     final padding = PSpacing.screenPadding(MediaQuery.of(context).size.width);
     return PScaffold(
+      bodyMaxWidth: 760,
       appBar: PAppBar(
         title: 'Sweep balance'.tr,
         subtitle: 'Send all funds to a chosen address'.tr,
@@ -276,7 +277,7 @@ class _SweepKeyScreenState extends ConsumerState<SweepKeyScreen> {
                   SizedBox(height: PSpacing.sm),
                   PButton(
                     onPressed: _isBuilding ? null : _generateAddress,
-                    variant: PButtonVariant.secondary,
+                    variant: PButtonVariant.soft,
                     child: Text('Generate new address'.tr),
                   ),
                   SizedBox(height: PSpacing.md),
@@ -337,7 +338,7 @@ class _SweepKeyScreenState extends ConsumerState<SweepKeyScreen> {
             onPressed: _useIronwood ? null : () => _setPool(true),
             variant: _useIronwood
                 ? PButtonVariant.primary
-                : PButtonVariant.secondary,
+                : PButtonVariant.soft,
             child: Text('Ironwood'.tr),
           ),
         ),
@@ -346,7 +347,7 @@ class _SweepKeyScreenState extends ConsumerState<SweepKeyScreen> {
           child: PButton(
             onPressed: _useIronwood ? () => _setPool(false) : null,
             variant: _useIronwood
-                ? PButtonVariant.secondary
+                ? PButtonVariant.soft
                 : PButtonVariant.primary,
             child: Text('Sapling'.tr),
           ),

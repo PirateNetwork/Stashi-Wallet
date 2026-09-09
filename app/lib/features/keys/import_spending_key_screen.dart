@@ -175,6 +175,7 @@ class _ImportSpendingKeyScreenState
     return PopScope(
       canPop: !_isSubmitting,
       child: PScaffold(
+        bodyMaxWidth: 760,
         appBar: PAppBar(
           title: 'Import spending key'.tr,
           subtitle: 'Add an existing key to this wallet'.tr,

@@ -218,6 +218,7 @@ class _ConsolidateKeyScreenState extends ConsumerState<ConsolidateKeyScreen> {
   Widget build(BuildContext context) {
     final padding = PSpacing.screenPadding(MediaQuery.of(context).size.width);
     return PScaffold(
+      bodyMaxWidth: 760,
       appBar: PAppBar(
         title: 'Consolidate balances'.tr,
         subtitle: 'Repack funds into a wallet address'.tr,
@@ -240,7 +241,7 @@ class _ConsolidateKeyScreenState extends ConsumerState<ConsolidateKeyScreen> {
                   SizedBox(height: PSpacing.sm),
                   PButton(
                     onPressed: _isBuilding ? null : _generateAddress,
-                    variant: PButtonVariant.secondary,
+                    variant: PButtonVariant.soft,
                     child: Text('Generate new address'.tr),
                   ),
                   SizedBox(height: PSpacing.md),
@@ -301,7 +302,7 @@ class _ConsolidateKeyScreenState extends ConsumerState<ConsolidateKeyScreen> {
             onPressed: _useIronwood ? null : () => _setPool(true),
             variant: _useIronwood
                 ? PButtonVariant.primary
-                : PButtonVariant.secondary,
+                : PButtonVariant.soft,
             child: Text('Ironwood'.tr),
           ),
         ),
@@ -310,7 +311,7 @@ class _ConsolidateKeyScreenState extends ConsumerState<ConsolidateKeyScreen> {
           child: PButton(
             onPressed: _useIronwood ? () => _setPool(false) : null,
             variant: _useIronwood
-                ? PButtonVariant.secondary
+                ? PButtonVariant.soft
                 : PButtonVariant.primary,
             child: Text('Sapling'.tr),
           ),
