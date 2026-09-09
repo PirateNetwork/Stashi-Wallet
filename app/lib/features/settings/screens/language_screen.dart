@@ -17,6 +17,7 @@ class LanguageScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final selected = ref.watch(localePreferenceProvider);
     return PScaffold(
+      bodyMaxWidth: 760,
       title: 'Language'.tr,
       appBar: PAppBar(
         title: 'Language'.tr,

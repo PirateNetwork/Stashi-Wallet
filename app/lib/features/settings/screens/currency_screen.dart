@@ -19,6 +19,7 @@ class CurrencyScreen extends ConsumerWidget {
     final selected = ref.watch(currencyPreferenceProvider);
 
     return PScaffold(
+      bodyMaxWidth: 760,
       title: 'Currency'.tr,
       appBar: PAppBar(
         title: 'Currency'.tr,

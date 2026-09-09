@@ -18,6 +18,7 @@ class SeedPhraseLanguageScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final selected = ref.watch(seedPhraseLanguagePreferenceProvider);
     return PScaffold(
+      bodyMaxWidth: 760,
       title: 'Seed phrase language'.tr,
       appBar: PAppBar(
         title: 'Seed phrase language'.tr,

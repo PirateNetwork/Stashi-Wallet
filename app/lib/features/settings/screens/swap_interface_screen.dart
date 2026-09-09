@@ -19,6 +19,7 @@ class SwapInterfaceScreen extends ConsumerWidget {
     final selected = ref.watch(swapInterfacePreferenceProvider);
 
     return PScaffold(
+      bodyMaxWidth: 760,
       title: 'Swap interface'.tr,
       appBar: PAppBar(
         title: 'Swap interface'.tr,

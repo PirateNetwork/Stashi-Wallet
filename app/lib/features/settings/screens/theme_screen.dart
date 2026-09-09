@@ -38,6 +38,7 @@ class ThemeScreen extends ConsumerWidget {
     }
 
     return PScaffold(
+      bodyMaxWidth: 920,
       title: 'Theme'.tr,
       appBar: PAppBar(
         title: 'Theme'.tr,
