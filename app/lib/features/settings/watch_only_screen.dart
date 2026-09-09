@@ -3,13 +3,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../ui/atoms/p_button.dart';
 import '../../ui/atoms/p_input.dart';
+import '../../ui/molecules/viewing_key_fields.dart';
 import '../../ui/atoms/p_text_button.dart';
 import '../../design/compat.dart';
+import '../../design/tokens/colors.dart';
 import '../../ui/organisms/p_app_bar.dart';
 import '../../ui/organisms/p_scaffold.dart';
 import '../../core/ffi/ffi_bridge.dart';
 import '../../core/providers/wallet_providers.dart';
 import '../../core/security/clipboard_manager.dart';
+import '../../core/security/decoy_data.dart';
+import '../../core/security/viewing_key_export.dart';
 import '../../core/security/screenshot_protection.dart';
 import '../../core/i18n/arb_text_localizer.dart';
 
@@ -40,6 +44,7 @@ class _WatchOnlyScreenState extends ConsumerState<WatchOnlyScreen>
   @override
   Widget build(BuildContext context) {
     return PScaffold(
+      bodyMaxWidth: 760,
       title: 'View Only Wallets'.tr,
       appBar: PAppBar(
         title: 'View Only Wallets'.tr,
@@ -47,7 +52,7 @@ class _WatchOnlyScreenState extends ConsumerState<WatchOnlyScreen>
         showBackButton: true,
       ),
       body: ColoredBox(
-        color: Colors.black,
+        color: AppColors.backgroundBase,
         child: Column(
           children: [
             Material(
@@ -55,11 +60,11 @@ class _WatchOnlyScreenState extends ConsumerState<WatchOnlyScreen>
               child: TabBar(
                 controller: _tabController,
                 indicatorColor: PirateTheme.accentColor,
-                labelColor: Colors.white,
-                unselectedLabelColor: Colors.grey[500],
+                labelColor: AppColors.textPrimary,
+                unselectedLabelColor: AppColors.textSecondary,
                 tabs: [
-                  Tab(text: 'Export Sapling Viewing Key'.tr),
-                  Tab(text: 'Import Sapling Viewing Key'.tr),
+                  Tab(text: 'Export'.tr),
+                  Tab(text: 'Import'.tr),
                 ],
               ),
             ),
@@ -128,15 +133,16 @@ class _ExportSaplingViewingKeyTabState
           Icon(Icons.visibility, size: 80, color: PirateTheme.accentColor),
           SizedBox(height: PirateSpacing.xl),
           Text(
-            'Export Sapling viewing key'.tr,
-            style: PirateTypography.h2.copyWith(color: Colors.white),
+            'Viewing key'.tr,
+            style: PirateTypography.h2.copyWith(color: AppColors.textPrimary),
             textAlign: TextAlign.center,
           ),
           SizedBox(height: PirateSpacing.md),
           Text(
-            'Share this Sapling viewing key to view incoming activity without spending access.'
-                .tr,
-            style: PirateTypography.body.copyWith(color: Colors.grey[400]),
+            'View incoming transactions without spending access.'.tr,
+            style: PirateTypography.body.copyWith(
+              color: AppColors.textSecondary,
+            ),
             textAlign: TextAlign.center,
           ),
           SizedBox(height: PirateSpacing.xxl),
@@ -147,7 +153,7 @@ class _ExportSaplingViewingKeyTabState
               onPressed: _exportSaplingViewingKey,
               loading: _isLoading,
               icon: const Icon(Icons.key),
-              child: Text('Export Sapling Viewing Key'.tr),
+              child: Text('Export'.tr),
             ),
           ] else ...[
             _buildIvkDisplay(),
@@ -155,7 +161,7 @@ class _ExportSaplingViewingKeyTabState
             PButton(
               onPressed: _copyIvk,
               icon: const Icon(Icons.copy),
-              variant: PButtonVariant.secondary,
+              variant: PButtonVariant.outline,
               child: Text('Copy to clipboard'.tr),
             ),
             SizedBox(height: PirateSpacing.md),
@@ -211,7 +217,7 @@ class _ExportSaplingViewingKeyTabState
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: PirateTypography.bodyLarge.copyWith(
-                    color: Colors.white,
+                    color: AppColors.textPrimary,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -242,7 +248,7 @@ class _ExportSaplingViewingKeyTabState
             child: Text(
               text,
               style: PirateTypography.bodySmall.copyWith(
-                color: Colors.grey[400],
+                color: AppColors.textSecondary,
               ),
             ),
           ),
@@ -251,26 +257,33 @@ class _ExportSaplingViewingKeyTabState
     );
   }
 
+  String get _keyLabel =>
+      (_ivk?.startsWith('pirate-extended-viewing-key1') ?? false)
+      ? 'Ironwood viewing key'.tr
+      : 'Sapling viewing key'.tr;
+
   Widget _buildIvkDisplay() {
     return Container(
       padding: EdgeInsets.all(PirateSpacing.lg),
       decoration: BoxDecoration(
-        color: Colors.grey[900],
+        color: AppColors.backgroundSurface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey[800]!),
+        border: Border.all(color: AppColors.borderSubtle),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Sapling viewing key'.tr,
-            style: PirateTypography.bodySmall.copyWith(color: Colors.grey[400]),
+            _keyLabel,
+            style: PirateTypography.bodySmall.copyWith(
+              color: AppColors.textSecondary,
+            ),
           ),
           SizedBox(height: PirateSpacing.sm),
           SelectableText(
             _ivk!,
             style: PirateTypography.bodySmall.copyWith(
-              color: Colors.white,
+              color: AppColors.textPrimary,
               fontFamily: 'monospace',
             ),
           ),
@@ -280,6 +293,16 @@ class _ExportSaplingViewingKeyTabState
   }
 
   Future<void> _exportSaplingViewingKey() async {
+    if (ref.read(decoyModeProvider)) {
+      setState(
+        () =>
+            _ivk = DecoyData.exportKeyGroup(DecoyData.keyGroups().first.id)
+                .saplingViewingKey,
+      );
+      _disableScreenshots();
+      return;
+    }
+    if (!await _verifyExport() || !mounted) return;
     setState(() {
       _isLoading = true;
       _error = null;
@@ -291,18 +314,74 @@ class _ExportSaplingViewingKeyTabState
         throw StateError('No active wallet'.tr);
       }
 
-      final ivk = await FfiBridge.exportSaplingViewingKeySecure(walletId);
+      final ivk = await exportCurrentAddressViewingKey(walletId);
+      if (!mounted) return;
       setState(() => _ivk = ivk);
       _disableScreenshots();
     } catch (e) {
+      if (!mounted) return;
       setState(
-        () => _error = 'Failed to export Sapling viewing key: {error}'.trArgs({
-          'error': e,
-        }),
+        () => _error = 'Failed to export keys: {error}'.trArgs({'error': e}),
       );
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  Future<bool> _verifyExport() async {
+    final controller = TextEditingController();
+    var busy = false;
+    String? error;
+    final verified = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, update) => AlertDialog(
+          title: Text('Verify passphrase'.tr),
+          content: PInput(
+            controller: controller,
+            label: 'Passphrase'.tr,
+            obscureText: true,
+            sensitive: true,
+            enabled: !busy,
+            errorText: error,
+          ),
+          actions: [
+            TextButton(
+              onPressed: busy ? null : () => Navigator.pop(context, false),
+              child: Text('Cancel'.tr),
+            ),
+            TextButton(
+              onPressed: busy
+                  ? null
+                  : () async {
+                      update(() => busy = true);
+                      try {
+                        final valid = await FfiBridge.verifyAppPassphrase(
+                          controller.text,
+                        );
+                        if (!context.mounted) return;
+                        if (valid) {
+                          controller.clear();
+                          Navigator.pop(context, true);
+                          return;
+                        }
+                        update(() => error = 'Passphrase is incorrect'.tr);
+                      } catch (_) {
+                        if (!context.mounted) return;
+                        update(() => error = 'Unable to verify passphrase'.tr);
+                      }
+                      if (context.mounted) update(() => busy = false);
+                    },
+              child: Text(busy ? 'Verifying...'.tr : 'Verify'.tr),
+            ),
+          ],
+        ),
+      ),
+    );
+    // The dialog route still animates out after its result completes.
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    controller.dispose();
+    return verified ?? false;
   }
 
   Future<void> _copyIvk() async {
@@ -313,7 +392,7 @@ class _ExportSaplingViewingKeyTabState
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Sapling viewing key copied. Clears in 30 seconds.'.tr),
+          content: Text('Viewing key copied. Clears in 30 seconds.'.tr),
           backgroundColor: Colors.green[700],
         ),
       );
@@ -334,6 +413,7 @@ class _ImportSaplingViewingKeyTabState
     extends ConsumerState<ImportSaplingViewingKeyTab> {
   final _nameController = TextEditingController();
   final _ivkController = TextEditingController();
+  final _ironwoodController = TextEditingController();
   final _birthdayController = TextEditingController();
   bool _isLoading = false;
   String? _error;
@@ -350,6 +430,7 @@ class _ImportSaplingViewingKeyTabState
   void dispose() {
     _nameController.dispose();
     _ivkController.dispose();
+    _ironwoodController.dispose();
     _birthdayController.dispose();
     super.dispose();
   }
@@ -368,33 +449,22 @@ class _ImportSaplingViewingKeyTabState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Icon(Icons.remove_red_eye, size: 80, color: Colors.orange),
-          SizedBox(height: PirateSpacing.xl),
           Text(
-            'Import view only wallet'.tr,
-            style: PirateTypography.h2.copyWith(color: Colors.white),
-            textAlign: TextAlign.center,
+            'View incoming transactions without spending access.'.tr,
+            style: PirateTypography.body.copyWith(
+              color: AppColors.textSecondary,
+            ),
           ),
-          SizedBox(height: PirateSpacing.md),
-          Text(
-            'Create a view-only wallet to view incoming activity.'.tr,
-            style: PirateTypography.body.copyWith(color: Colors.grey[400]),
-            textAlign: TextAlign.center,
-          ),
-          SizedBox(height: PirateSpacing.xxl),
-          _buildWatchOnlyBadge(),
-          SizedBox(height: PirateSpacing.xl),
+          SizedBox(height: PirateSpacing.lg),
           PInput(
             controller: _nameController,
             label: 'Wallet name'.tr,
             hint: 'e.g., Savings (view only)'.tr,
           ),
           SizedBox(height: PirateSpacing.lg),
-          PInput(
-            controller: _ivkController,
-            label: 'Sapling viewing key'.tr,
-            hint: 'Paste your Sapling viewing key'.tr,
-            maxLines: 3,
+          ViewingKeyFields(
+            saplingController: _ivkController,
+            ironwoodController: _ironwoodController,
           ),
           SizedBox(height: PirateSpacing.lg),
           PInput(
@@ -407,7 +477,9 @@ class _ImportSaplingViewingKeyTabState
           Text(
             'Birthday height helps speed up initial sync. Leave blank to use the default height.'
                 .tr,
-            style: PirateTypography.bodySmall.copyWith(color: Colors.grey[500]),
+            style: PirateTypography.bodySmall.copyWith(
+              color: AppColors.textSecondary,
+            ),
           ),
           if (_error != null) ...[
             SizedBox(height: PirateSpacing.lg),
@@ -437,45 +509,6 @@ class _ImportSaplingViewingKeyTabState
     );
   }
 
-  Widget _buildWatchOnlyBadge() {
-    return Container(
-      padding: EdgeInsets.all(PirateSpacing.lg),
-      decoration: BoxDecoration(
-        color: Colors.orange.withValues(alpha: 0.1),
-        border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.visibility_off, color: Colors.orange, size: 32),
-          SizedBox(width: PirateSpacing.md),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'View only'.tr,
-                  style: PirateTypography.bodyLarge.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                SizedBox(height: PirateSpacing.xs),
-                Text(
-                  'View only wallets cannot spend. They only show incoming activity.'
-                      .tr,
-                  style: PirateTypography.bodySmall.copyWith(
-                    color: Colors.grey[400],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Future<void> _importWallet() async {
     // Validate inputs
     if (_nameController.text.trim().isEmpty) {
@@ -483,15 +516,15 @@ class _ImportSaplingViewingKeyTabState
       return;
     }
 
-    if (_ivkController.text.trim().isEmpty) {
-      setState(() => _error = 'Please enter a Sapling viewing key'.tr);
+    final saplingKey = _ivkController.text.trim();
+    final ironwoodKey = _ironwoodController.text.trim();
+    if (saplingKey.isEmpty && ironwoodKey.isEmpty) {
+      setState(() => _error = 'Provide a viewing key'.tr);
       return;
     }
-
-    final trimmed = _ivkController.text.trim();
-    if (!(trimmed.startsWith('zxviews') ||
-        trimmed.startsWith('pirate-extended-viewing-key'))) {
-      setState(() => _error = 'Invalid Sapling viewing key format.'.tr);
+    final birthdayText = _birthdayController.text.trim();
+    if (birthdayText.isNotEmpty && (int.tryParse(birthdayText) ?? 0) < 1) {
+      setState(() => _error = 'Enter a valid birthday height'.tr);
       return;
     }
 
@@ -511,7 +544,8 @@ class _ImportSaplingViewingKeyTabState
 
       await ref.read(importViewingWalletProvider)(
         name: _nameController.text.trim(),
-        saplingViewingKey: trimmed,
+        saplingViewingKey: saplingKey.isEmpty ? null : saplingKey,
+        ironwoodViewingKey: ironwoodKey.isEmpty ? null : ironwoodKey,
         birthday: fallbackBirthday,
       );
 
@@ -525,11 +559,12 @@ class _ImportSaplingViewingKeyTabState
         Navigator.pop(context);
       }
     } catch (e) {
+      if (!mounted) return;
       setState(
         () => _error = 'Failed to import wallet: {error}'.trArgs({'error': e}),
       );
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 }
