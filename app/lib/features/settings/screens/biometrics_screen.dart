@@ -258,6 +258,7 @@ class _BiometricsScreenState extends ConsumerState<BiometricsScreen> {
         : typeLabels.join(', ');
 
     return PScaffold(
+      bodyMaxWidth: 760,
       title: 'Biometrics'.tr,
       appBar: PAppBar(
         title: 'Biometrics'.tr,

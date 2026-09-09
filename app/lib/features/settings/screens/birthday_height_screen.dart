@@ -264,6 +264,7 @@ class _BirthdayHeightScreenState extends ConsumerState<BirthdayHeightScreen> {
     );
 
     return PScaffold(
+      bodyMaxWidth: 760,
       title: 'Birthday Height'.tr,
       appBar: PAppBar(
         title: 'Birthday Height'.tr,

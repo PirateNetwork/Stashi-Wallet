@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../ui/atoms/p_button.dart';
 import '../../ui/atoms/p_input.dart';
 import '../../ui/atoms/p_text_button.dart';
@@ -17,7 +18,9 @@ import '../../core/security/clipboard_manager.dart';
 import '../../core/security/decoy_data.dart';
 import '../../core/providers/wallet_providers.dart';
 import 'providers/preferences_providers.dart';
+
 import 'dart:async';
+
 import '../../core/i18n/arb_text_localizer.dart';
 
 /// Provider for clipboard countdown timer
@@ -173,6 +176,7 @@ class _ExportSeedScreenState extends ConsumerState<ExportSeedScreen> {
         }
       },
       child: PScaffold(
+        bodyMaxWidth: 760,
         title: 'Backup Seed Phrase'.tr,
         appBar: PAppBar(
           title: 'Backup Seed Phrase'.tr,
@@ -297,17 +301,15 @@ class _ExportSeedScreenState extends ConsumerState<ExportSeedScreen> {
           _buildWarningCard(
             icon: Icons.photo_camera,
             title: 'Store offline'.tr,
-            description:
-                'Write it down and store it offline. Avoid screenshots or digital copies.'
-                    .tr,
+            description: 'Write it down and store it offline. Avoid screenshots or digital copies.'
+                .tr,
           ),
           SizedBox(height: PirateSpacing.lg),
           _buildWarningCard(
             icon: Icons.verified_user,
             title: 'We will never ask'.tr,
-            description:
-                'Support will never ask for your recovery phrase. Anyone asking is a scam.'
-                    .tr,
+            description: 'Support will never ask for your recovery phrase. Anyone asking is a scam.'
+                .tr,
           ),
           SizedBox(height: PirateSpacing.xl),
           Container(

@@ -75,6 +75,7 @@ class _PanicPinScreenState extends ConsumerState<PanicPinScreen> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       return PScaffold(
+        bodyMaxWidth: 760,
         title: 'Duress Passphrase'.tr,
         appBar: PAppBar(
           title: 'Duress Passphrase'.tr,
@@ -85,6 +86,7 @@ class _PanicPinScreenState extends ConsumerState<PanicPinScreen> {
     }
 
     return PScaffold(
+      bodyMaxWidth: 760,
       title: 'Duress Passphrase'.tr,
       appBar: PAppBar(
         title: 'Duress Passphrase'.tr,
@@ -332,9 +334,8 @@ class _PanicPinScreenState extends ConsumerState<PanicPinScreen> {
               const SizedBox(width: PSpacing.sm),
               Text(
                 'How it works'.tr,
-                style: PTypography.bodyLarge(
-                  color: AppColors.textPrimary,
-                ).copyWith(fontWeight: FontWeight.w600),
+                style: PTypography.bodyLarge(color: AppColors.textPrimary)
+                    .copyWith(fontWeight: FontWeight.w600),
               ),
             ],
           ),

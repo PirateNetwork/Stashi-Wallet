@@ -315,6 +315,7 @@ class _PassphraseChangeScreenState
     );
 
     return PScaffold(
+      bodyMaxWidth: 760,
       title: 'Change passphrase'.tr,
       appBar: PAppBar(
         title: 'Change passphrase'.tr,
