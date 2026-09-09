@@ -66,6 +66,64 @@ class SettingsScreen extends ConsumerWidget {
       padding: EdgeInsets.zero,
       children: [
         _SettingsSection(
+          title: 'Appearance'.tr,
+          children: [
+            Consumer(
+              builder: (context, ref, _) {
+                final themeMode = ref.watch(appThemeModeProvider);
+                final theme = ref.watch(walletThemeProvider);
+                return PListTile(
+                  leading: const Icon(Icons.dark_mode_outlined),
+                  title: 'Theme'.tr,
+                  subtitle: '${theme.name} · ${themeMode.label}',
+                  onTap: () => context.push('/settings/theme'),
+                  trailing: const Icon(Icons.chevron_right),
+                );
+              },
+            ),
+            Consumer(
+              builder: (context, ref, _) {
+                final currency = ref.watch(currencyPreferenceProvider);
+                return PListTile(
+                  leading: const Icon(Icons.currency_bitcoin),
+                  title: 'Currency'.tr,
+                  subtitle: currency.code,
+                  onTap: () => context.push('/settings/currency'),
+                  trailing: const Icon(Icons.chevron_right),
+                );
+              },
+            ),
+            Consumer(
+              builder: (context, ref, _) {
+                final locale = ref.watch(localePreferenceProvider);
+                final subtitle = locale.label;
+                return PListTile(
+                  leading: const Icon(Icons.language_outlined),
+                  title: 'Language'.tr,
+                  subtitle: subtitle,
+                  onTap: () => context.push('/settings/language'),
+                  trailing: const Icon(Icons.chevron_right),
+                );
+              },
+            ),
+            Consumer(
+              builder: (context, ref, _) {
+                final language = ref.watch(
+                  seedPhraseLanguagePreferenceProvider,
+                );
+                return PListTile(
+                  leading: const Icon(Icons.key_outlined),
+                  title: 'Seed phrase language'.tr,
+                  subtitle: language.nativeLabel,
+                  onTap: () => context.push('/settings/seed-language'),
+                  trailing: const Icon(Icons.chevron_right),
+                );
+              },
+            ),
+          ],
+        ),
+
+        _SettingsSection(
           title: 'Security'.tr,
           topPadding: isMobile ? AppSpacing.lg : AppSpacing.xl,
           children: [
@@ -113,6 +171,32 @@ class SettingsScreen extends ConsumerWidget {
         ),
 
         _SettingsSection(
+          title: 'Backups'.tr,
+          children: [
+            Consumer(
+              builder: (context, ref, _) {
+                final wallet = ref.watch(activeWalletMetaProvider);
+                return PListTile(
+                  leading: Icon(Icons.key_outlined, color: AppColors.warning),
+                  title: 'Backup seed phrase'.tr,
+                  subtitle: wallet == null
+                      ? 'No active wallet'.tr
+                      : 'View your recovery phrase'.tr,
+                  onTap: wallet == null
+                      ? null
+                      : () => context.push(
+                          '/settings/export-seed'
+                          '?walletId=${wallet.id}'
+                          '&walletName=${Uri.encodeComponent(wallet.name)}',
+                        ),
+                  trailing: const Icon(Icons.chevron_right),
+                );
+              },
+            ),
+          ],
+        ),
+
+        _SettingsSection(
           title: 'Privacy and Network'.tr,
           children: [
             Consumer(
@@ -153,8 +237,8 @@ class SettingsScreen extends ConsumerWidget {
             ),
             PListTile(
               leading: const Icon(Icons.wifi_tethering_off_outlined),
-              title: 'Outbound API Calls'.tr,
-              subtitle: 'Control non-lightserver requests'.tr,
+              title: 'External connections'.tr,
+              subtitle: 'Prices, updates and swap services'.tr,
               onTap: () => context.push('/settings/outbound-apis'),
               trailing: const Icon(Icons.chevron_right),
             ),
@@ -162,34 +246,14 @@ class SettingsScreen extends ConsumerWidget {
         ),
 
         _SettingsSection(
-          title: 'Backups'.tr,
-          children: [
-            Consumer(
-              builder: (context, ref, _) {
-                final wallet = ref.watch(activeWalletMetaProvider);
-                return PListTile(
-                  leading: Icon(Icons.key_outlined, color: AppColors.warning),
-                  title: 'Backup seed phrase'.tr,
-                  subtitle: wallet == null
-                      ? 'No active wallet'.tr
-                      : 'View your recovery phrase'.tr,
-                  onTap: wallet == null
-                      ? null
-                      : () => context.push(
-                          '/settings/export-seed'
-                          '?walletId=${wallet.id}'
-                          '&walletName=${Uri.encodeComponent(wallet.name)}',
-                        ),
-                  trailing: const Icon(Icons.chevron_right),
-                );
-              },
-            ),
-          ],
-        ),
-
-        _SettingsSection(
           title: 'Wallet'.tr,
           children: [
+            PListTile(
+              leading: const Icon(Icons.contacts_outlined),
+              title: 'Address Book'.tr,
+              onTap: () => context.push('/settings/address-book'),
+              trailing: const Icon(Icons.chevron_right),
+            ),
             PListTile(
               leading: const Icon(Icons.vpn_key_outlined),
               title: 'Keys & addresses'.tr,
@@ -255,64 +319,6 @@ class SettingsScreen extends ConsumerWidget {
                   title: 'Swap interface'.tr,
                   subtitle: mode.label,
                   onTap: () => context.push('/settings/swap-interface'),
-                  trailing: const Icon(Icons.chevron_right),
-                );
-              },
-            ),
-          ],
-        ),
-
-        _SettingsSection(
-          title: 'Appearance'.tr,
-          children: [
-            Consumer(
-              builder: (context, ref, _) {
-                final themeMode = ref.watch(appThemeModeProvider);
-                final theme = ref.watch(walletThemeProvider);
-                return PListTile(
-                  leading: const Icon(Icons.dark_mode_outlined),
-                  title: 'Theme'.tr,
-                  subtitle: '${theme.name} · ${themeMode.label}',
-                  onTap: () => context.push('/settings/theme'),
-                  trailing: const Icon(Icons.chevron_right),
-                );
-              },
-            ),
-            Consumer(
-              builder: (context, ref, _) {
-                final currency = ref.watch(currencyPreferenceProvider);
-                return PListTile(
-                  leading: const Icon(Icons.currency_bitcoin),
-                  title: 'Currency'.tr,
-                  subtitle: currency.code,
-                  onTap: () => context.push('/settings/currency'),
-                  trailing: const Icon(Icons.chevron_right),
-                );
-              },
-            ),
-            Consumer(
-              builder: (context, ref, _) {
-                final locale = ref.watch(localePreferenceProvider);
-                final subtitle = locale.label;
-                return PListTile(
-                  leading: const Icon(Icons.language_outlined),
-                  title: 'Language'.tr,
-                  subtitle: subtitle,
-                  onTap: () => context.push('/settings/language'),
-                  trailing: const Icon(Icons.chevron_right),
-                );
-              },
-            ),
-            Consumer(
-              builder: (context, ref, _) {
-                final language = ref.watch(
-                  seedPhraseLanguagePreferenceProvider,
-                );
-                return PListTile(
-                  leading: const Icon(Icons.key_outlined),
-                  title: 'Seed phrase language'.tr,
-                  subtitle: language.nativeLabel,
-                  onTap: () => context.push('/settings/seed-language'),
                   trailing: const Icon(Icons.chevron_right),
                 );
               },
@@ -428,9 +434,16 @@ class SettingsScreen extends ConsumerWidget {
 
     if (!useScaffold) {
       if (isDesktop) {
-        return content;
+        return Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 760),
+            child: content,
+          ),
+        );
       }
       return PScaffold(
+        bodyMaxWidth: 760,
         title: 'Settings'.tr,
         useSafeArea: false,
         appBar: PAppBar(
@@ -443,6 +456,7 @@ class SettingsScreen extends ConsumerWidget {
     }
 
     return PScaffold(
+      bodyMaxWidth: 760,
       title: 'Settings'.tr,
       appBar: isDesktop
           ? null
