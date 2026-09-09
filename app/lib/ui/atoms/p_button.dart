@@ -66,6 +66,9 @@ class _PButtonState extends State<PButton> {
                   width: widget.fullWidth ? double.infinity : null,
                   constraints: BoxConstraints(minHeight: widget.size.height),
                   decoration: BoxDecoration(
+                    color: widget.variant == PButtonVariant.soft
+                        ? AppColors.accentPrimary.withValues(alpha: 0.09)
+                        : null,
                     gradient: widget.variant.gradient(
                       isDisabled: isDisabled,
                       isHovered: _isHovered,
@@ -162,6 +165,7 @@ enum PButtonVariant {
   primary,
   secondary,
   outline,
+  soft,
   ghost,
   danger;
 
@@ -186,6 +190,7 @@ enum PButtonVariant {
           end: Alignment.bottomRight,
         );
       case PButtonVariant.outline:
+      case PButtonVariant.soft:
       case PButtonVariant.ghost:
       case PButtonVariant.danger:
         return null;
@@ -193,6 +198,13 @@ enum PButtonVariant {
   }
 
   BoxBorder? border({required bool isDisabled}) {
+    if (this == PButtonVariant.soft) {
+      return Border.all(
+        color: isDisabled
+            ? AppColors.borderSubtle
+            : AppColors.accentPrimary.withValues(alpha: 0.45),
+      );
+    }
     if (this == PButtonVariant.outline) {
       return Border.all(
         color: isDisabled ? AppColors.borderSubtle : AppColors.borderDefault,
@@ -212,6 +224,7 @@ enum PButtonVariant {
       case PButtonVariant.danger:
         return AppColors.error;
       case PButtonVariant.outline:
+      case PButtonVariant.soft:
       case PButtonVariant.ghost:
         return AppColors.textPrimary;
     }
