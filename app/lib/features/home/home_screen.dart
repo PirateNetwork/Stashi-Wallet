@@ -506,11 +506,16 @@ class _QuickActionButton extends StatelessWidget {
             ),
             const SizedBox(width: PSpacing.sm),
             Flexible(
-              child: Text(
-                label,
-                style: PTypography.bodyMedium().copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textPrimary,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  softWrap: false,
+                  style: PTypography.bodyMedium().copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
                 ),
               ),
             ),

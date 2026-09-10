@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pirate_wallet/core/ffi/ffi_bridge.dart';
 import 'package:pirate_wallet/core/ffi/generated/models.dart';
+import 'package:pirate_wallet/core/i18n/arb_text_localizer.dart';
 import 'package:pirate_wallet/core/providers/price_providers.dart';
 import 'package:pirate_wallet/core/providers/wallet_providers.dart';
 import 'package:pirate_wallet/design/theme.dart';
@@ -52,6 +53,7 @@ Widget _testApp({
   double textScale = 1,
   Future<List<TxInfo>> Function()? loadTransactions,
   Stream<Balance>? balanceStream,
+  SyncStatus? syncStatus,
 }) {
   final syncedStatus = SyncStatus(
     localHeight: BigInt.from(4100000),
@@ -91,9 +93,11 @@ Widget _testApp({
             ),
       ),
       syncProgressStreamProvider.overrideWith(
-        (ref) => Stream.value(syncedStatus),
+        (ref) => Stream.value(syncStatus ?? syncedStatus),
       ),
-      syncStatusProvider.overrideWith((ref) async => syncedStatus),
+      syncStatusProvider.overrideWith(
+        (ref) async => syncStatus ?? syncedStatus,
+      ),
       transactionsProvider.overrideWith(
         (ref) async =>
             loadTransactions == null ? transactions : await loadTransactions(),
@@ -131,6 +135,8 @@ Widget _testApp({
 
 void main() {
   setUpAll(() async {
+    await ArbTextLocalizer.instance.setLocale('de');
+    await ArbTextLocalizer.instance.setLocale('en');
     await loadTestFont('Sora', 'assets/fonts/Sora/Sora.ttf');
     await loadTestFont(
       'JetBrainsMono',
@@ -161,6 +167,47 @@ void main() {
     expect(pending.top, greaterThanOrEqualTo(fiat.bottom));
     expect(tester.takeException(), isNull);
   });
+
+  for (final width in [320.0, 390.0]) {
+    testWidgets('German home fits at $width with enlarged text', (
+      tester,
+    ) async {
+      tester.view.physicalSize = Size(width, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await ArbTextLocalizer.instance.setLocale('de');
+      addTearDown(() => ArbTextLocalizer.instance.setLocale('en'));
+      await tester.pumpWidget(
+        _testApp(
+          textScale: 1.6,
+          syncStatus: SyncStatus(
+            localHeight: BigInt.from(4000000),
+            targetHeight: BigInt.from(4100000),
+            percent: 97,
+            eta: BigInt.from(120),
+            stage: SyncStage.witness,
+            lastCheckpoint: null,
+            blocksPerSecond: 20,
+            notesDecrypted: BigInt.zero,
+            lastBatchMs: BigInt.zero,
+          ),
+        ),
+      );
+      // Active sync keeps its progress animation running.
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.text('Guthaben'), findsOneWidget);
+      expect(find.text('Merkle-Pfade werden aufgebaut'), findsOneWidget);
+      expect(find.text('Restzeit'), findsOneWidget);
+      await tester.ensureVisible(find.text('Empfangen'));
+      await tester.pump(const Duration(milliseconds: 500));
+      final label = tester.widget<Text>(find.text('Empfangen'));
+      expect(label.maxLines, 1);
+      expect(label.softWrap, isFalse);
+      expect(find.text('Empfangen').hitTestable(), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   for (final size in [
     const Size(320, 640),
