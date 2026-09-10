@@ -42,6 +42,8 @@ class _PButtonState extends State<PButton> {
   @override
   Widget build(BuildContext context) {
     final isDisabled = widget.onPressed == null || widget.loading;
+    // Busy actions remain visually active; only unavailable actions are grey.
+    final isVisuallyDisabled = widget.onPressed == null && !widget.loading;
     final focusBorderColor =
         widget.variant == PButtonVariant.primary ||
             widget.variant == PButtonVariant.secondary
@@ -70,13 +72,13 @@ class _PButtonState extends State<PButton> {
                         ? AppColors.accentPrimary.withValues(alpha: 0.09)
                         : null,
                     gradient: widget.variant.gradient(
-                      isDisabled: isDisabled,
+                      isDisabled: isVisuallyDisabled,
                       isHovered: _isHovered,
                       isPressed: _isPressed,
                     ),
                     border: _isFocused && !isDisabled
                         ? Border.all(color: focusBorderColor, width: 2)
-                        : widget.variant.border(isDisabled: isDisabled),
+                        : widget.variant.border(isDisabled: isVisuallyDisabled),
                     borderRadius: BorderRadius.circular(PSpacing.radiusMD),
                     boxShadow: _isHovered && !isDisabled
                         ? [
@@ -114,7 +116,7 @@ class _PButtonState extends State<PButton> {
                                   strokeWidth: 2.0,
                                   valueColor: AlwaysStoppedAnimation<Color>(
                                     widget.variant.textColor(
-                                      isDisabled: isDisabled,
+                                      isDisabled: isVisuallyDisabled,
                                     ),
                                   ),
                                 ),
@@ -124,7 +126,7 @@ class _PButtonState extends State<PButton> {
                               IconTheme(
                                 data: IconThemeData(
                                   color: widget.variant.textColor(
-                                    isDisabled: isDisabled,
+                                    isDisabled: isVisuallyDisabled,
                                   ),
                                   size: widget.size.iconSize,
                                 ),
@@ -137,7 +139,7 @@ class _PButtonState extends State<PButton> {
                                 textAlign: TextAlign.center,
                                 style: widget.size.textStyle.copyWith(
                                   color: widget.variant.textColor(
-                                    isDisabled: isDisabled,
+                                    isDisabled: isVisuallyDisabled,
                                   ),
                                 ),
                                 child: contentChild,

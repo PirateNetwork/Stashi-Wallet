@@ -10,6 +10,7 @@
 library;
 
 import 'package:flutter/material.dart';
+
 import '../../design/deep_space_theme.dart';
 
 /// Primary CTA button with Gradient A
@@ -139,6 +140,7 @@ class _PGradientButtonState extends State<PGradientButton>
   }
 
   Widget _buildButton({required bool reduceMotion}) {
+    final showActiveColors = _isEnabled || widget.isLoading;
     final double height = widget.size.height;
     final EdgeInsets padding = widget.size.padding;
     final TextStyle textStyle = widget.size.textStyle;
@@ -155,8 +157,8 @@ class _PGradientButtonState extends State<PGradientButton>
         minHeight: DeepSpaceA11y.minTouchTarget,
       ),
       decoration: BoxDecoration(
-        gradient: _isEnabled ? _buildGradient() : null,
-        color: _isEnabled ? null : AppColors.nebula,
+        gradient: showActiveColors ? _buildGradient() : null,
+        color: showActiveColors ? null : AppColors.nebula,
         borderRadius: BorderRadius.circular(widget.size.borderRadius),
         border: _isFocused
             ? Border.all(
@@ -194,7 +196,7 @@ class _PGradientButtonState extends State<PGradientButton>
                   child: CircularProgressIndicator(
                     strokeWidth: 2.0,
                     valueColor: AlwaysStoppedAnimation<Color>(
-                      _isEnabled
+                      showActiveColors
                           ? AppColors.textOnGradient
                           : AppColors.textDisabled,
                     ),
@@ -205,7 +207,7 @@ class _PGradientButtonState extends State<PGradientButton>
                 Icon(
                   widget.icon,
                   size: widget.size.iconSize,
-                  color: _isEnabled
+                  color: showActiveColors
                       ? AppColors.textOnGradient
                       : AppColors.textDisabled,
                 ),
@@ -214,7 +216,7 @@ class _PGradientButtonState extends State<PGradientButton>
               Text(
                 widget.text,
                 style: textStyle.copyWith(
-                  color: _isEnabled
+                  color: showActiveColors
                       ? AppColors.textOnGradient
                       : AppColors.textDisabled,
                 ),
