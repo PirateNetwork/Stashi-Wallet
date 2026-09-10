@@ -4,6 +4,7 @@ import 'package:timeago/timeago.dart' as timeago;
 import '../../design/tokens/colors.dart';
 import '../../design/tokens/spacing.dart';
 import '../../design/tokens/typography.dart';
+import '../../design/themes/wallet_palette.dart';
 import 'p_card.dart';
 import '../../core/i18n/arb_text_localizer.dart';
 
@@ -444,21 +445,22 @@ class _MemoIndicator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = WalletPalette.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: PSpacing.xs,
         vertical: PSpacing.xxs,
       ),
       decoration: BoxDecoration(
-        color: AppColors.selectedBackground,
+        color: palette.selectedBackground,
         borderRadius: BorderRadius.circular(PSpacing.radiusSM),
-        border: Border.all(color: AppColors.selectedBorder),
+        border: Border.all(color: palette.selectedBorder),
       ),
       child: Text(
         'Has memo'.tr,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: PTypography.labelSmall(color: AppColors.textSecondary),
+        style: PTypography.labelSmall(color: palette.textSecondary),
       ),
     );
   }
