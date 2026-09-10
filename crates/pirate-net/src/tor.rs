@@ -772,7 +772,16 @@ impl TorClient {
                             .bootstrap_behavior(BootstrapBehavior::Manual)
                             .create_unbootstrapped()
                             .map_err(|e| {
-                                Error::Tor(format!("Failed to create Tor client: {}", e))
+                                // Arti's Display omits the underlying directory or
+                                // permission error. Preserve its source chain so
+                                // startup failures can actually be diagnosed.
+                                let mut message = format!("Failed to create Tor client: {e}");
+                                let mut source = std::error::Error::source(&e);
+                                while let Some(cause) = source {
+                                    message.push_str(&format!(": {cause}"));
+                                    source = cause.source();
+                                }
+                                Error::Tor(message)
                             })?;
 
                         spawn_status_watcher(
@@ -1057,6 +1066,53 @@ mod tests {
         let config = TorConfig::default();
         assert!(config.enabled);
         assert!(!config.debug);
+    }
+
+    #[test]
+    fn tor_client_can_initialize_private_directories() {
+        let base = env::temp_dir().join(format!("stashi-tor-init-{}", rand::random::<u64>()));
+        let config = TorConfig {
+            state_dir: base.join("state"),
+            cache_dir: base.join("cache"),
+            ..TorConfig::default()
+        };
+        let runtime = PreferredRuntime::create().expect("Tor runtime");
+        let arti_config = build_arti_config(&config, false).expect("Tor config");
+        let result = runtime.block_on(async {
+            ArtiClient::with_runtime(runtime.clone())
+                .config(arti_config)
+                .bootstrap_behavior(BootstrapBehavior::Manual)
+                .create_unbootstrapped()
+        });
+        if let Err(error) = &result {
+            panic!("Tor initialization failed: {error:#?}");
+        }
+        drop(result);
+        drop(runtime);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    #[ignore = "Explicit local diagnostic; no network bootstrap"]
+    fn diagnose_existing_tor_directories() {
+        let base =
+            PathBuf::from(env::var("STASHI_DIAGNOSTIC_TOR_DIR").expect("explicit Tor directory"));
+        let config = TorConfig {
+            state_dir: base.join("state"),
+            cache_dir: base.join("cache"),
+            ..TorConfig::default()
+        };
+        let runtime = PreferredRuntime::create().unwrap();
+        let config = build_arti_config(&config, false).unwrap();
+        runtime.block_on(async {
+            let result = ArtiClient::with_runtime(runtime.clone())
+                .config(config)
+                .bootstrap_behavior(BootstrapBehavior::Manual)
+                .create_unbootstrapped();
+            if let Err(error) = result {
+                panic!("{error:#?}");
+            }
+        });
     }
 
     #[test]
