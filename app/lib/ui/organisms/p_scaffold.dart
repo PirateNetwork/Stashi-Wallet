@@ -8,6 +8,7 @@ import '../../core/desktop/windows_version.dart';
 import '../../design/tokens/colors.dart';
 import '../../design/tokens/spacing.dart';
 import '../../design/tokens/typography.dart';
+import '../../design/themes/wallet_palette.dart';
 import 'p_app_bar.dart';
 
 /// Stashi Wallet Scaffold with custom titlebar for desktop
@@ -135,14 +136,19 @@ class PWindowTitleBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final palette = theme.extension<WalletPalette>();
     return SizedBox(
       height: PSpacing.desktopTitlebarHeight,
       child: Container(
         height: PSpacing.desktopTitlebarHeight,
         decoration: BoxDecoration(
-          color: AppColors.backgroundBase,
+          color: palette?.backgroundBase ?? theme.scaffoldBackgroundColor,
           border: Border(
-            bottom: BorderSide(color: AppColors.borderSubtle, width: 1.0),
+            bottom: BorderSide(
+              color: palette?.borderSubtle ?? theme.dividerColor,
+              width: 1.0,
+            ),
           ),
         ),
         child: Row(
@@ -157,7 +163,8 @@ class PWindowTitleBar extends StatelessWidget {
                     child: Text(
                       title,
                       style: PTypography.labelLarge(
-                        color: AppColors.textPrimary,
+                        color:
+                            palette?.textPrimary ?? theme.colorScheme.onSurface,
                       ),
                     ),
                   ),
@@ -224,6 +231,8 @@ class _WindowButtonState extends State<_WindowButton> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final palette = theme.extension<WalletPalette>();
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
@@ -234,15 +243,17 @@ class _WindowButtonState extends State<_WindowButton> {
           height: PSpacing.desktopTitlebarHeight,
           decoration: BoxDecoration(
             color: _isHovered
-                ? (widget.isClose ? AppColors.error : AppColors.hoverOverlay)
+                ? (widget.isClose
+                      ? palette?.error ?? theme.colorScheme.error
+                      : palette?.hoverOverlay ?? theme.hoverColor)
                 : Colors.transparent,
           ),
           child: Icon(
             widget.icon,
             size: PSpacing.iconSM,
             color: _isHovered && widget.isClose
-                ? AppColors.textOnAccent
-                : AppColors.textPrimary,
+                ? palette?.textOnAccent ?? theme.colorScheme.onError
+                : palette?.textPrimary ?? theme.colorScheme.onSurface,
           ),
         ),
       ),
