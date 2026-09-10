@@ -97,7 +97,11 @@ class WalletSwitcherButton extends ConsumerWidget {
       await PDialog.show<void>(
         context: context,
         title: 'Wallets'.tr,
-        content: const _WalletSwitcherContent(),
+        content: const Padding(
+          // Keep cards and their actions clear of the desktop scrollbar.
+          padding: EdgeInsetsDirectional.only(end: PSpacing.md),
+          child: _WalletSwitcherContent(),
+        ),
         actions: [
           PDialogAction(label: 'Close'.tr, variant: PButtonVariant.outline),
         ],
