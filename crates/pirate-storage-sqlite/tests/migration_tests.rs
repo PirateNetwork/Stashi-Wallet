@@ -7,6 +7,25 @@ use rusqlite::Connection;
 use tempfile::NamedTempFile;
 
 #[test]
+fn schema_read_failure_does_not_start_fresh_migrations() {
+    let conn = Connection::open_in_memory().unwrap();
+    conn.execute_batch("CREATE TABLE schema_version (broken_column INTEGER);")
+        .unwrap();
+    assert!(migrations::run_migrations(&conn).is_err());
+    let accounts_exist: bool = conn
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name = 'accounts')",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(
+        !accounts_exist,
+        "a failed version read must not initialize schema"
+    );
+}
+
+#[test]
 fn test_fresh_migration() {
     let file = NamedTempFile::new().unwrap();
     let conn = Connection::open(file.path()).unwrap();

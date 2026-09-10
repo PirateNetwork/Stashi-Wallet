@@ -2,11 +2,20 @@
 
 use crate::{Error, Result};
 use rusqlite::Connection;
+use std::sync::Mutex;
 
 const SCHEMA_VERSION: i32 = 41;
 
+// Wallet activation and UI reads can open separate connections concurrently.
+// Serialize the whole upgrade, including its initial schema-version read:
+// per-migration SQLite transactions alone leave gaps for a stale upgrader.
+static MIGRATION_LOCK: Mutex<()> = Mutex::new(());
+
 /// Run all migrations
 pub fn run_migrations(conn: &Connection) -> Result<()> {
+    let _guard = MIGRATION_LOCK
+        .lock()
+        .map_err(|_| Error::Migration("Database migration lock poisoned".into()))?;
     let current_version = get_schema_version(conn)?;
 
     tracing::debug!(
@@ -170,16 +179,21 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
 }
 
 fn get_schema_version(conn: &Connection) -> Result<i32> {
-    let result = conn.query_row(
-        "SELECT version FROM schema_version ORDER BY version DESC LIMIT 1",
+    let exists: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_version')",
         [],
         |row| row.get(0),
-    );
-
-    match result {
-        Ok(v) => Ok(v),
-        Err(_) => Ok(0),
+    )?;
+    if !exists {
+        return Ok(0);
     }
+    // Busy/corrupt/read errors must never masquerade as a brand-new database
+    // and trigger replay of destructive historical migrations.
+    let version: Option<i32> =
+        conn.query_row("SELECT MAX(version) FROM schema_version", [], |row| {
+            row.get(0)
+        })?;
+    Ok(version.unwrap_or(0))
 }
 
 fn set_schema_version(conn: &Connection, version: i32) -> Result<()> {
@@ -2361,4 +2375,84 @@ fn migrate_v29(conn: &Connection) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod concurrent_open_tests {
+    use super::*;
+    #[test]
+    fn simultaneous_wallet_opens_do_not_replay_legacy_witness_migrations() {
+        use std::sync::{Arc, Barrier};
+        use std::time::Duration;
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("legacy-wallet.db");
+        {
+            let conn = Connection::open(&path).unwrap();
+            migrate_v1(&conn).unwrap();
+            migrate_v2(&conn).unwrap();
+            migrate_v3(&conn).unwrap();
+            migrate_v4(&conn).unwrap();
+            migrate_v5(&conn).unwrap();
+            migrate_v6(&conn).unwrap();
+            migrate_v7(&conn).unwrap();
+            migrate_v8(&conn).unwrap();
+            migrate_v9(&conn).unwrap();
+            migrate_v10(&conn).unwrap();
+            migrate_v11(&conn).unwrap();
+            migrate_v12(&conn).unwrap();
+            migrate_v13(&conn).unwrap();
+            migrate_v14(&conn).unwrap();
+            migrate_v15(&conn).unwrap();
+            migrate_v16(&conn).unwrap();
+            migrate_v17(&conn).unwrap();
+            migrate_v18(&conn).unwrap();
+            migrate_v19(&conn).unwrap();
+            migrate_v20(&conn).unwrap();
+            migrate_v21(&conn).unwrap();
+            migrate_v22(&conn).unwrap();
+            set_schema_version(&conn, 22).unwrap();
+            conn.execute(
+                "INSERT INTO accounts (id, name, created_at) VALUES (901, 'preserved-wallet', 1)",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO address_book (wallet_id, address, label, created_at, updated_at)
+                 VALUES ('wallet-a', 'fixture-address', 'Preserved contact', '2026-09-10', '2026-09-10')",
+                [],
+            ).unwrap();
+        }
+        let barrier = Arc::new(Barrier::new(4));
+        let workers: Vec<_> = (0..4)
+            .map(|_| {
+                let path = path.clone();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    let conn = Connection::open(path).unwrap();
+                    conn.busy_timeout(Duration::from_secs(10)).unwrap();
+                    barrier.wait();
+                    run_migrations(&conn)
+                })
+            })
+            .collect();
+        for worker in workers {
+            worker.join().unwrap().unwrap();
+        }
+        let conn = Connection::open(path).unwrap();
+        let name: String = conn
+            .query_row("SELECT name FROM accounts WHERE id = 901", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(name, "preserved-wallet");
+        let contact: String = conn
+            .query_row(
+                "SELECT label FROM address_book WHERE wallet_id = 'wallet-a'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(contact, "Preserved contact");
+        run_migrations(&conn).unwrap();
+    }
 }
