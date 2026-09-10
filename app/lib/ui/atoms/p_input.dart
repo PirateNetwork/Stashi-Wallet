@@ -76,6 +76,9 @@ class PInput extends StatefulWidget {
 }
 
 class _PInputState extends State<PInput> {
+  // Editable text must not read an ancestor ExpansionTile's bool from
+  // PageStorage as if it were a saved scroll offset.
+  final _scrollController = ScrollController(keepScrollOffset: false);
   late FocusNode _focusNode;
   bool _ownsFocusNode = false;
   late TextEditingController _internalController;
@@ -132,6 +135,7 @@ class _PInputState extends State<PInput> {
 
   @override
   void dispose() {
+    _scrollController.dispose();
     if (_isInternalController) {
       _internalController.dispose();
     }
@@ -156,6 +160,7 @@ class _PInputState extends State<PInput> {
       enabled: widget.enabled,
       readOnly: widget.readOnly,
       child: TextField(
+        scrollController: _scrollController,
         controller:
             widget.controller ??
             (_isInternalController ? _internalController : null),
