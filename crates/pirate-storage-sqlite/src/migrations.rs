@@ -4,7 +4,7 @@ use crate::{Error, Result};
 use rusqlite::Connection;
 use std::sync::Mutex;
 
-const SCHEMA_VERSION: i32 = 41;
+const SCHEMA_VERSION: i32 = 42;
 
 // Wallet activation and UI reads can open separate connections concurrently.
 // Serialize the whole upgrade, including its initial schema-version read:
@@ -163,6 +163,9 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
     if current_version < 41 {
         migrate_v41(conn)?;
     }
+    if current_version < 42 {
+        migrate_v42(conn)?;
+    }
 
     // Only set schema version if it changed (to avoid UNIQUE constraint errors)
     let final_version = get_schema_version(conn)?;
@@ -175,6 +178,21 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         );
     }
 
+    Ok(())
+}
+
+fn migrate_v42(conn: &Connection) -> Result<()> {
+    // Independent of chain height: reorgs change confirmation status, not
+    // the recovery material for an immutable transaction's outputs.
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS payment_disclosures (
+            wallet_id TEXT NOT NULL,
+            network TEXT NOT NULL,
+            txid TEXT NOT NULL,
+            payload BLOB NOT NULL,
+            PRIMARY KEY (wallet_id, network, txid)
+        );",
+    )?;
     Ok(())
 }
 

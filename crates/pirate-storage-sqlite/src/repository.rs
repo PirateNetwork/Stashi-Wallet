@@ -1,6 +1,7 @@
 //! Data access layer
 
 mod address;
+mod payment_disclosure;
 
 use crate::address_book::ColorTag;
 use crate::frontier_witness::{

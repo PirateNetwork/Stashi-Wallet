@@ -121,7 +121,7 @@ fn test_v32_adds_retained_checkpoint_tables_without_resetting_trees() {
         )
         .unwrap();
 
-    assert_eq!(version, 41);
+    assert_eq!(version, 42);
     assert_eq!(sapling_checkpoint, 12345);
     assert_eq!(orchard_checkpoint, 67890);
     assert_eq!(retained_tables, 2);
@@ -156,7 +156,7 @@ fn test_v33_adds_durable_outgoing_transaction_intents() {
         )
         .unwrap();
 
-    assert_eq!(version, 41);
+    assert_eq!(version, 42);
     assert_eq!(table_count, 1);
 }
 
@@ -231,7 +231,7 @@ fn test_v34_adds_ironwood_activation_height_to_sync_state() {
         )
         .unwrap();
 
-    assert_eq!(version, 41);
+    assert_eq!(version, 42);
     assert_eq!(activation_height, None);
     assert_eq!(migration_marker, "completed");
 }
@@ -380,7 +380,7 @@ fn test_v38_adds_ordered_full_diversifier_indices() {
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(version, 41);
+    assert_eq!(version, 42);
     assert_eq!(marker, "completed");
 
     let lower = vec![0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1];
@@ -474,7 +474,7 @@ fn test_v39_adds_outgoing_transaction_expiry_height() {
         )
         .unwrap();
 
-    assert_eq!(version, 41);
+    assert_eq!(version, 42);
     assert_eq!(expiry_column_count, 1);
     assert_eq!(marker, "completed");
 }
@@ -536,7 +536,7 @@ fn test_v41_adds_the_durable_sync_interruption_latch() {
         .unwrap();
 
     assert_eq!(latch, 1);
-    assert_eq!(version, 41);
+    assert_eq!(version, 42);
     assert_eq!(marker, "completed");
 
     // The CHECK constraint keeps the column boolean.
