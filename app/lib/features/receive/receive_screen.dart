@@ -163,7 +163,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
       final amountText = _amountController.text.trim();
       final memoText = _memoController.text.trim();
       final hasRequestData = amountText.isNotEmpty || memoText.isNotEmpty;
-      final requestUri = state.currentAddress == null
+      final requestUri = state.currentAddress == null || !hasRequestData
           ? null
           : _buildPirateUri(
               address: state.currentAddress!,
