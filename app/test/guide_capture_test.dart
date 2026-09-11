@@ -1,5 +1,6 @@
 import 'package:pirate_wallet/routes/app_router.dart';
 import 'package:pirate_wallet/ui/organisms/p_scaffold.dart';
+import 'package:pirate_wallet/ui/molecules/wallet_switcher.dart';
 
 import 'dart:io';
 
@@ -233,6 +234,7 @@ Widget _walletApp(
   double textScale = 1,
   Balance? balance,
   SyncStatus? syncStatus,
+  List<WalletMeta>? wallets,
 }) {
   return ProviderScope(
     overrides: [
@@ -244,7 +246,9 @@ Widget _walletApp(
       activeWalletProvider.overrideWith(_ActiveWallet.new),
       decoyModeProvider.overrideWith(_NormalMode.new),
       activeWalletMetaProvider.overrideWithValue(_walletMeta),
-      walletsProvider.overrideWith((ref) async => const [_walletMeta]),
+      walletsProvider.overrideWith(
+        (ref) async => wallets ?? const [_walletMeta],
+      ),
       balanceStreamProvider.overrideWith(
         (ref) => Stream.value(
           balance ??
@@ -550,6 +554,7 @@ void main() {
     },
   );
   _registerReviewCaptures();
+  _registerQualityCaptures();
   testWidgets('send review stays reachable above keyboard', (tester) async {
     addTearDown(tester.view.reset);
     RustLib.initMock(api: _ReviewApi());
@@ -1600,6 +1605,150 @@ void _registerReviewCaptures() {
               includeReceiveState: true,
               includeAppVersion: true,
             ),
+          );
+        }
+      }
+    });
+  }
+}
+
+class _GatewayReviewApi extends _ReviewApi {
+  @override
+  Future<TunnelMode> crateApiGetTunnel() async => const TunnelMode.tor();
+  @override
+  Future<native.NodeTestResult> crateApiTestNode({
+    required String url,
+    String? tlsPin,
+  }) async => native.NodeTestResult(
+    success: false,
+    transportMode: 'tor',
+    tlsEnabled: true,
+    responseTimeMs: BigInt.from(120),
+    errorMessage: 'HTTP status 502 Bad Gateway: <html><head><title>502 Bad Gateway</title></head><body><h1>502 Bad Gateway</h1><hr><center>nginx</center></body></html>',
+  );
+}
+
+void _registerQualityCaptures() {
+  for (final page in [
+    'request-expanded',
+    'transaction-expanded',
+    'wallets',
+    'connection-failure',
+    'old-address',
+  ]) {
+    testWidgets('quality capture $page', (tester) async {
+      RustLib.initMock(api: _GatewayReviewApi());
+      addTearDown(RustLib.dispose);
+      for (final desktop in [false, true]) {
+        for (final light in [false, true]) {
+          final baseline =
+              Platform.environment['PIRATE_REVIEW_BASELINE'] == 'true';
+          if (baseline && page == 'old-address') continue;
+          final Widget screen = switch (page) {
+            'transaction-expanded' => TransactionDetailScreen(
+              txid: _guideTransactions.first.txid,
+              transaction: _guideTransactions.first,
+            ),
+            'wallets' => ProviderScope(
+              overrides: [
+                walletsProvider.overrideWith(
+                  (ref) async => [
+                    for (var i = 0; i < 12; i++)
+                      WalletMeta(
+                        id: 'wallet-$i',
+                        name: i == 0 ? 'Daily payments' : 'Savings wallet $i',
+                        createdAt: 1787961600,
+                        watchOnly: i == 2,
+                        birthdayHeight: 3500000,
+                        networkType: 'mainnet',
+                      ),
+                  ],
+                ),
+              ],
+              child: const Scaffold(
+                body: Center(child: WalletSwitcherButton()),
+              ),
+            ),
+            'connection-failure' => const PrivacyShieldScreen(),
+            _ => const ReceiveScreen(),
+          };
+          await _capture(
+            tester,
+            size: desktop ? const Size(1280, 900) : const Size(390, 844),
+            platform: desktop ? TargetPlatform.windows : TargetPlatform.android,
+            filename:
+                'quality-$page-${desktop ? 'desktop' : 'phone'}-${light ? 'light' : 'dark'}.png',
+            captureOverlay: [
+              'wallets',
+              'connection-failure',
+              'old-address',
+            ].contains(page),
+            widget: _walletApp(
+              screen,
+              light: light,
+              includeReceiveState: true,
+              wallets: page == 'wallets'
+                  ? [
+                      for (var i = 0; i < 12; i++)
+                        WalletMeta(
+                          id: 'wallet-$i',
+                          name: i == 0 ? 'Daily payments' : 'Savings wallet $i',
+                          createdAt: 1787961600,
+                          watchOnly: i == 2,
+                          birthdayHeight: 3500000,
+                          networkType: 'mainnet',
+                        ),
+                    ]
+                  : null,
+            ),
+            interact: (tester) async {
+              if (page == 'wallets') {
+                await tester.tap(find.byType(WalletSwitcherButton));
+                await tester.pumpAndSettle();
+                expect(find.text('Savings wallet 3'), findsOneWidget);
+              } else if (page == 'connection-failure') {
+                await tester.ensureVisible(find.text('Test Node Connection'));
+                await tester.pumpAndSettle();
+                await tester.tap(find.text('Test Node Connection'));
+                await tester.pumpAndSettle();
+                expect(find.text('Connection Failed'), findsOneWidget);
+                expect(find.textContaining('UnimplementedError'), findsNothing);
+              } else if (page == 'old-address') {
+                await tester.scrollUntilVisible(
+                  find.text('Savings'),
+                  350,
+                  scrollable: find
+                      .descendant(
+                        of: find.byType(CustomScrollView),
+                        matching: find.byType(Scrollable),
+                      )
+                      .first,
+                );
+                await tester.pumpAndSettle();
+                await tester.tap(find.text('Savings'));
+                await tester.pumpAndSettle();
+                expect(
+                  find.text(
+                    'You can still receive payments here. Your current receive address stays the same.',
+                  ),
+                  findsOneWidget,
+                );
+              } else {
+                final label = page == 'request-expanded'
+                    ? 'Payment request (optional)'
+                    : 'Technical details';
+                await tester.ensureVisible(find.text(label));
+                await tester.pumpAndSettle();
+                for (var i = 0; i < 3; i++) {
+                  await tester.tap(find.text(label));
+                  await tester.pumpAndSettle();
+                  final error = tester.takeException();
+                  if (!baseline) expect(error, isNull);
+                }
+                await tester.ensureVisible(find.text(label));
+                await tester.pumpAndSettle();
+              }
+            },
           );
         }
       }
