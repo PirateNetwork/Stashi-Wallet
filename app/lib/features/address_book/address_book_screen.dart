@@ -276,6 +276,24 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
     final gutter = AppSpacing.responsiveGutter(
       MediaQuery.of(context).size.width,
     );
+    final desktopToolbar = MediaQuery.sizeOf(context).width >= 760;
+    final search = PInput(
+      controller: _searchController,
+      hint: 'Search addresses...'.tr,
+      prefixIcon: const Icon(Icons.search),
+      suffixIcon: state.searchQuery.isNotEmpty
+          ? IconButton(
+              icon: const Icon(Icons.clear),
+              onPressed: _searchController.clear,
+              tooltip: 'Clear'.tr,
+            )
+          : null,
+    );
+    final addAddress = PButton(
+      onPressed: _showAddSheet,
+      icon: const Icon(Icons.add),
+      text: 'Add Address'.tr,
+    );
 
     return PScaffold(
       bodyMaxWidth: 760,
@@ -286,40 +304,71 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
             ? 'Tap an entry to autofill the send form'.tr
             : 'Manage your trusted contacts'.tr,
         actions: [
-          PIconButton(
-            icon: _buildFilterIcon(hasFilters),
-            onPressed: _showFilterSheet,
-            tooltip: 'Filters'.tr,
-          ),
+          if (!desktopToolbar)
+            PIconButton(
+              icon: _buildFilterIcon(hasFilters),
+              onPressed: _showFilterSheet,
+              tooltip: 'Filters'.tr,
+            ),
         ],
       ),
       body: Column(
         children: [
           if (widget.onSelectAddress == null)
-            const Padding(
-              padding: EdgeInsets.all(AppSpacing.md),
-              child: WalletSwitcherButton(),
+            Padding(
+              padding: EdgeInsets.fromLTRB(gutter, AppSpacing.md, gutter, 0),
+              child: Align(
+                alignment: desktopToolbar
+                    ? AlignmentDirectional.centerStart
+                    : Alignment.center,
+                child: const WalletSwitcherButton(),
+              ),
             ),
-          // Search bar
+          // Keep desktop list actions together, within the content column.
           Padding(
             padding: EdgeInsets.fromLTRB(
               gutter,
-              AppSpacing.lg,
+              AppSpacing.md,
               gutter,
               AppSpacing.md,
             ),
-            child: PInput(
-              controller: _searchController,
-              hint: 'Search addresses...'.tr,
-              prefixIcon: const Icon(Icons.search),
-              suffixIcon: state.searchQuery.isNotEmpty
-                  ? IconButton(
-                      icon: const Icon(Icons.clear),
-                      onPressed: _searchController.clear,
-                      tooltip: 'Clear'.tr,
-                    )
-                  : null,
-            ),
+            child: !desktopToolbar
+                ? search
+                : LayoutBuilder(
+                    builder: (context, constraints) {
+                      final filter = PButton(
+                        onPressed: _showFilterSheet,
+                        icon: _buildFilterIcon(hasFilters),
+                        text: 'Filter'.tr,
+                        variant: PButtonVariant.outline,
+                      );
+                      if (constraints.maxWidth < 640 ||
+                          MediaQuery.textScalerOf(context).scale(1) > 1.2) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            search,
+                            const SizedBox(height: AppSpacing.sm),
+                            Wrap(
+                              alignment: WrapAlignment.end,
+                              spacing: AppSpacing.sm,
+                              runSpacing: AppSpacing.sm,
+                              children: [filter, addAddress],
+                            ),
+                          ],
+                        );
+                      }
+                      return Row(
+                        children: [
+                          Expanded(child: search),
+                          const SizedBox(width: AppSpacing.sm),
+                          filter,
+                          const SizedBox(width: AppSpacing.sm),
+                          addAddress,
+                        ],
+                      );
+                    },
+                  ),
           ),
 
           // Loading state
@@ -372,9 +421,11 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
           else
             Expanded(
               child: ListView.separated(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.lg,
-                  vertical: AppSpacing.md,
+                padding: EdgeInsets.fromLTRB(
+                  gutter,
+                  0,
+                  gutter,
+                  desktopToolbar ? AppSpacing.lg : 96,
                 ),
                 itemCount: filteredEntries.length,
                 separatorBuilder: (_, _) =>
@@ -398,11 +449,7 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
             ),
         ],
       ),
-      floatingActionButton: PButton(
-        onPressed: _showAddSheet,
-        icon: const Icon(Icons.add),
-        text: 'Add Address'.tr,
-      ),
+      floatingActionButton: desktopToolbar ? null : addAddress,
     );
   }
 }
