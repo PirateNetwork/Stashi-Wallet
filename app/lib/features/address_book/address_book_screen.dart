@@ -149,13 +149,11 @@ class _AddressBookScreenState extends ConsumerState<AddressBookScreen> {
         actions: [
           PDialogAction<bool>(
             label: 'Cancel'.tr,
-            onPressed: () => Navigator.of(context).pop(false),
             variant: PButtonVariant.outline,
             result: false,
           ),
           PDialogAction<bool>(
             label: 'Delete'.tr,
-            onPressed: () => Navigator.of(context).pop(true),
             variant: PButtonVariant.primary,
             result: true,
           ),
