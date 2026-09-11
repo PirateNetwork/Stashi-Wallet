@@ -8,11 +8,8 @@
 //! decode `secret.extsk` as a Sapling spending key - always empty, and
 //! therefore always an error, for a watch-only wallet. That broke
 //! `list_address_balances` (and anything else that calls
-//! `ensure_primary_account_key`). Separately, `next_receive_address`
-//! requires a real spending key by design and can never work for a
-//! watch-only wallet at all; `generate_address_for_key` is the
-//! watch-only-safe alternative, deriving straight from the stored viewing
-//! key.
+//! `ensure_primary_account_key`). Current/next receive addresses must also
+//! derive from viewing keys, including across the Ironwood activation.
 
 use super::*;
 use tempfile::tempdir;
@@ -82,11 +79,35 @@ fn watch_only_wallet_supports_balance_listing_and_address_generation() {
         "expected a mainnet Sapling address, got {address}"
     );
 
-    let address2 = generate_address_for_key(watch_wallet, key_id, false).unwrap();
+    let address2 = generate_address_for_key(watch_wallet.clone(), key_id, false).unwrap();
     assert_ne!(
         address, address2,
         "consecutive calls must mint distinct diversified addresses, like separate BTCPay invoices need"
     );
+
+    let current = current_receive_address(watch_wallet.clone()).unwrap();
+    assert!(current.starts_with("zs1"));
+    let next = next_receive_address(watch_wallet.clone()).unwrap();
+    assert_ne!(current, next);
+    assert_eq!(current_receive_address(watch_wallet.clone()).unwrap(), next);
+    {
+        let (db, _) = open_wallet_db_for(&watch_wallet).unwrap();
+        let storage = pirate_storage_sqlite::SyncStateStorage::new(&db);
+        storage.save_sync_state(4_200_000, 4_200_000, 0).unwrap();
+        storage
+            .set_ironwood_activation_height(Some(4_200_000))
+            .unwrap();
+    }
+    let ironwood = current_receive_address(watch_wallet.clone()).unwrap();
+    assert!(ironwood.starts_with("pirate1"));
+    assert_ne!(
+        ironwood,
+        next_receive_address(watch_wallet.clone()).unwrap()
+    );
+    assert!(list_addresses(watch_wallet)
+        .unwrap()
+        .iter()
+        .any(|entry| entry.address == next));
 
     // Reset the process-wide wallet statics `configure_wallet_storage` mutates,
     // so this test neither inherits nor leaks an "unlocked" app.

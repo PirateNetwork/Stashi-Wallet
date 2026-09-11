@@ -118,16 +118,11 @@ pub(super) fn current_receive_address(wallet_id: WalletId) -> Result<String> {
         .get_wallet_secret(&wallet_id)?
         .ok_or_else(|| anyhow!("No wallet secret found for {}", wallet_id))?;
     let key_id = ensure_primary_account_key(&repo, &wallet_id, &secret)?;
-    let use_ironwood = should_generate_ironwood(&wallet_id)?;
-    let address_type = if use_ironwood {
-        AddressType::Ironwood
-    } else {
-        AddressType::Sapling
-    };
     let key = repo
         .get_account_key_by_id(key_id)?
         .ok_or_else(|| anyhow!("Primary key group not found"))?;
     let viewing_keys = viewing_keys_for_account_key(&key)?;
+    let address_type = receive_address_type(&viewing_keys, should_generate_ironwood(&wallet_id)?)?;
     let network_type = address_prefix_network_type(&wallet_id)?;
     backfill_full_diversifier_indices(&repo, secret.account_id, network_type, &viewing_keys)?;
     let current_index = repo.get_current_diversifier_index_for_scope_and_type(
@@ -152,16 +147,8 @@ pub(super) fn current_receive_address(wallet_id: WalletId) -> Result<String> {
         return Ok(addr_record.address);
     }
 
-    let extsk = if use_ironwood {
-        None
-    } else {
-        Some(
-            ExtendedSpendingKey::from_bytes(&secret.extsk)
-                .map_err(|e| anyhow!("Invalid spending key bytes: {}", e))?,
-        )
-    };
-    let (addr_string, address_type, diversifier_index_88) =
-        derive_receive_address(&wallet_id, &secret, extsk.as_ref(), [0; 11], use_ironwood)?;
+    let (addr_string, diversifier_index_88) =
+        derive_receive_address(&viewing_keys, network_type, [0; 11], address_type)?;
 
     let address = pirate_storage_sqlite::Address {
         id: None,
@@ -180,7 +167,11 @@ pub(super) fn current_receive_address(wallet_id: WalletId) -> Result<String> {
 
     tracing::debug!(
         "Generated and stored {} address at index {}: {}",
-        if use_ironwood { "Ironwood" } else { "Sapling" },
+        if address_type == AddressType::Ironwood {
+            "Ironwood"
+        } else {
+            "Sapling"
+        },
         current_index,
         addr_string
     );
@@ -193,47 +184,28 @@ pub(super) fn next_receive_address(wallet_id: WalletId) -> Result<String> {
     }
     tracing::info!("Generating next receive address for wallet {}", wallet_id);
 
-    let use_ironwood = should_generate_ironwood(&wallet_id)?;
     let (_db, repo) = open_wallet_db_for(&wallet_id)?;
     let secret = repo
         .get_wallet_secret(&wallet_id)?
         .ok_or_else(|| anyhow!("No wallet secret found for {}", wallet_id))?;
     let key_id = ensure_primary_account_key(&repo, &wallet_id, &secret)?;
-    let address_type = if use_ironwood {
-        AddressType::Ironwood
-    } else {
-        AddressType::Sapling
-    };
-    let extsk = if use_ironwood {
-        None
-    } else {
-        Some(
-            ExtendedSpendingKey::from_bytes(&secret.extsk)
-                .map_err(|e| anyhow!("Invalid spending key bytes: {}", e))?,
-        )
-    };
     let key = repo
         .get_account_key_by_id(key_id)?
         .ok_or_else(|| anyhow!("Primary key group not found"))?;
     let viewing_keys = viewing_keys_for_account_key(&key)?;
+    let address_type = receive_address_type(&viewing_keys, should_generate_ironwood(&wallet_id)?)?;
     let network_type = address_prefix_network_type(&wallet_id)?;
     backfill_full_diversifier_indices(&repo, secret.account_id, network_type, &viewing_keys)?;
     let account_id = secret.account_id;
-    let wallet_id_for_derivation = wallet_id.clone();
     let address = repo.allocate_next_diversified_address(
         account_id,
         key_id,
         pirate_storage_sqlite::AddressScope::External,
         address_type,
         move |next_index, next_index_88| {
-            let (addr_string, address_type, actual_index_88) = derive_receive_address(
-                &wallet_id_for_derivation,
-                &secret,
-                extsk.as_ref(),
-                next_index_88,
-                use_ironwood,
-            )
-            .map_err(|e| pirate_storage_sqlite::Error::Storage(e.to_string()))?;
+            let (addr_string, actual_index_88) =
+                derive_receive_address(&viewing_keys, network_type, next_index_88, address_type)
+                    .map_err(|e| pirate_storage_sqlite::Error::Storage(e.to_string()))?;
 
             Ok(pirate_storage_sqlite::Address {
                 id: None,
@@ -253,7 +225,11 @@ pub(super) fn next_receive_address(wallet_id: WalletId) -> Result<String> {
 
     tracing::info!(
         "Generated and stored next {} address at index {}: {}",
-        if use_ironwood { "Ironwood" } else { "Sapling" },
+        if address_type == AddressType::Ironwood {
+            "Ironwood"
+        } else {
+            "Sapling"
+        },
         address.diversifier_index,
         address.address
     );
@@ -484,32 +460,44 @@ pub(super) fn list_address_balances(
         .collect())
 }
 
-fn derive_receive_address(
-    wallet_id: &WalletId,
-    secret: &pirate_storage_sqlite::WalletSecret,
-    extsk: Option<&ExtendedSpendingKey>,
-    diversifier_index: [u8; 11],
-    use_ironwood: bool,
-) -> Result<(String, AddressType, [u8; 11])> {
-    if use_ironwood {
-        let orchard_extsk_bytes = secret.orchard_extsk.clone().ok_or_else(|| {
-            anyhow!("Ironwood key not found - wallet needs to be recreated with Ironwood support")
-        })?;
-        let orchard_extsk = IronwoodExtendedSpendingKey::from_bytes(&orchard_extsk_bytes)
-            .map_err(|e| anyhow!("Invalid Ironwood spending key bytes: {}", e))?;
-        let orchard_fvk = orchard_extsk.to_extended_fvk();
-        let orchard_addr = orchard_fvk.address_at_index(diversifier_index);
-        let network_type = address_prefix_network_type(wallet_id)?;
-        let addr_string = orchard_addr.encode_for_network(network_type)?;
-        Ok((addr_string, AddressType::Ironwood, diversifier_index))
+fn receive_address_type(keys: &AddressViewingKeys, ironwood_active: bool) -> Result<AddressType> {
+    if ironwood_active && keys.ironwood.is_some() {
+        Ok(AddressType::Ironwood)
+    } else if keys.sapling.is_some() {
+        // An existing Sapling-only viewing wallet remains usable after the fork.
+        Ok(AddressType::Sapling)
+    } else if keys.ironwood.is_some() {
+        Err(anyhow!(
+            "Ironwood is not active on this wallet's synced chain yet"
+        ))
     } else {
-        let extsk = extsk.ok_or_else(|| anyhow!("Invalid spending key bytes"))?;
-        let fvk = extsk.to_extended_fvk();
+        Err(anyhow!("No viewing key is available for a receive address"))
+    }
+}
+
+fn derive_receive_address(
+    keys: &AddressViewingKeys,
+    network_type: NetworkType,
+    diversifier_index: [u8; 11],
+    address_type: AddressType,
+) -> Result<(String, [u8; 11])> {
+    if address_type == AddressType::Ironwood {
+        let fvk = keys
+            .ironwood
+            .as_ref()
+            .ok_or_else(|| anyhow!("Ironwood viewing key not found"))?;
+        let address = fvk.address_at_index(diversifier_index);
+        Ok((address.encode_for_network(network_type)?, diversifier_index))
+    } else {
+        let fvk = keys
+            .sapling
+            .as_ref()
+            .ok_or_else(|| anyhow!("Sapling viewing key not found"))?;
         let (actual_index, payment_addr) = fvk
             .find_address_from_index(diversifier_index)
             .ok_or_else(|| anyhow!("Sapling diversifier index space is exhausted"))?;
-        let addr_string = payment_addr.encode_for_network(address_prefix_network_type(wallet_id)?);
-        Ok((addr_string, AddressType::Sapling, actual_index))
+        let addr_string = payment_addr.encode_for_network(network_type);
+        Ok((addr_string, actual_index))
     }
 }
 
@@ -585,6 +573,84 @@ mod tests {
     use super::*;
 
     const MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+
+    #[test]
+    fn viewing_keys_receive_in_the_available_pool_across_activation() {
+        let sapling = ExtendedSpendingKey::from_mnemonic(MNEMONIC)
+            .unwrap()
+            .to_extended_fvk();
+        let ironwood = IronwoodExtendedSpendingKey::master(&[11u8; 32])
+            .unwrap()
+            .to_extended_fvk();
+        let mut keys = AddressViewingKeys {
+            key_id: 1,
+            sapling: Some(sapling),
+            ironwood: Some(ironwood),
+        };
+        assert_eq!(
+            receive_address_type(&keys, false).unwrap(),
+            AddressType::Sapling
+        );
+        assert_eq!(
+            receive_address_type(&keys, true).unwrap(),
+            AddressType::Ironwood
+        );
+
+        for network in [
+            NetworkType::Mainnet,
+            NetworkType::Testnet,
+            NetworkType::Regtest,
+        ] {
+            let (sapling_address, sapling_index) =
+                derive_receive_address(&keys, network, [0; 11], AddressType::Sapling).unwrap();
+            assert!(PaymentAddress::decode_for_network(network, &sapling_address).is_ok());
+            assert_eq!(
+                recover_address_index(&sapling_address, AddressType::Sapling, network, &keys),
+                Some((sapling_index, pirate_storage_sqlite::AddressScope::External))
+            );
+            let (ironwood_address, ironwood_index) =
+                derive_receive_address(&keys, network, [1; 11], AddressType::Ironwood).unwrap();
+            assert!(IronwoodPaymentAddress::decode_for_network(network, &ironwood_address).is_ok());
+            assert_eq!(
+                recover_address_index(&ironwood_address, AddressType::Ironwood, network, &keys),
+                Some((
+                    ironwood_index,
+                    pirate_storage_sqlite::AddressScope::External
+                ))
+            );
+        }
+
+        keys.ironwood = None;
+        assert_eq!(
+            receive_address_type(&keys, true).unwrap(),
+            AddressType::Sapling
+        );
+        assert!(derive_receive_address(
+            &keys,
+            NetworkType::Mainnet,
+            [0; 11],
+            AddressType::Ironwood
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn ironwood_only_viewing_wallet_waits_for_chain_activation() {
+        let keys = AddressViewingKeys {
+            key_id: 1,
+            sapling: None,
+            ironwood: Some(
+                IronwoodExtendedSpendingKey::master(&[11u8; 32])
+                    .unwrap()
+                    .to_extended_fvk(),
+            ),
+        };
+        assert!(receive_address_type(&keys, false).is_err());
+        assert_eq!(
+            receive_address_type(&keys, true).unwrap(),
+            AddressType::Ironwood
+        );
+    }
 
     #[test]
     fn recovers_sapling_address_ownership_beyond_u32_directly() {
