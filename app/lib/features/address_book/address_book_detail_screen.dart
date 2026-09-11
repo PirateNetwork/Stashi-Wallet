@@ -628,20 +628,11 @@ class _AddressBookEditScreenState extends ConsumerState<AddressBookEditScreen> {
             _buildTextField(
               controller: _addressController,
               label: 'Shielded address'.tr,
-              hint: 'zs1...',
+              hint: 'zs1... / pirate1...',
               maxLines: 3,
               enabled: !_isEditing,
               validator: (value) {
-                if (value == null || value.trim().isEmpty) {
-                  return 'Please enter an address'.tr;
-                }
-                if (!value.startsWith('zs1')) {
-                  return 'Address must be a Sapling address (zs1...)'.tr;
-                }
-                if (value.length < 70) {
-                  return 'Invalid address length'.tr;
-                }
-                return null;
+                return contactAddressFormatError(value ?? '');
               },
             ),
 

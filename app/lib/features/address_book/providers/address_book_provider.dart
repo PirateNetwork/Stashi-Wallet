@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/address_entry.dart';
 import '../../../core/ffi/ffi_bridge.dart';
+import '../../../core/i18n/arb_text_localizer.dart';
 
 /// Address book state
 class AddressBookState {
@@ -231,7 +232,12 @@ class AddressBookNotifier extends Notifier<AddressBookState> {
 
       return newEntry;
     } catch (e) {
-      state = state.copyWith(error: e.toString());
+      const invalidAddress = 'Enter a valid Sapling or Ironwood address.';
+      state = state.copyWith(
+        error: e.toString().contains(invalidAddress)
+            ? invalidAddress.tr
+            : e.toString(),
+      );
       return null;
     }
   }

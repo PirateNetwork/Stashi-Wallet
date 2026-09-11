@@ -864,7 +864,7 @@ class _AddEditAddressSheetState extends ConsumerState<AddEditAddressSheet> {
             PInput(
               controller: _addressController,
               label: 'Address *'.tr,
-              hint: 'zs1...',
+              hint: 'zs1... / pirate1...',
               maxLines: 3,
               enabled: !_isEditing, // Can't change address when editing
               onChanged: (_) => setState(() {}),

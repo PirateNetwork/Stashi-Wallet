@@ -3,6 +3,7 @@
 //! Provides CRUD operations for contact addresses with rich metadata.
 
 use crate::error::{Error, Result};
+use pirate_core::keys::{IronwoodPaymentAddress, PaymentAddress};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
@@ -111,7 +112,7 @@ pub struct AddressBookEntry {
     pub id: i64,
     /// Wallet ID this entry belongs to
     pub wallet_id: String,
-    /// Sapling address (zs1...)
+    /// A valid Sapling or Ironwood payment address.
     pub address: String,
     /// Display label
     pub label: String,
@@ -248,9 +249,11 @@ impl AddressBookStorage {
                 )));
             }
         }
-        if !entry.address.starts_with("zs1") {
+        if PaymentAddress::decode_any_network(&entry.address).is_err()
+            && IronwoodPaymentAddress::decode_any_network(&entry.address).is_err()
+        {
             return Err(Error::Validation(
-                "Address must be a Sapling address (zs1...)".to_string(),
+                "Enter a valid Sapling or Ironwood address.".to_string(),
             ));
         }
 
@@ -618,12 +621,68 @@ impl AddressBookStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pirate_core::keys::{ExtendedSpendingKey, IronwoodExtendedSpendingKey};
+    use pirate_params::NetworkType;
     use rusqlite::Connection;
 
     fn setup_db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
         AddressBookStorage::create_table(&conn).unwrap();
         conn
+    }
+
+    fn sapling_address(index: u32) -> String {
+        ExtendedSpendingKey::from_mnemonic(
+            "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+        )
+        .unwrap()
+        .to_extended_fvk()
+        .derive_address(index)
+        .encode()
+    }
+
+    #[test]
+    fn accepts_shielded_addresses_and_rejects_corrupted_payloads() {
+        let conn = setup_db();
+        let sapling = ExtendedSpendingKey::from_mnemonic(
+            "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+        )
+        .unwrap()
+        .to_extended_fvk()
+        .derive_address(0);
+        let ironwood = IronwoodExtendedSpendingKey::master(&[7; 32])
+            .unwrap()
+            .to_extended_fvk()
+            .default_address();
+        for network in [
+            NetworkType::Mainnet,
+            NetworkType::Testnet,
+            NetworkType::Regtest,
+        ] {
+            for address in [
+                sapling.encode_for_network(network),
+                ironwood.encode_for_network(network).unwrap(),
+            ] {
+                let entry =
+                    AddressBookEntry::new("wallet".into(), address.clone(), "Recipient".into());
+                AddressBookStorage::insert(&conn, &entry).unwrap();
+                let mut corrupted = address.clone();
+                let last = corrupted.pop().unwrap();
+                corrupted.push(if last == 'q' { 'p' } else { 'q' });
+                let invalid = AddressBookEntry::new("wallet".into(), corrupted, "Invalid".into());
+                assert!(AddressBookStorage::insert(&conn, &invalid).is_err());
+            }
+        }
+        for invalid in [
+            "zs1anything",
+            "pirate1anything",
+            "zs1qqqqqq",
+            "not an address",
+        ] {
+            let entry = AddressBookEntry::new("wallet".into(), invalid.into(), "Invalid".into());
+            assert!(AddressBookStorage::insert(&conn, &entry).is_err());
+        }
+        assert_eq!(AddressBookStorage::count(&conn, "wallet").unwrap(), 6);
     }
 
     #[test]
@@ -633,7 +692,7 @@ mod tests {
 
         let entry = AddressBookEntry::new(
             wallet_id.to_string(),
-            "zs1test1234567890abcdef1234567890abcdef1234567890abcdef1234567890abc".to_string(),
+            sapling_address(0),
             "Alice".to_string(),
         )
         .with_notes("Coffee fund".to_string())
@@ -657,7 +716,7 @@ mod tests {
 
         let mut entry = AddressBookEntry::new(
             wallet_id.to_string(),
-            "zs1test1234567890abcdef1234567890abcdef1234567890abcdef1234567890abc".to_string(),
+            sapling_address(0),
             "Alice".to_string(),
         );
 
@@ -682,7 +741,7 @@ mod tests {
 
         let entry = AddressBookEntry::new(
             wallet_id.to_string(),
-            "zs1test1234567890abcdef1234567890abcdef1234567890abcdef1234567890abc".to_string(),
+            sapling_address(0),
             "Alice".to_string(),
         );
 
@@ -701,14 +760,10 @@ mod tests {
         let entries = vec![
             AddressBookEntry::new(
                 wallet_id.to_string(),
-                "zs1alice234567890abcdef1234567890abcdef1234567890abcdef1234567890ab".to_string(),
+                sapling_address(0),
                 "Alice".to_string(),
             ),
-            AddressBookEntry::new(
-                wallet_id.to_string(),
-                "zs1bob56789012345abcdef1234567890abcdef1234567890abcdef1234567890ab".to_string(),
-                "Bob".to_string(),
-            ),
+            AddressBookEntry::new(wallet_id.to_string(), sapling_address(1), "Bob".to_string()),
         ];
 
         for entry in &entries {
@@ -730,7 +785,7 @@ mod tests {
 
         let entry = AddressBookEntry::new(
             wallet_id.to_string(),
-            "zs1test1234567890abcdef1234567890abcdef1234567890abcdef1234567890abc".to_string(),
+            sapling_address(0),
             "Alice".to_string(),
         );
 
@@ -755,7 +810,7 @@ mod tests {
     fn test_mark_used() {
         let conn = setup_db();
         let wallet_id = "test_wallet";
-        let address = "zs1test1234567890abcdef1234567890abcdef1234567890abcdef1234567890abc";
+        let address = &sapling_address(0);
 
         let entry = AddressBookEntry::new(
             wallet_id.to_string(),
@@ -779,7 +834,7 @@ mod tests {
     fn test_get_label_for_address() {
         let conn = setup_db();
         let wallet_id = "test_wallet";
-        let address = "zs1test1234567890abcdef1234567890abcdef1234567890abcdef1234567890abc";
+        let address = &sapling_address(0);
 
         let entry = AddressBookEntry::new(
             wallet_id.to_string(),
@@ -803,11 +858,8 @@ mod tests {
         let wallet_id = "test_wallet";
 
         // Empty label
-        let entry = AddressBookEntry::new(
-            wallet_id.to_string(),
-            "zs1test1234567890abcdef1234567890abcdef1234567890abcdef1234567890abc".to_string(),
-            "".to_string(),
-        );
+        let entry =
+            AddressBookEntry::new(wallet_id.to_string(), sapling_address(0), "".to_string());
         assert!(AddressBookStorage::insert(&conn, &entry).is_err());
 
         // Invalid address
@@ -821,7 +873,7 @@ mod tests {
         // Label too long
         let entry = AddressBookEntry::new(
             wallet_id.to_string(),
-            "zs1test1234567890abcdef1234567890abcdef1234567890abcdef1234567890abc".to_string(),
+            sapling_address(0),
             "x".repeat(MAX_LABEL_LENGTH + 1),
         );
         assert!(AddressBookStorage::insert(&conn, &entry).is_err());

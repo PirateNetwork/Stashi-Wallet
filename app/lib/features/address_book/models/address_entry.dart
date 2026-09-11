@@ -48,6 +48,21 @@ const int kMaxLabelLength = 100;
 /// Maximum notes length
 const int kMaxNotesLength = 500;
 
+/// Quick form feedback; storage performs the authoritative checksum and
+/// shielded payload validation before accepting a contact.
+String? contactAddressFormatError(String value) {
+  final address = value.trim();
+  if (address.isEmpty) return 'Please enter an address'.tr;
+  final lower = address.toLowerCase();
+  final uniformCase = address == lower || address == address.toUpperCase();
+  final supported = RegExp(
+    r'^(zs|ztestsapling|zregtestsapling|pirate|pirate-test|pirate-regtest)1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{75}$',
+  ).hasMatch(lower);
+  return uniformCase && supported
+      ? null
+      : 'Enter a valid Sapling or Ironwood address.'.tr;
+}
+
 /// Address book entry
 @immutable
 class AddressEntry {
@@ -192,9 +207,8 @@ class AddressEntry {
       );
     }
 
-    if (!address.startsWith('zs1')) {
-      errors.add('Address must be a Sapling address (zs1...)'.tr);
-    }
+    final addressError = contactAddressFormatError(address);
+    if (addressError != null) errors.add(addressError);
 
     if (notes != null && notes!.length > kMaxNotesLength) {
       errors.add(
