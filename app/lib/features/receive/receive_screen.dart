@@ -445,10 +445,9 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
                           // Action Buttons
                           PButton(
                             onPressed: viewModel.generateNewAddress,
+                            loading: state.isLoading,
                             icon: const Icon(Icons.refresh),
-                            variant: state.addressWasShared
-                                ? PButtonVariant.primary
-                                : PButtonVariant.outline,
+                            variant: PButtonVariant.primary,
                             child: Text('New address'.tr),
                           ),
 

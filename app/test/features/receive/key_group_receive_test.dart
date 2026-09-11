@@ -17,6 +17,16 @@ class _NormalMode extends DecoyModeNotifier {
   bool build() => false;
 }
 
+class _RotatingApi extends RestoredWalletApi {
+  int rotations = 0;
+  @override
+  Future<String> crateApiNextReceiveAddress({required String walletId}) async {
+    rotations++;
+    await Future<void>.delayed(Duration.zero);
+    return addresses[1] = 'zs1rotatedaddress$rotations';
+  }
+}
+
 KeyGroupInfo group({
   int index = 1,
   bool spendable = true,
@@ -36,6 +46,39 @@ KeyGroupInfo group({
 );
 
 void main() {
+  test(
+    'manual rotation settles the current address without disposing its caller',
+    () async {
+      final api = _RotatingApi();
+      RustLib.initMock(api: api);
+      addTearDown(RustLib.dispose);
+      final container = ProviderContainer.test(
+        overrides: [
+          activeWalletProvider.overrideWith(_Wallet.new),
+          decoyModeProvider.overrideWith(_NormalMode.new),
+        ],
+      );
+      container.listen(receiveViewModelProvider, (_, _) {});
+      await Future<void>.delayed(Duration.zero);
+      final notifier = container.read(receiveViewModelProvider.notifier);
+      final rotation = notifier.generateNewAddress();
+      await notifier.generateNewAddress();
+      await rotation;
+      final state = container.read(receiveViewModelProvider);
+      expect(api.rotations, 1);
+      expect(state.isLoading, isFalse);
+      expect(state.error, isNull);
+      expect(state.currentAddress, 'zs1rotatedaddress1');
+      expect(
+        state.addressHistory
+            .where((address) => address.isActive)
+            .single
+            .address,
+        state.currentAddress,
+      );
+    },
+  );
+
   test(
     'restored groups prepare addresses once and preserve their identity',
     () async {

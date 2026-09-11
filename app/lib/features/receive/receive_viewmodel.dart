@@ -292,6 +292,7 @@ class ReceiveViewModel extends Notifier<ReceiveState> {
   /// Automatically skips addresses that already have balances (important for recovery/rescan)
   /// Previous address is added to history
   Future<void> generateNewAddress() async {
+    if (state.isLoading) return;
     state = state.copyWith(isLoading: true, error: null);
     _lastState = state;
 
@@ -322,6 +323,7 @@ class ReceiveViewModel extends Notifier<ReceiveState> {
       // This automatically skips addresses with existing balances (prevents reuse after recovery)
       final rotationService = ref.read(addressRotationServiceProvider);
       final newAddress = await rotationService.manualRotate(walletId);
+      if (!ref.mounted || walletId != _walletId) return;
 
       // Reset shared flag for fresh address
       _currentAddressShared = false;
@@ -335,12 +337,10 @@ class ReceiveViewModel extends Notifier<ReceiveState> {
       _lastState = state;
 
       // Reload address history to include old address
-      await _loadAddressHistory(
-        currentAddressOverride: newAddress,
-        forceCurrentAddress: true,
-      );
+      await _loadAddressHistory(currentAddressOverride: newAddress);
       _lastState = state;
     } catch (e) {
+      if (!ref.mounted) return;
       state = state.copyWith(error: e.toString(), isLoading: false);
       _lastState = state;
     }

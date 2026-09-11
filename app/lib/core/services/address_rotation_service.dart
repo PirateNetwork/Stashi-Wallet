@@ -126,9 +126,8 @@ class AddressRotationService {
         final newAddress = await FfiBridge.nextReceiveAddress(walletId);
         debugPrint('[AddressRotation] Manually rotated to: $newAddress');
 
-        // Invalidate receive provider to refresh UI
-        ref.invalidate(receiveViewModelProvider);
-
+        // The Receive view model awaits this result and updates its own state.
+        // Invalidating it here disposes the caller while rotation is in flight.
         return newAddress;
       } catch (e, stackTrace) {
         debugPrint('[AddressRotation] Error during manual rotation: $e');
