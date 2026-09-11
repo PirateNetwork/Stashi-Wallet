@@ -19,6 +19,7 @@ import '../../ui/organisms/p_app_bar.dart';
 import '../../ui/organisms/p_scaffold.dart';
 import '../../ui/organisms/p_skeleton.dart';
 import '../../core/i18n/arb_text_localizer.dart';
+import 'payment_disclosures_provider.dart';
 
 /// Transaction detail screen.
 class TransactionDetailScreen extends ConsumerWidget {
@@ -89,13 +90,11 @@ class _TransactionDetails extends ConsumerStatefulWidget {
 
 class _TransactionDetailsState extends ConsumerState<_TransactionDetails> {
   Future<String?>? _memoFuture;
-  Future<List<PaymentDisclosure>>? _paymentDisclosuresFuture;
 
   @override
   void initState() {
     super.initState();
     _refreshMemoFuture();
-    _refreshPaymentDisclosuresFuture();
   }
 
   @override
@@ -106,7 +105,6 @@ class _TransactionDetailsState extends ConsumerState<_TransactionDetails> {
         oldWidget.tx.expired != widget.tx.expired ||
         (oldWidget.tx.memo ?? '') != (widget.tx.memo ?? '')) {
       _refreshMemoFuture();
-      _refreshPaymentDisclosuresFuture();
     }
   }
 
@@ -130,18 +128,6 @@ class _TransactionDetailsState extends ConsumerState<_TransactionDetails> {
           }
           return memo;
         });
-  }
-
-  void _refreshPaymentDisclosuresFuture() {
-    final walletId = ref.read(activeWalletProvider);
-    if (walletId == null || widget.tx.amount >= 0 || widget.tx.expired) {
-      _paymentDisclosuresFuture = null;
-      return;
-    }
-    _paymentDisclosuresFuture = FfiBridge.exportPaymentDisclosures(
-      walletId: walletId,
-      txid: widget.tx.txid,
-    );
   }
 
   /// Convert PlatformInt64 timestamp to DateTime
@@ -178,6 +164,13 @@ class _TransactionDetailsState extends ConsumerState<_TransactionDetails> {
     final padding = PSpacing.screenPadding(MediaQuery.of(context).size.width);
     final tx = widget.tx;
     final isReceived = tx.amount >= 0;
+    final walletId = ref.watch(activeWalletProvider);
+    final disclosureProvider = walletId != null && !isReceived && !tx.expired
+        ? paymentDisclosuresProvider((walletId: walletId, txid: tx.txid))
+        : null;
+    final disclosures = disclosureProvider == null
+        ? null
+        : ref.watch(disclosureProvider);
     final showNetworkFee = !isReceived;
     final amountArrr = _formatArrr(tx.amount.abs());
     final displayFeeArrrtoshis = _displayFeeArrrtoshis(tx);
@@ -474,29 +467,23 @@ class _TransactionDetailsState extends ConsumerState<_TransactionDetails> {
                 ],
               ),
               SelectableText(
+                key: const PageStorageKey('transaction-id-text'),
                 tx.txid,
                 style: PTypography.codeMedium(color: AppColors.textPrimary),
               ),
             ],
           ),
         ),
-        if (!isReceived && _paymentDisclosuresFuture != null) ...[
+        if (disclosures != null) ...[
           const SizedBox(height: PSpacing.lg),
-          FutureBuilder<List<PaymentDisclosure>>(
-            future: _paymentDisclosuresFuture,
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const _PaymentDisclosureLoadingCard();
-              }
-              if (snapshot.hasError) {
-                return const _PaymentDisclosureUnavailableCard();
-              }
-              final disclosures = snapshot.data ?? const <PaymentDisclosure>[];
-              if (disclosures.isEmpty) {
-                return const SizedBox.shrink();
-              }
-              return _PaymentDisclosureCard(disclosures: disclosures);
-            },
+          disclosures.when(
+            loading: () => const _PaymentDisclosureLoadingCard(),
+            error: (_, _) => _PaymentDisclosureUnavailableCard(
+              onRetry: () => ref.invalidate(disclosureProvider!),
+            ),
+            data: (items) => items.isEmpty
+                ? const SizedBox.shrink()
+                : _PaymentDisclosureCard(disclosures: items),
           ),
         ],
       ],
@@ -652,7 +639,9 @@ class _PaymentDisclosureLoadingCard extends StatelessWidget {
 }
 
 class _PaymentDisclosureUnavailableCard extends StatelessWidget {
-  const _PaymentDisclosureUnavailableCard();
+  const _PaymentDisclosureUnavailableCard({required this.onRetry});
+
+  final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -680,6 +669,7 @@ class _PaymentDisclosureUnavailableCard extends StatelessWidget {
                       color: AppColors.textSecondary,
                     ),
                   ),
+                  TextButton(onPressed: onRetry, child: Text('Retry'.tr)),
                 ],
               ),
             ),
