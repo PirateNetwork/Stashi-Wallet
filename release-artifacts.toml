@@ -22,7 +22,7 @@ version = "0.3.5"
 artifact = "pirate-ios-sdk"
 
 [android_sdk]
-version = "0.3.4"
+version = "0.3.5"
 artifact = "pirate-android-sdk"
 
 [react_native_plugin]
