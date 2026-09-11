@@ -13,6 +13,70 @@ struct DisclosureEnvelope {
     payload: Vec<u8>,
 }
 
+impl Repository<'_> {
+    /// Persist one complete, validated set of output disclosures atomically.
+    /// The service owns the versioned payload format and pool/output checks.
+    pub fn put_payment_disclosures(
+        &self,
+        wallet_id: &str,
+        network: &str,
+        txid: &str,
+        payload: &[u8],
+    ) -> Result<()> {
+        let envelope = DisclosureEnvelope {
+            version: 1,
+            wallet_id: wallet_id.to_owned(),
+            network: network.to_owned(),
+            txid: txid.to_owned(),
+            payload: payload.to_vec(),
+        };
+        let plaintext = Zeroizing::new(
+            serde_json::to_vec(&envelope)
+                .map_err(|_| Error::Storage("Cannot encode payment disclosures".into()))?,
+        );
+        let encrypted = self.encrypt_blob(&plaintext)?;
+        self.db.conn().execute(
+            "INSERT INTO payment_disclosures (wallet_id, network, txid, payload)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(wallet_id, network, txid) DO UPDATE SET payload = excluded.payload",
+            params![wallet_id, network, txid, encrypted],
+        )?;
+        Ok(())
+    }
+
+    /// Read and authenticate a bundle, returning no record on a cache miss.
+    pub fn get_payment_disclosures(
+        &self,
+        wallet_id: &str,
+        network: &str,
+        txid: &str,
+    ) -> Result<Option<Vec<u8>>> {
+        let encrypted: Option<Vec<u8>> = self.db.conn().query_row(
+            "SELECT payload FROM payment_disclosures WHERE wallet_id = ?1 AND network = ?2 AND txid = ?3",
+            params![wallet_id, network, txid],
+            |row| row.get(0),
+        ).optional()?;
+        let Some(encrypted) = encrypted else {
+            return Ok(None);
+        };
+        let plaintext = Zeroizing::new(self.decrypt_blob(&encrypted)?);
+        let envelope: DisclosureEnvelope = serde_json::from_slice(&plaintext)
+            .map_err(|_| Error::Storage("Invalid payment disclosure record".into()))?;
+        // Bind the encrypted contents to the lookup scope, so swapping valid
+        // ciphertext between rows cannot disclose another wallet's record.
+        if envelope.version != 1
+            || envelope.wallet_id != wallet_id
+            || envelope.network != network
+            || envelope.txid != txid
+        {
+            return Err(Error::Validation(
+                "Payment disclosure scope mismatch".into(),
+            ));
+        }
+        Ok(Some(envelope.payload))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -121,69 +185,5 @@ mod tests {
                 .unwrap(),
             None
         );
-    }
-}
-
-impl Repository<'_> {
-    /// Persist one complete, validated set of output disclosures atomically.
-    /// The service owns the versioned payload format and pool/output checks.
-    pub fn put_payment_disclosures(
-        &self,
-        wallet_id: &str,
-        network: &str,
-        txid: &str,
-        payload: &[u8],
-    ) -> Result<()> {
-        let envelope = DisclosureEnvelope {
-            version: 1,
-            wallet_id: wallet_id.to_owned(),
-            network: network.to_owned(),
-            txid: txid.to_owned(),
-            payload: payload.to_vec(),
-        };
-        let plaintext = Zeroizing::new(
-            serde_json::to_vec(&envelope)
-                .map_err(|_| Error::Storage("Cannot encode payment disclosures".into()))?,
-        );
-        let encrypted = self.encrypt_blob(&plaintext)?;
-        self.db.conn().execute(
-            "INSERT INTO payment_disclosures (wallet_id, network, txid, payload)
-             VALUES (?1, ?2, ?3, ?4)
-             ON CONFLICT(wallet_id, network, txid) DO UPDATE SET payload = excluded.payload",
-            params![wallet_id, network, txid, encrypted],
-        )?;
-        Ok(())
-    }
-
-    /// Read and authenticate a bundle, returning no record on a cache miss.
-    pub fn get_payment_disclosures(
-        &self,
-        wallet_id: &str,
-        network: &str,
-        txid: &str,
-    ) -> Result<Option<Vec<u8>>> {
-        let encrypted: Option<Vec<u8>> = self.db.conn().query_row(
-            "SELECT payload FROM payment_disclosures WHERE wallet_id = ?1 AND network = ?2 AND txid = ?3",
-            params![wallet_id, network, txid],
-            |row| row.get(0),
-        ).optional()?;
-        let Some(encrypted) = encrypted else {
-            return Ok(None);
-        };
-        let plaintext = Zeroizing::new(self.decrypt_blob(&encrypted)?);
-        let envelope: DisclosureEnvelope = serde_json::from_slice(&plaintext)
-            .map_err(|_| Error::Storage("Invalid payment disclosure record".into()))?;
-        // Bind the encrypted contents to the lookup scope, so swapping valid
-        // ciphertext between rows cannot disclose another wallet's record.
-        if envelope.version != 1
-            || envelope.wallet_id != wallet_id
-            || envelope.network != network
-            || envelope.txid != txid
-        {
-            return Err(Error::Validation(
-                "Payment disclosure scope mismatch".into(),
-            ));
-        }
-        Ok(Some(envelope.payload))
     }
 }
