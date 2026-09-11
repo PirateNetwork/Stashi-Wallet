@@ -803,6 +803,52 @@ fn reencrypt_wallet_tables(
     }
 
     {
+        // Disclosure recovery reads the account viewing keys as well as the
+        // legacy wallet secret. Rotate their outer wallet encryption together;
+        // the inner spending-password envelopes are deliberately preserved.
+        let mut stmt = conn.prepare(
+            "SELECT id, sapling_extsk, sapling_dfvk, orchard_extsk, orchard_fvk, encrypted_mnemonic FROM account_keys",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, Option<Vec<u8>>>(1)?,
+                row.get::<_, Option<Vec<u8>>>(2)?,
+                row.get::<_, Option<Vec<u8>>>(3)?,
+                row.get::<_, Option<Vec<u8>>>(4)?,
+                row.get::<_, Option<Vec<u8>>>(5)?,
+            ))
+        })?;
+        let rows_cache = rows.collect::<std::result::Result<Vec<_>, _>>()?;
+        drop(stmt);
+        for (id, sapling_extsk, sapling_dfvk, orchard_extsk, orchard_fvk, mnemonic) in rows_cache {
+            conn.execute(
+                "UPDATE account_keys SET sapling_extsk = ?1, sapling_dfvk = ?2, orchard_extsk = ?3, orchard_fvk = ?4, encrypted_mnemonic = ?5 WHERE id = ?6",
+                params![reencrypt_optional_blob(old_key, new_key, sapling_extsk)?,
+                    reencrypt_optional_blob(old_key, new_key, sapling_dfvk)?,
+                    reencrypt_optional_blob(old_key, new_key, orchard_extsk)?,
+                    reencrypt_optional_blob(old_key, new_key, orchard_fvk)?,
+                    reencrypt_optional_blob(old_key, new_key, mnemonic)?, id],
+            )?;
+        }
+    }
+
+    {
+        let mut stmt = conn.prepare("SELECT rowid, payload FROM payment_disclosures")?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?))
+        })?;
+        let rows_cache = rows.collect::<std::result::Result<Vec<_>, _>>()?;
+        drop(stmt);
+        for (id, payload) in rows_cache {
+            conn.execute(
+                "UPDATE payment_disclosures SET payload = ?1 WHERE rowid = ?2",
+                params![reencrypt_blob(old_key, new_key, &payload)?, id],
+            )?;
+        }
+    }
+
+    {
         let mut stmt = conn.prepare("SELECT height, frontier FROM frontier_snapshots")?;
         let rows = stmt.query_map([], |row| {
             Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?))
