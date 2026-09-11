@@ -89,6 +89,7 @@ class _TransactionDetails extends ConsumerStatefulWidget {
 }
 
 class _TransactionDetailsState extends ConsumerState<_TransactionDetails> {
+  static const _transactionIdStorageKey = PageStorageKey('transaction-id-text');
   Future<String?>? _memoFuture;
 
   @override
@@ -467,7 +468,7 @@ class _TransactionDetailsState extends ConsumerState<_TransactionDetails> {
                 ],
               ),
               SelectableText(
-                key: const PageStorageKey('transaction-id-text'),
+                key: _transactionIdStorageKey,
                 tx.txid,
                 style: PTypography.codeMedium(color: AppColors.textPrimary),
               ),

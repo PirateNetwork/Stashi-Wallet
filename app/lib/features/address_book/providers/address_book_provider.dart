@@ -250,7 +250,7 @@ class AddressBookNotifier extends Notifier<AddressBookState> {
       const invalidAddress = 'Enter a valid Sapling or Ironwood address.';
       state = state.copyWith(
         error: e.toString().contains(invalidAddress)
-            ? invalidAddress.tr
+            ? 'Enter a valid Sapling or Ironwood address.'.tr
             : e.toString(),
       );
       return null;

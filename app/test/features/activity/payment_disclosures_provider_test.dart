@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mocktail/mocktail.dart';
 import 'package:pirate_wallet/core/ffi/generated/frb_generated.dart';
 import 'package:pirate_wallet/core/ffi/generated/models.dart';
 import 'package:pirate_wallet/core/providers/wallet_providers.dart';
