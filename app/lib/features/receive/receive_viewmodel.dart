@@ -442,6 +442,7 @@ class ReceiveViewModel extends Notifier<ReceiveState> {
     BuildContext context, {
     String? value,
     String? successMessage,
+    bool markCurrentAsShared = true,
   }) async {
     final text = value ?? state.currentAddress;
     if (text == null || text.isEmpty) return;
@@ -450,9 +451,11 @@ class ReceiveViewModel extends Notifier<ReceiveState> {
       await SharePlus.instance.share(ShareParams(text: text));
 
       // Mark address as shared (for privacy awareness)
-      _currentAddressShared = true;
-      state = state.copyWith(addressWasShared: true);
-      _lastState = state;
+      if (markCurrentAsShared && ref.mounted) {
+        _currentAddressShared = true;
+        state = state.copyWith(addressWasShared: true);
+        _lastState = state;
+      }
 
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

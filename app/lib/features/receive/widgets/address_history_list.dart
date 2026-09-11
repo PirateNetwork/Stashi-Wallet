@@ -220,7 +220,7 @@ class _AddressHistoryItem extends StatelessWidget {
         if (address.isActive) {
           statusBadges.add(
             _AddressStatusBadge(
-              label: 'Active'.tr,
+              label: 'Current'.tr,
               foreground: AppColors.success,
               background: AppColors.successBackground,
               border: AppColors.successBorder,

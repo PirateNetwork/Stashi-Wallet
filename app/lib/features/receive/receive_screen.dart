@@ -573,7 +573,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
                               initialValue: _selectedKeyId ?? -1,
                               isExpanded: true,
                               decoration: InputDecoration(
-                                labelText: 'Key group'.tr,
+                                labelText: 'Filter by key group'.tr,
                                 prefixIcon: const Icon(
                                   Icons.account_tree_outlined,
                                 ),
@@ -613,7 +613,7 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
                           ),
                           SizedBox(height: PSpacing.sm),
                           Text(
-                            'Every address remains monitored, including archived ones.'
+                            'Current is the address shown above. Older and archived addresses still receive payments.'
                                 .tr,
                             style: PTypography.bodySmall().copyWith(
                               color: AppColors.textSecondary,
@@ -651,7 +651,8 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
                         viewModel,
                         address,
                       ),
-                      onOpen: (address) => context.go('/activity'),
+                      onOpen: (address) =>
+                          _showReceiveAddress(context, viewModel, address),
                     ),
                   ),
                   if (addressHistory.length >= 6)
@@ -824,6 +825,51 @@ class _ReceiveScreenState extends ConsumerState<ReceiveScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _showReceiveAddress(
+    BuildContext context,
+    ReceiveViewModel viewModel,
+    AddressInfo address,
+  ) async {
+    final title = address.label ?? 'Receive at this address'.tr;
+    final content = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          address.isActive
+              ? 'This is your current receive address.'.tr
+              : 'You can still receive payments here. Your current receive address stays the same.'
+                    .tr,
+          style: PTypography.bodySmall(color: AppColors.textSecondary),
+        ),
+        const SizedBox(height: PSpacing.md),
+        AddressQRWidget(
+          address: address.address,
+          onCopy: () => viewModel.copySpecificAddress(context, address),
+          onShare: () => viewModel.shareAddress(
+            context,
+            value: address.address,
+            markCurrentAsShared: address.isActive,
+          ),
+        ),
+      ],
+    );
+    if (!PSpacing.isHandset(MediaQuery.sizeOf(context))) {
+      await PDialog.show<void>(
+        context: context,
+        title: title,
+        content: content,
+        actions: [PDialogAction(label: 'Close'.tr)],
+      );
+    } else {
+      await PBottomSheet.show<void>(
+        context: context,
+        title: title,
+        content: content,
+      );
+    }
   }
 
   Future<void> _showColorTagPicker(
