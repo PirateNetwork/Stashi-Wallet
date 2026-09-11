@@ -535,6 +535,168 @@ fn validate_disclosure_bundle(
     Ok(())
 }
 
+/// Export a Sapling payment disclosure for a specific output index.
+pub async fn export_sapling_payment_disclosure(
+    wallet_id: WalletId,
+    txid: String,
+    output_index: u32,
+) -> Result<String> {
+    run_on_runtime(move || export_sapling_payment_disclosure_inner(wallet_id, txid, output_index))
+        .await
+}
+
+async fn export_sapling_payment_disclosure_inner(
+    wallet_id: WalletId,
+    txid: String,
+    output_index: u32,
+) -> Result<String> {
+    export_payment_disclosures_inner(wallet_id, txid)
+        .await?
+        .into_iter()
+        .find(|d| {
+            d.disclosure_type == DisclosureKind::Sapling.as_str() && d.output_index == output_index
+        })
+        .map(|d| d.disclosure)
+        .ok_or_else(|| {
+            anyhow!(
+                "No Sapling payment disclosure found for output index {}",
+                output_index
+            )
+        })
+}
+
+/// Export an Ironwood payment disclosure for a specific action index.
+pub async fn export_ironwood_payment_disclosure(
+    wallet_id: WalletId,
+    txid: String,
+    action_index: u32,
+) -> Result<String> {
+    run_on_runtime(move || export_ironwood_payment_disclosure_inner(wallet_id, txid, action_index))
+        .await
+}
+
+async fn export_ironwood_payment_disclosure_inner(
+    wallet_id: WalletId,
+    txid: String,
+    action_index: u32,
+) -> Result<String> {
+    export_payment_disclosures_inner(wallet_id, txid)
+        .await?
+        .into_iter()
+        .find(|d| {
+            d.disclosure_type == DisclosureKind::Ironwood.as_str() && d.output_index == action_index
+        })
+        .map(|d| d.disclosure)
+        .ok_or_else(|| {
+            anyhow!(
+                "No Ironwood payment disclosure found for action index {}",
+                action_index
+            )
+        })
+}
+
+/// Verify and decrypt a Sapling or Ironwood payment disclosure.
+pub async fn verify_payment_disclosure(
+    wallet_id: WalletId,
+    disclosure: String,
+) -> Result<PaymentDisclosureVerification> {
+    run_on_runtime(move || verify_payment_disclosure_inner(wallet_id, disclosure)).await
+}
+
+async fn verify_payment_disclosure_inner(
+    wallet_id: WalletId,
+    disclosure: String,
+) -> Result<PaymentDisclosureVerification> {
+    let decoded = decode_payment_disclosure(&disclosure)?;
+    let wallet_network = address_prefix_network_type(&wallet_id)?;
+    if decoded.network_type != wallet_network {
+        return Err(anyhow!(
+            "Payment disclosure is for {:?}, but wallet endpoint is configured for {:?}",
+            decoded.network_type,
+            wallet_network
+        ));
+    }
+
+    let endpoint_config = get_lightd_endpoint_config(wallet_id)?;
+    let mut reversed = decoded.txid_bytes;
+    reversed.reverse();
+    let tx_hash_candidates = if reversed == decoded.txid_bytes {
+        vec![decoded.txid_bytes]
+    } else {
+        vec![decoded.txid_bytes, reversed]
+    };
+    let raw = fetch_raw_transaction(endpoint_config, tx_hash_candidates).await?;
+    let tx = read_pirate_transaction(raw.bytes.as_slice())
+        .map_err(|e| anyhow!("Failed to parse transaction: {}", e))?;
+    let txid_bytes = *tx.txid().as_ref();
+    let ock = zcash_note_encryption::OutgoingCipherKey(decoded.ock);
+
+    match decoded.kind {
+        DisclosureKind::Sapling => {
+            let bundle = tx
+                .sapling_bundle()
+                .ok_or_else(|| anyhow!("Transaction has no Sapling outputs"))?;
+            let output = bundle
+                .shielded_outputs()
+                .get(decoded.output_index as usize)
+                .ok_or_else(|| {
+                    anyhow!("Sapling output index {} out of range", decoded.output_index)
+                })?;
+            let block_height = BlockHeight::from_u32(raw.height.unwrap_or(0));
+            let network = PirateNetwork::new(wallet_network);
+            let sapling_zip212 = zip212_enforcement(&network, block_height);
+            let (note, address, memo) =
+                try_sapling_output_recovery_with_ock(&ock, output, sapling_zip212)
+                    .ok_or_else(|| anyhow!("Failed to decrypt Sapling output with disclosure"))?;
+            let memo_vec = memo.to_vec();
+            Ok(PaymentDisclosureVerification {
+                disclosure_type: DisclosureKind::Sapling.as_str().to_string(),
+                txid: txid_string(&txid_bytes),
+                output_index: decoded.output_index,
+                address: PaymentAddress { inner: address }.encode_for_network(wallet_network),
+                amount: note.value().inner(),
+                memo: memo_to_text(&memo_vec),
+                memo_hex: hex::encode(memo_vec),
+            })
+        }
+        DisclosureKind::Ironwood => {
+            let bundle = tx
+                .ironwood_bundle()
+                .ok_or_else(|| anyhow!("Transaction has no Ironwood actions"))?;
+            let action = bundle
+                .actions()
+                .get(decoded.output_index as usize)
+                .ok_or_else(|| {
+                    anyhow!(
+                        "Ironwood action index {} out of range",
+                        decoded.output_index
+                    )
+                })?;
+            let domain = IronwoodDomain::for_action(action);
+            let (note, address, memo) = try_output_recovery_with_ock(
+                &domain,
+                &ock,
+                action,
+                &action.encrypted_note().out_ciphertext,
+            )
+            .ok_or_else(|| anyhow!("Failed to decrypt Ironwood action with disclosure"))?;
+            let memo_vec = memo.to_vec();
+            let address = (IronwoodPaymentAddress { inner: address })
+                .encode_for_network(wallet_network)
+                .map_err(|e| anyhow!("Failed to encode Ironwood address: {}", e))?;
+            Ok(PaymentDisclosureVerification {
+                disclosure_type: DisclosureKind::Ironwood.as_str().to_string(),
+                txid: txid_string(&txid_bytes),
+                output_index: decoded.output_index,
+                address,
+                amount: note.value().inner(),
+                memo: memo_to_text(&memo_vec),
+                memo_hex: hex::encode(memo_vec),
+            })
+        }
+    }
+}
+
 #[cfg(test)]
 mod persistence_tests {
     use super::*;
@@ -807,167 +969,5 @@ mod persistence_tests {
         .unwrap();
         encrypted_db::invalidate_all_wallet_db_caches();
         assert_eq!(load()[1].disclosure, bundle[1].disclosure);
-    }
-}
-
-/// Export a Sapling payment disclosure for a specific output index.
-pub async fn export_sapling_payment_disclosure(
-    wallet_id: WalletId,
-    txid: String,
-    output_index: u32,
-) -> Result<String> {
-    run_on_runtime(move || export_sapling_payment_disclosure_inner(wallet_id, txid, output_index))
-        .await
-}
-
-async fn export_sapling_payment_disclosure_inner(
-    wallet_id: WalletId,
-    txid: String,
-    output_index: u32,
-) -> Result<String> {
-    export_payment_disclosures_inner(wallet_id, txid)
-        .await?
-        .into_iter()
-        .find(|d| {
-            d.disclosure_type == DisclosureKind::Sapling.as_str() && d.output_index == output_index
-        })
-        .map(|d| d.disclosure)
-        .ok_or_else(|| {
-            anyhow!(
-                "No Sapling payment disclosure found for output index {}",
-                output_index
-            )
-        })
-}
-
-/// Export an Ironwood payment disclosure for a specific action index.
-pub async fn export_ironwood_payment_disclosure(
-    wallet_id: WalletId,
-    txid: String,
-    action_index: u32,
-) -> Result<String> {
-    run_on_runtime(move || export_ironwood_payment_disclosure_inner(wallet_id, txid, action_index))
-        .await
-}
-
-async fn export_ironwood_payment_disclosure_inner(
-    wallet_id: WalletId,
-    txid: String,
-    action_index: u32,
-) -> Result<String> {
-    export_payment_disclosures_inner(wallet_id, txid)
-        .await?
-        .into_iter()
-        .find(|d| {
-            d.disclosure_type == DisclosureKind::Ironwood.as_str() && d.output_index == action_index
-        })
-        .map(|d| d.disclosure)
-        .ok_or_else(|| {
-            anyhow!(
-                "No Ironwood payment disclosure found for action index {}",
-                action_index
-            )
-        })
-}
-
-/// Verify and decrypt a Sapling or Ironwood payment disclosure.
-pub async fn verify_payment_disclosure(
-    wallet_id: WalletId,
-    disclosure: String,
-) -> Result<PaymentDisclosureVerification> {
-    run_on_runtime(move || verify_payment_disclosure_inner(wallet_id, disclosure)).await
-}
-
-async fn verify_payment_disclosure_inner(
-    wallet_id: WalletId,
-    disclosure: String,
-) -> Result<PaymentDisclosureVerification> {
-    let decoded = decode_payment_disclosure(&disclosure)?;
-    let wallet_network = address_prefix_network_type(&wallet_id)?;
-    if decoded.network_type != wallet_network {
-        return Err(anyhow!(
-            "Payment disclosure is for {:?}, but wallet endpoint is configured for {:?}",
-            decoded.network_type,
-            wallet_network
-        ));
-    }
-
-    let endpoint_config = get_lightd_endpoint_config(wallet_id)?;
-    let mut reversed = decoded.txid_bytes;
-    reversed.reverse();
-    let tx_hash_candidates = if reversed == decoded.txid_bytes {
-        vec![decoded.txid_bytes]
-    } else {
-        vec![decoded.txid_bytes, reversed]
-    };
-    let raw = fetch_raw_transaction(endpoint_config, tx_hash_candidates).await?;
-    let tx = read_pirate_transaction(raw.bytes.as_slice())
-        .map_err(|e| anyhow!("Failed to parse transaction: {}", e))?;
-    let txid_bytes = *tx.txid().as_ref();
-    let ock = zcash_note_encryption::OutgoingCipherKey(decoded.ock);
-
-    match decoded.kind {
-        DisclosureKind::Sapling => {
-            let bundle = tx
-                .sapling_bundle()
-                .ok_or_else(|| anyhow!("Transaction has no Sapling outputs"))?;
-            let output = bundle
-                .shielded_outputs()
-                .get(decoded.output_index as usize)
-                .ok_or_else(|| {
-                    anyhow!("Sapling output index {} out of range", decoded.output_index)
-                })?;
-            let block_height = BlockHeight::from_u32(raw.height.unwrap_or(0));
-            let network = PirateNetwork::new(wallet_network);
-            let sapling_zip212 = zip212_enforcement(&network, block_height);
-            let (note, address, memo) =
-                try_sapling_output_recovery_with_ock(&ock, output, sapling_zip212)
-                    .ok_or_else(|| anyhow!("Failed to decrypt Sapling output with disclosure"))?;
-            let memo_vec = memo.to_vec();
-            Ok(PaymentDisclosureVerification {
-                disclosure_type: DisclosureKind::Sapling.as_str().to_string(),
-                txid: txid_string(&txid_bytes),
-                output_index: decoded.output_index,
-                address: PaymentAddress { inner: address }.encode_for_network(wallet_network),
-                amount: note.value().inner(),
-                memo: memo_to_text(&memo_vec),
-                memo_hex: hex::encode(memo_vec),
-            })
-        }
-        DisclosureKind::Ironwood => {
-            let bundle = tx
-                .ironwood_bundle()
-                .ok_or_else(|| anyhow!("Transaction has no Ironwood actions"))?;
-            let action = bundle
-                .actions()
-                .get(decoded.output_index as usize)
-                .ok_or_else(|| {
-                    anyhow!(
-                        "Ironwood action index {} out of range",
-                        decoded.output_index
-                    )
-                })?;
-            let domain = IronwoodDomain::for_action(action);
-            let (note, address, memo) = try_output_recovery_with_ock(
-                &domain,
-                &ock,
-                action,
-                &action.encrypted_note().out_ciphertext,
-            )
-            .ok_or_else(|| anyhow!("Failed to decrypt Ironwood action with disclosure"))?;
-            let memo_vec = memo.to_vec();
-            let address = (IronwoodPaymentAddress { inner: address })
-                .encode_for_network(wallet_network)
-                .map_err(|e| anyhow!("Failed to encode Ironwood address: {}", e))?;
-            Ok(PaymentDisclosureVerification {
-                disclosure_type: DisclosureKind::Ironwood.as_str().to_string(),
-                txid: txid_string(&txid_bytes),
-                output_index: decoded.output_index,
-                address,
-                amount: note.value().inner(),
-                memo: memo_to_text(&memo_vec),
-                memo_hex: hex::encode(memo_vec),
-            })
-        }
     }
 }
