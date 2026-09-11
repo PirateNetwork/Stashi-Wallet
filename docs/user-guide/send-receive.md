@@ -30,7 +30,7 @@ Address labels and colour tags are local organisation tools. They are not writte
 ## Send ARRR
 
 1. Open **Send**.
-2. Paste the recipient address, scan a QR code, or import a QR image where supported.
+2. Paste the recipient address, scan a QR code, import a QR image where supported, or select a saved contact with the **Address Book** button beside the recipient field.
 3. Confirm that the address is a Pirate Chain address from the intended recipient.
 4. Enter the amount.
 5. Add a memo only if the recipient expects you to include a message. A memo may be visible to the recipient and to anyone who later obtains the relevant viewing authority.
@@ -78,3 +78,53 @@ Sweeping moves the spendable balance controlled by a selected spending key to an
 6. Review the full amount and fee before approving the transaction.
 
 Do not sweep funds to a destination until you have confirmed that its seed phrase or imported spending key is backed up.
+
+<!-- page-break -->
+
+## Address Book
+
+Save frequently used recipient addresses under **Settings > Address Book**. Check the wallet selector first: each wallet has its own contacts.
+
+On Desktop, **Search**, **Filter**, and **Add Address** appear together above the list. On Mobile, the filter icon is in the top bar and **Add Address** is at the bottom.
+
+| Mobile | Desktop |
+|---|---|
+| ![Address Book list and controls on Mobile](images/address-book-phone.png) | ![Address Book list and toolbar on Desktop](images/address-book-desktop.png) |
+
+Search matches labels, addresses, and notes. Select a contact's star to mark it as a favourite; favourites appear before other contacts. Use the filter controls to show favourites or a particular colour tag, and clear the filters to restore the full list.
+
+The built-in general and development donation contacts appear first while marked as favourites. Selecting a contact does not send a payment.
+
+The screenshots use a fictional contact and example address. Do not use the example address for payments.
+
+<!-- page-break -->
+
+## Add and manage a contact
+
+1. Open **Settings > Address Book** and confirm the selected wallet.
+2. Select **Add Address**.
+3. Enter a recognisable **Label** and the recipient's **Address**. Paste the address, scan a QR code on Mobile, or import a QR image on Desktop where supported.
+4. Optionally add notes and choose a colour tag.
+5. Check the address against the recipient's original payment details, then select **Save**.
+
+| Mobile | Desktop |
+|---|---|
+| ![Add Address form on Mobile](images/address-book-add-phone.png) | ![Add Address dialog on Desktop](images/address-book-add-desktop.png) |
+
+Open a saved contact to view its full address and notes, copy the address, or select **Edit** or **Delete**. Editing changes the label, notes, and colour tag; the saved payment address cannot be changed. Add a new contact if the recipient gives you a replacement address.
+
+Labels, notes, favourites, and colour tags help organise your local contacts. They are not payment memos and are not sent to the recipient.
+
+<!-- page-break -->
+
+## Send to a saved contact
+
+1. Open **Send** and select the **Address Book** button beside the recipient address field.
+2. Search for the contact and select it to fill the recipient address.
+3. Verify the full address, enter the amount and any intended memo, then continue through the normal fee and transaction review.
+
+| Mobile | Desktop |
+|---|---|
+| ![Saved contact picker from Send on Mobile](images/send-contact-picker-phone.png) | ![Saved contact picker from Send on Desktop](images/send-contact-picker-desktop.png) |
+
+You can also open a contact from **Settings > Address Book** and select **Send to This Address**. Stashi Wallet opens Send with that address filled in. Always check the destination again before approving the transaction.
