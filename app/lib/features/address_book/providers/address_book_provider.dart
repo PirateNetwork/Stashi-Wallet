@@ -7,6 +7,26 @@ import '../models/address_entry.dart';
 import '../../../core/ffi/ffi_bridge.dart';
 import '../../../core/i18n/arb_text_localizer.dart';
 
+// Match the default contact order in pirate-storage-sqlite/address_book.rs.
+const _donationAddresses = [
+  'zs1ymgqg9dnt20q3y6lk8za2a7cq53evmqwy4lvnfruq5z4z9g3tj8znejw28e39r64yakgvcgurv2',
+  'zs1z5k5cjhuhxc59yllfky60w6rk4n6v2ytmnejl6lapjr2p7ej3m6kw8d4z8cqltepds4ssnxxcuw',
+];
+
+int _compareContacts(AddressEntry a, AddressEntry b) {
+  if (a.isFavorite != b.isFavorite) return a.isFavorite ? -1 : 1;
+  if (a.isFavorite) {
+    int rank(AddressEntry entry) {
+      final index = _donationAddresses.indexOf(entry.address);
+      return index < 0 ? _donationAddresses.length : index;
+    }
+
+    final order = rank(a).compareTo(rank(b));
+    if (order != 0) return order;
+  }
+  return a.label.compareTo(b.label);
+}
+
 /// Address book state
 class AddressBookState {
   final List<AddressEntry> entries;
@@ -67,13 +87,8 @@ class AddressBookState {
       }).toList();
     }
 
-    // Sort: favorites first, then alphabetically
-    result.sort((a, b) {
-      if (a.isFavorite != b.isFavorite) {
-        return a.isFavorite ? -1 : 1;
-      }
-      return a.label.compareTo(b.label);
-    });
+    // Pinned donation defaults lead, followed by other contacts alphabetically.
+    result.sort(_compareContacts);
 
     return result;
   }
@@ -459,7 +474,8 @@ final favoriteAddressesProvider = Provider.family<List<AddressEntry>, String>((
   walletId,
 ) {
   final state = ref.watch(addressBookProvider(walletId));
-  return state.entries.where((e) => e.isFavorite).toList();
+  return state.entries.where((e) => e.isFavorite).toList()
+    ..sort(_compareContacts);
 });
 
 /// Provider for label lookup (for transaction history)

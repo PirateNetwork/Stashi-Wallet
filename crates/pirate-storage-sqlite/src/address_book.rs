@@ -13,6 +13,40 @@ pub const MAX_LABEL_LENGTH: usize = 100;
 /// Maximum notes length
 pub const MAX_NOTES_LENGTH: usize = 500;
 
+/// Default donation contacts, in display order (general fund first).
+pub const DONATION_CONTACTS: [(&str, &str, &str); 2] = [
+    (
+        "zs1ymgqg9dnt20q3y6lk8za2a7cq53evmqwy4lvnfruq5z4z9g3tj8znejw28e39r64yakgvcgurv2",
+        "Pirate Chain's General Donation Fund",
+        "The official address for the Pirate Chain general fund",
+    ),
+    (
+        "zs1z5k5cjhuhxc59yllfky60w6rk4n6v2ytmnejl6lapjr2p7ej3m6kw8d4z8cqltepds4ssnxxcuw",
+        "Pirate Chain's Development Donation Fund",
+        "The official address for the Pirate Chain development fund",
+    ),
+];
+
+/// Donation contacts lead other pinned contacts, without overriding unpinning.
+pub fn compare_contacts(a: &AddressBookEntry, b: &AddressBookEntry) -> std::cmp::Ordering {
+    let rank = |entry: &AddressBookEntry| {
+        DONATION_CONTACTS
+            .iter()
+            .position(|contact| contact.0 == entry.address)
+            .unwrap_or(DONATION_CONTACTS.len())
+    };
+    b.is_favorite
+        .cmp(&a.is_favorite)
+        .then_with(|| {
+            if a.is_favorite {
+                rank(a).cmp(&rank(b))
+            } else {
+                std::cmp::Ordering::Equal
+            }
+        })
+        .then_with(|| a.label.cmp(&b.label))
+}
+
 /// Color tag for address book entries
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(u8)]
@@ -187,6 +221,34 @@ impl AddressBookEntry {
 pub struct AddressBookStorage;
 
 impl AddressBookStorage {
+    /// Seed once per wallet, preserving subsequent edits and deletions.
+    pub fn ensure_default_contacts(conn: &Connection, wallet_id: &str) -> Result<()> {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS address_book_defaults (
+            wallet_id TEXT PRIMARY KEY NOT NULL
+        )",
+        )?;
+        let tx = conn.unchecked_transaction()?;
+        let inserted = tx.execute(
+            "INSERT OR IGNORE INTO address_book_defaults(wallet_id) VALUES (?1)",
+            [wallet_id],
+        )?;
+        if inserted != 0 {
+            for (address, label, notes) in DONATION_CONTACTS {
+                if !Self::exists(&tx, wallet_id, address)? {
+                    let entry =
+                        AddressBookEntry::new(wallet_id.into(), address.into(), label.into())
+                            .with_notes(notes.into())
+                            .with_color_tag(ColorTag::Yellow)
+                            .with_favorite(true);
+                    Self::insert(&tx, &entry)?;
+                }
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
     /// Create address_book table
     pub fn create_table(conn: &Connection) -> Result<()> {
         conn.execute(
@@ -629,6 +691,57 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         AddressBookStorage::create_table(&conn).unwrap();
         conn
+    }
+
+    #[test]
+    fn donation_defaults_are_valid_pinned_yellow_and_seeded_once_per_wallet() {
+        let conn = setup_db();
+        AddressBookStorage::ensure_default_contacts(&conn, "existing").unwrap();
+        AddressBookStorage::ensure_default_contacts(&conn, "existing").unwrap();
+        let mut entries = AddressBookStorage::list(&conn, "existing").unwrap();
+        entries.sort_by(compare_contacts);
+        assert_eq!(entries.len(), 2);
+        for (entry, (address, label, notes)) in entries.iter().zip(DONATION_CONTACTS) {
+            assert_eq!(entry.address, address);
+            assert_eq!(entry.label, label);
+            assert_eq!(entry.notes.as_deref(), Some(notes));
+            assert!(entry.is_favorite);
+            assert_eq!(entry.color_tag, ColorTag::Yellow);
+        }
+        AddressBookStorage::delete(&conn, "existing", entries[0].id).unwrap();
+        entries[1].label = "My custom label".into();
+        entries[1].is_favorite = false;
+        entries[1].color_tag = ColorTag::Blue;
+        AddressBookStorage::update(&conn, &entries[1]).unwrap();
+        AddressBookStorage::ensure_default_contacts(&conn, "existing").unwrap();
+        let remaining = AddressBookStorage::list(&conn, "existing").unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].label, "My custom label");
+        assert!(!remaining[0].is_favorite);
+        assert_eq!(remaining[0].color_tag, ColorTag::Blue);
+        AddressBookStorage::ensure_default_contacts(&conn, "new").unwrap();
+        assert_eq!(AddressBookStorage::count(&conn, "new").unwrap(), 2);
+    }
+
+    #[test]
+    fn donation_defaults_preserve_existing_contact_and_other_contacts() {
+        let conn = setup_db();
+        let existing = AddressBookEntry::new(
+            "wallet".into(),
+            DONATION_CONTACTS[0].0.into(),
+            "My saved fund".into(),
+        );
+        AddressBookStorage::insert(&conn, &existing).unwrap();
+        let other = AddressBookEntry::new("wallet".into(), sapling_address(0), "Alice".into());
+        AddressBookStorage::insert(&conn, &other).unwrap();
+        AddressBookStorage::ensure_default_contacts(&conn, "wallet").unwrap();
+        assert_eq!(AddressBookStorage::count(&conn, "wallet").unwrap(), 3);
+        assert_eq!(
+            AddressBookStorage::get_label_for_address(&conn, "wallet", DONATION_CONTACTS[0].0)
+                .unwrap()
+                .as_deref(),
+            Some("My saved fund")
+        );
     }
 
     fn sapling_address(index: u32) -> String {

@@ -32,6 +32,7 @@ fn address_book_entry_to_ffi(entry: DbAddressBookEntry) -> Result<AddressBookEnt
 
 pub(super) fn list_address_book(wallet_id: WalletId) -> Result<Vec<AddressBookEntryFfi>> {
     let (db, _repo) = super::encrypted_db::open_wallet_db_for(&wallet_id)?;
+    AddressBookStorage::ensure_default_contacts(db.conn(), &wallet_id)?;
 
     let mut entries = AddressBookStorage::list(db.conn(), &wallet_id)?;
     if wallet_id != "legacy" {
@@ -40,16 +41,7 @@ pub(super) fn list_address_book(wallet_id: WalletId) -> Result<Vec<AddressBookEn
         }
     }
 
-    entries.sort_by(|a, b| {
-        if a.is_favorite != b.is_favorite {
-            return if a.is_favorite {
-                std::cmp::Ordering::Less
-            } else {
-                std::cmp::Ordering::Greater
-            };
-        }
-        a.label.cmp(&b.label)
-    });
+    entries.sort_by(pirate_storage_sqlite::address_book::compare_contacts);
 
     entries
         .into_iter()
@@ -65,6 +57,7 @@ pub(super) fn add_address_book_entry(
     color_tag: AddressBookColorTag,
 ) -> Result<AddressBookEntryFfi> {
     let (db, _repo) = super::encrypted_db::open_wallet_db_for(&wallet_id)?;
+    AddressBookStorage::ensure_default_contacts(db.conn(), &wallet_id)?;
 
     let mut entry = DbAddressBookEntry::new(wallet_id.clone(), address, label);
     if let Some(notes_value) = notes {
@@ -89,6 +82,7 @@ pub(super) fn update_address_book_entry(
     is_favorite: Option<bool>,
 ) -> Result<AddressBookEntryFfi> {
     let (db, _repo) = super::encrypted_db::open_wallet_db_for(&wallet_id)?;
+    AddressBookStorage::ensure_default_contacts(db.conn(), &wallet_id)?;
     let mut entry = AddressBookStorage::get_by_id(db.conn(), &wallet_id, id)?
         .ok_or_else(|| anyhow!("Address book entry not found"))?;
 
@@ -117,18 +111,21 @@ pub(super) fn update_address_book_entry(
 
 pub(super) fn delete_address_book_entry(wallet_id: WalletId, id: i64) -> Result<()> {
     let (db, _repo) = super::encrypted_db::open_wallet_db_for(&wallet_id)?;
+    AddressBookStorage::ensure_default_contacts(db.conn(), &wallet_id)?;
     AddressBookStorage::delete(db.conn(), &wallet_id, id)?;
     Ok(())
 }
 
 pub(super) fn toggle_address_book_favorite(wallet_id: WalletId, id: i64) -> Result<bool> {
     let (db, _repo) = super::encrypted_db::open_wallet_db_for(&wallet_id)?;
+    AddressBookStorage::ensure_default_contacts(db.conn(), &wallet_id)?;
     AddressBookStorage::toggle_favorite(db.conn(), &wallet_id, id)
         .map_err(|e| anyhow!("Address book error: {}", e))
 }
 
 pub(super) fn mark_address_used(wallet_id: WalletId, address: String) -> Result<()> {
     let (db, _repo) = super::encrypted_db::open_wallet_db_for(&wallet_id)?;
+    AddressBookStorage::ensure_default_contacts(db.conn(), &wallet_id)?;
     AddressBookStorage::mark_used(db.conn(), &wallet_id, &address)?;
     Ok(())
 }
@@ -138,18 +135,21 @@ pub(super) fn get_label_for_address(
     address: String,
 ) -> Result<Option<String>> {
     let (db, _repo) = super::encrypted_db::open_wallet_db_for(&wallet_id)?;
+    AddressBookStorage::ensure_default_contacts(db.conn(), &wallet_id)?;
     AddressBookStorage::get_label_for_address(db.conn(), &wallet_id, &address)
         .map_err(|e| anyhow!("Address book error: {}", e))
 }
 
 pub(super) fn address_exists_in_book(wallet_id: WalletId, address: String) -> Result<bool> {
     let (db, _repo) = super::encrypted_db::open_wallet_db_for(&wallet_id)?;
+    AddressBookStorage::ensure_default_contacts(db.conn(), &wallet_id)?;
     AddressBookStorage::exists(db.conn(), &wallet_id, &address)
         .map_err(|e| anyhow!("Address book error: {}", e))
 }
 
 pub(super) fn get_address_book_count(wallet_id: WalletId) -> Result<u32> {
     let (db, _repo) = super::encrypted_db::open_wallet_db_for(&wallet_id)?;
+    AddressBookStorage::ensure_default_contacts(db.conn(), &wallet_id)?;
     AddressBookStorage::count(db.conn(), &wallet_id)
         .map_err(|e| anyhow!("Address book error: {}", e))
 }
@@ -159,6 +159,7 @@ pub(super) fn get_address_book_entry(
     id: i64,
 ) -> Result<Option<AddressBookEntryFfi>> {
     let (db, _repo) = super::encrypted_db::open_wallet_db_for(&wallet_id)?;
+    AddressBookStorage::ensure_default_contacts(db.conn(), &wallet_id)?;
     let entry = AddressBookStorage::get_by_id(db.conn(), &wallet_id, id)?;
     match entry {
         Some(value) => Ok(Some(address_book_entry_to_ffi(value)?)),
@@ -171,6 +172,7 @@ pub(super) fn get_address_book_entry_by_address(
     address: String,
 ) -> Result<Option<AddressBookEntryFfi>> {
     let (db, _repo) = super::encrypted_db::open_wallet_db_for(&wallet_id)?;
+    AddressBookStorage::ensure_default_contacts(db.conn(), &wallet_id)?;
     let entry = AddressBookStorage::get_by_address(db.conn(), &wallet_id, &address)?;
     match entry {
         Some(value) => Ok(Some(address_book_entry_to_ffi(value)?)),
@@ -183,7 +185,9 @@ pub(super) fn search_address_book(
     query: String,
 ) -> Result<Vec<AddressBookEntryFfi>> {
     let (db, _repo) = super::encrypted_db::open_wallet_db_for(&wallet_id)?;
-    let entries = AddressBookStorage::search(db.conn(), &wallet_id, &query)?;
+    AddressBookStorage::ensure_default_contacts(db.conn(), &wallet_id)?;
+    let mut entries = AddressBookStorage::search(db.conn(), &wallet_id, &query)?;
+    entries.sort_by(pirate_storage_sqlite::address_book::compare_contacts);
     entries
         .into_iter()
         .map(address_book_entry_to_ffi)
@@ -192,7 +196,9 @@ pub(super) fn search_address_book(
 
 pub(super) fn get_address_book_favorites(wallet_id: WalletId) -> Result<Vec<AddressBookEntryFfi>> {
     let (db, _repo) = super::encrypted_db::open_wallet_db_for(&wallet_id)?;
-    let entries = AddressBookStorage::list_favorites(db.conn(), &wallet_id)?;
+    AddressBookStorage::ensure_default_contacts(db.conn(), &wallet_id)?;
+    let mut entries = AddressBookStorage::list_favorites(db.conn(), &wallet_id)?;
+    entries.sort_by(pirate_storage_sqlite::address_book::compare_contacts);
     entries
         .into_iter()
         .map(address_book_entry_to_ffi)
@@ -204,6 +210,7 @@ pub(super) fn get_recently_used_addresses(
     limit: u32,
 ) -> Result<Vec<AddressBookEntryFfi>> {
     let (db, _repo) = super::encrypted_db::open_wallet_db_for(&wallet_id)?;
+    AddressBookStorage::ensure_default_contacts(db.conn(), &wallet_id)?;
     let entries = AddressBookStorage::recently_used(db.conn(), &wallet_id, limit)?;
     entries
         .into_iter()
