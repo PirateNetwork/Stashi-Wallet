@@ -44,6 +44,27 @@ struct RawTransactionFetch {
     height: Option<u32>,
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
+struct StoredDisclosures {
+    version: u32,
+    recovery_keys: [u8; 32],
+    outputs: Vec<PaymentDisclosure>,
+}
+
+fn recovery_key_fingerprint(
+    sapling: &[SaplingOutgoingViewingKey],
+    ironwood: &[orchard::keys::OutgoingViewingKey],
+) -> [u8; 32] {
+    let mut keys: Vec<[u8; 32]> = ovk_candidate_bytes(sapling, ironwood, DisclosureKind::Sapling);
+    keys.sort_unstable();
+    let mut hash = Sha256::new();
+    hash.update(b"payment-disclosure-recovery-keys-v1");
+    for key in keys {
+        hash.update(key);
+    }
+    hash.finalize().into()
+}
+
 fn sapling_disclosure_hrp(network_type: NetworkType) -> &'static str {
     match network_type {
         NetworkType::Mainnet => SAPLING_DISCLOSURE_MAINNET_HRP,
@@ -390,18 +411,403 @@ async fn export_payment_disclosures_inner(
     wallet_id: WalletId,
     txid: String,
 ) -> Result<Vec<PaymentDisclosure>> {
+    export_payment_disclosures_with_fetch(wallet_id, txid, fetch_raw_transaction).await
+}
+
+async fn export_payment_disclosures_with_fetch<F, Fut>(
+    wallet_id: WalletId,
+    txid: String,
+    fetch: F,
+) -> Result<Vec<PaymentDisclosure>>
+where
+    F: FnOnce(endpoint::LightdEndpoint, Vec<[u8; 32]>) -> Fut,
+    Fut: Future<Output = Result<RawTransactionFetch>>,
+{
+    let txid = normalize_disclosure_txid(&txid)?;
+    let chain_network = wallet_network_type(&wallet_id)?;
+    let network_type = address_prefix_network_type(&wallet_id)?;
+    // Some test endpoints intentionally use mainnet address prefixes. Cache
+    // isolation must follow the actual chain, not that encoding compatibility.
+    let network = disclosure_network_name(chain_network);
+    // Local key metadata only; this does not open a network connection.
     let (endpoint_config, tx_hash_candidates, sapling_ovks, orchard_ovks, tx_height_hint) =
         collect_tx_recovery_context(&wallet_id, &txid)?;
-    let raw = fetch_raw_transaction(endpoint_config, tx_hash_candidates).await?;
-    let network_type = address_prefix_network_type(&wallet_id)?;
+    let recovery_keys = recovery_key_fingerprint(&sapling_ovks, &orchard_ovks);
+    // Opening the wallet enforces the current unlocked session even on hits.
+    // Drop repository handles before network awaits, and reopen before writing.
+    {
+        let (_db, repo) = open_wallet_db_for(&wallet_id)?;
+        if let Some(payload) = repo.get_payment_disclosures(&wallet_id, network, &txid)? {
+            let payload = Zeroizing::new(payload);
+            let stored: StoredDisclosures = serde_json::from_slice(&payload)
+                .map_err(|_| anyhow!("Invalid stored payment disclosures"))?;
+            if stored.version == 1 && stored.recovery_keys == recovery_keys {
+                validate_disclosure_bundle(&stored.outputs, &txid, network_type)?;
+                return Ok(stored.outputs);
+            }
+            // Imported keys can recover additional outputs. Refresh rather
+            // than permanently returning an old, partial recovery set.
+        }
+    }
 
-    Ok(recover_payment_disclosures_from_raw_tx(
-        &raw.bytes,
+    let raw = fetch(endpoint_config, tx_hash_candidates).await?;
+    let tx = read_pirate_transaction(&raw.bytes)
+        .map_err(|_| anyhow!("Cannot decode transaction for payment disclosure"))?;
+    let txid_bytes = *tx.txid().as_ref();
+    ensure_disclosure_txid_matches(&txid_string(&txid_bytes), &txid)?;
+    let disclosures = recover_payment_disclosures_from_tx(
+        &tx,
+        &txid_bytes,
         raw.height.or(tx_height_hint),
         &sapling_ovks,
         &orchard_ovks,
         network_type,
-    ))
+    );
+    // Empty recovery is not a durable negative result: new keys or corrected
+    // height information can make outputs recoverable on a later attempt.
+    if !disclosures.is_empty() {
+        validate_disclosure_bundle(&disclosures, &txid, network_type)?;
+        if wallet_network_type(&wallet_id)? != chain_network
+            || address_prefix_network_type(&wallet_id)? != network_type
+        {
+            return Err(anyhow!(
+                "Wallet network changed while recovering payment disclosures"
+            ));
+        }
+        let (_db, repo) = open_wallet_db_for(&wallet_id)?;
+        let payload = zeroize::Zeroizing::new(serde_json::to_vec(&StoredDisclosures {
+            version: 1,
+            recovery_keys,
+            outputs: disclosures.clone(),
+        })?);
+        repo.put_payment_disclosures(&wallet_id, network, &txid, &payload)?;
+    }
+    Ok(disclosures)
+}
+
+fn disclosure_network_name(network: NetworkType) -> &'static str {
+    match network {
+        NetworkType::Mainnet => "mainnet",
+        NetworkType::Testnet => "testnet",
+        NetworkType::Regtest => "regtest",
+    }
+}
+
+fn normalize_disclosure_txid(txid: &str) -> Result<String> {
+    let bytes = hex::decode(txid).map_err(|_| anyhow!("Invalid transaction ID"))?;
+    if bytes.len() != 32 {
+        return Err(anyhow!("Invalid transaction ID length"));
+    }
+    Ok(hex::encode(bytes))
+}
+
+fn ensure_disclosure_txid_matches(actual: &str, requested: &str) -> Result<()> {
+    let mut reverse = hex::decode(requested)?;
+    reverse.reverse();
+    // Preserve the service's legacy support for both transaction byte orders.
+    if actual != requested && actual != hex::encode(reverse) {
+        return Err(anyhow!("Payment disclosure transaction ID mismatch"));
+    }
+    Ok(())
+}
+
+fn validate_disclosure_bundle(
+    disclosures: &[PaymentDisclosure],
+    txid: &str,
+    network: NetworkType,
+) -> Result<()> {
+    if disclosures.is_empty() {
+        return Err(anyhow!("Empty stored payment disclosures"));
+    }
+    let mut outputs = HashSet::new();
+    for disclosure in disclosures {
+        ensure_disclosure_txid_matches(&disclosure.txid, txid)?;
+        let decoded = decode_payment_disclosure(&disclosure.disclosure)?;
+        if decoded.network_type != network
+            || decoded.kind.as_str() != disclosure.disclosure_type
+            || decoded.output_index != disclosure.output_index
+            || txid_string(&decoded.txid_bytes) != disclosure.txid
+            || !outputs.insert((disclosure.disclosure_type.as_str(), disclosure.output_index))
+        {
+            return Err(anyhow!("Invalid payment disclosure output binding"));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod persistence_tests {
+    use super::*;
+
+    fn encrypted_sapling_fixture(ovk: SaplingOutgoingViewingKey) -> (String, Vec<u8>) {
+        use sapling::note_encryption::{sapling_note_encryption, SaplingDomain};
+        use sapling::value::{NoteValue, ValueCommitTrapdoor, ValueCommitment};
+        use zcash_primitives::transaction::{Authorized, TransactionData, TxVersion};
+        use zcash_protocol::consensus::BranchId;
+        use zcash_protocol::value::ZatBalance;
+        let mut rng = rand::rngs::OsRng;
+        let key = sapling::zip32::ExtendedSpendingKey::master(&[5; 32]);
+        let (_, address) = key.default_address();
+        let value = NoteValue::from_raw(100);
+        let cv = ValueCommitment::derive(value, ValueCommitTrapdoor::random(&mut rng));
+        let enforcement = zip212_enforcement(
+            &PirateNetwork::new(NetworkType::Mainnet),
+            BlockHeight::from_u32(1_000_000),
+        );
+        let note = address.create_note(
+            value,
+            sapling::util::generate_random_rseed(enforcement, &mut rng),
+        );
+        let cmu = note.cmu();
+        let encryption = sapling_note_encryption(Some(ovk), note, [0; 512], &mut rng);
+        let output = sapling::bundle::OutputDescription::from_parts(
+            cv.clone(),
+            cmu,
+            SaplingDomain::epk_bytes(encryption.epk()),
+            encryption.encrypt_note_plaintext(),
+            encryption.encrypt_outgoing_plaintext(&cv, &cmu, &mut rng),
+            [0u8; 192],
+        );
+        // Real note encryption, with dummy proof/signature bytes: never broadcast.
+        let bundle = sapling::Bundle::from_parts(
+            vec![],
+            vec![output],
+            ZatBalance::from_i64(0).unwrap(),
+            sapling::bundle::Authorized {
+                binding_sig: [0u8; 64].into(),
+            },
+        );
+        let tx = TransactionData::<Authorized>::from_parts(
+            TxVersion::V4,
+            BranchId::Sapling,
+            0,
+            BlockHeight::from_u32(1_000_020),
+            None,
+            None,
+            bundle,
+            None,
+        )
+        .freeze()
+        .unwrap();
+        let mut bytes = Vec::new();
+        tx.write(&mut bytes).unwrap();
+        (tx.txid().to_string(), bytes)
+    }
+
+    // Encoded fixtures exercise storage/binding, not validity of a chain payment.
+    fn fixture(kind: DisclosureKind, network: NetworkType, index: u32) -> PaymentDisclosure {
+        let bytes = [0x31; 32];
+        PaymentDisclosure {
+            disclosure_type: kind.as_str().to_owned(),
+            txid: txid_string(&bytes),
+            output_index: index,
+            address: "test-fixture-recipient".into(),
+            amount: 42,
+            memo: Some("private fixture memo".into()),
+            disclosure: encode_payment_disclosure(kind, network, &bytes, index, &[7; 32]).unwrap(),
+        }
+    }
+
+    #[test]
+    fn disclosure_binding_checks_network_transaction_pool_index_and_duplicates() {
+        let one = SaplingOutgoingViewingKey([1; 32]);
+        let two = SaplingOutgoingViewingKey([2; 32]);
+        assert_ne!(
+            recovery_key_fingerprint(&[one], &[]),
+            recovery_key_fingerprint(&[one, two], &[])
+        );
+        assert_eq!(
+            recovery_key_fingerprint(&[one, two], &[]),
+            recovery_key_fingerprint(&[two, one], &[])
+        );
+        for network in [
+            NetworkType::Mainnet,
+            NetworkType::Testnet,
+            NetworkType::Regtest,
+        ] {
+            let bundle = vec![
+                fixture(DisclosureKind::Sapling, network, 0),
+                fixture(DisclosureKind::Ironwood, network, 0),
+            ];
+            let txid = bundle[0].txid.clone();
+            validate_disclosure_bundle(&bundle, &txid, network).unwrap();
+            assert!(validate_disclosure_bundle(&bundle, &"12".repeat(32), network).is_err());
+            let wrong_network = if network == NetworkType::Mainnet {
+                NetworkType::Testnet
+            } else {
+                NetworkType::Mainnet
+            };
+            assert!(validate_disclosure_bundle(&bundle, &txid, wrong_network).is_err());
+            let mut wrong = bundle.clone();
+            wrong[0].output_index += 1;
+            assert!(validate_disclosure_bundle(&wrong, &txid, network).is_err());
+            wrong = bundle.clone();
+            wrong[0].disclosure_type = "ironwood".into();
+            assert!(validate_disclosure_bundle(&wrong, &txid, network).is_err());
+            wrong = bundle.clone();
+            wrong.push(bundle[0].clone());
+            assert!(validate_disclosure_bundle(&wrong, &txid, network).is_err());
+        }
+        assert!(normalize_disclosure_txid("not-a-txid").is_err());
+        assert!(normalize_disclosure_txid("00").is_err());
+        assert!(validate_disclosure_bundle(&[], &"31".repeat(32), NetworkType::Mainnet).is_err());
+    }
+
+    #[test]
+    fn disclosure_database_hit_works_offline_after_reopen_and_passphrase_change() {
+        let _guard = GLOBAL_WALLET_STATE_TEST_MUTEX.lock().unwrap();
+        reset_global_wallet_state_for_tests();
+        struct Reset;
+        impl Drop for Reset {
+            fn drop(&mut self) {
+                reset_global_wallet_state_for_tests();
+            }
+        }
+        let _reset = Reset;
+        let directory = tempfile::tempdir().unwrap();
+        configure_wallet_storage(
+            directory.path().to_string_lossy().into_owned(),
+            "test-passphrase-123".into(),
+        )
+        .unwrap();
+        let wallet_id =
+            create_wallet("disclosure-test".into(), None, Some(1_000_000), None).unwrap();
+        // A deliberately unreachable endpoint ensures no hit needs a server.
+        set_lightd_endpoint(wallet_id.clone(), "http://127.0.0.1:1".into(), None).unwrap();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let (_, _, sapling, _, _) =
+            collect_tx_recovery_context(&wallet_id, &"31".repeat(32)).unwrap();
+        let (recovered_txid, raw) = encrypted_sapling_fixture(sapling[0]);
+        let (unrecoverable_txid, unrecoverable_raw) =
+            encrypted_sapling_fixture(SaplingOutgoingViewingKey([88; 32]));
+        let empty = runtime
+            .block_on(export_payment_disclosures_with_fetch(
+                wallet_id.clone(),
+                unrecoverable_txid.clone(),
+                |_, _| async {
+                    Ok(RawTransactionFetch {
+                        bytes: unrecoverable_raw,
+                        height: Some(1_000_000),
+                    })
+                },
+            ))
+            .unwrap();
+        assert!(empty.is_empty());
+        {
+            let (_, repo) = open_wallet_db_for(&wallet_id).unwrap();
+            assert!(repo
+                .get_payment_disclosures(&wallet_id, "mainnet", &unrecoverable_txid)
+                .unwrap()
+                .is_none());
+        }
+        // Failed fetches and mismatched transactions must not poison the DB.
+        let failed = runtime.block_on(export_payment_disclosures_with_fetch(
+            wallet_id.clone(),
+            recovered_txid.clone(),
+            |_, _| async { Err(anyhow!("fixture offline")) },
+        ));
+        assert!(failed.is_err());
+        let wrong_txid = "ab".repeat(32);
+        let wrong = runtime.block_on(export_payment_disclosures_with_fetch(
+            wallet_id.clone(),
+            wrong_txid.clone(),
+            |_, _| async {
+                Ok(RawTransactionFetch {
+                    bytes: raw.clone(),
+                    height: Some(1_000_000),
+                })
+            },
+        ));
+        assert!(wrong.is_err());
+        {
+            let (_, repo) = open_wallet_db_for(&wallet_id).unwrap();
+            assert!(repo
+                .get_payment_disclosures(&wallet_id, "mainnet", &recovered_txid)
+                .unwrap()
+                .is_none());
+            assert!(repo
+                .get_payment_disclosures(&wallet_id, "mainnet", &wrong_txid)
+                .unwrap()
+                .is_none());
+        }
+        let recovered = runtime
+            .block_on(export_payment_disclosures_with_fetch(
+                wallet_id.clone(),
+                recovered_txid.clone(),
+                |_, _| async {
+                    Ok(RawTransactionFetch {
+                        bytes: raw,
+                        height: Some(1_000_000),
+                    })
+                },
+            ))
+            .unwrap();
+        assert_eq!(recovered.len(), 1);
+        assert_eq!(recovered[0].amount, 100);
+        encrypted_db::invalidate_all_wallet_db_caches();
+        let persisted = runtime
+            .block_on(export_payment_disclosures_with_fetch(
+                wallet_id.clone(),
+                recovered_txid,
+                |_, _| async { panic!("persisted recovery must not fetch again") },
+            ))
+            .unwrap();
+        assert_eq!(persisted[0].disclosure, recovered[0].disclosure);
+        let bundle = vec![
+            fixture(DisclosureKind::Sapling, NetworkType::Mainnet, 0),
+            fixture(DisclosureKind::Ironwood, NetworkType::Mainnet, 0),
+        ];
+        let txid = bundle[0].txid.clone();
+        {
+            let (_db, repo) = open_wallet_db_for(&wallet_id).unwrap();
+            let (_, _, sapling, ironwood, _) =
+                collect_tx_recovery_context(&wallet_id, &txid).unwrap();
+            repo.put_payment_disclosures(
+                &wallet_id,
+                "mainnet",
+                &txid,
+                &serde_json::to_vec(&StoredDisclosures {
+                    version: 1,
+                    recovery_keys: recovery_key_fingerprint(&sapling, &ironwood),
+                    outputs: bundle.clone(),
+                })
+                .unwrap(),
+            )
+            .unwrap();
+        }
+        encrypted_db::invalidate_all_wallet_db_caches();
+        let load = || {
+            runtime.block_on(async {
+                tokio::time::timeout(
+                    Duration::from_secs(3),
+                    export_payment_disclosures_inner(wallet_id.clone(), txid.clone()),
+                )
+                .await
+                .expect("cache hit must not contact the server")
+                .unwrap()
+            })
+        };
+        assert_eq!(load().len(), 2);
+        passphrase_store::clear_passphrase();
+        assert!(runtime
+            .block_on(export_payment_disclosures_inner(
+                wallet_id.clone(),
+                txid.clone()
+            ))
+            .is_err());
+        unlock_app("test-passphrase-123".into()).unwrap();
+        assert_eq!(load()[0].disclosure, bundle[0].disclosure);
+        encrypted_db::change_app_passphrase(
+            "test-passphrase-123".into(),
+            "changed-passphrase-456".into(),
+        )
+        .unwrap();
+        encrypted_db::invalidate_all_wallet_db_caches();
+        assert_eq!(load()[1].disclosure, bundle[1].disclosure);
+    }
 }
 
 /// Export a Sapling payment disclosure for a specific output index.
