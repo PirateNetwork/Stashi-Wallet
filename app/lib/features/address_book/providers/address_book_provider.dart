@@ -10,7 +10,7 @@ import '../../../core/i18n/arb_text_localizer.dart';
 // Match the default contact order in pirate-storage-sqlite/address_book.rs.
 const _donationAddresses = [
   'zs1ymgqg9dnt20q3y6lk8za2a7cq53evmqwy4lvnfruq5z4z9g3tj8znejw28e39r64yakgvcgurv2',
-  'zs1z5k5cjhuhxc59yllfky60w6rk4n6v2ytmnejl6lapjr2p7ej3m6kw8d4z8cqltepds4ssnxxcuw',
+  'zs15v92wrnvuwlrdvsm88prkhazhthkeu3p4ts09jw73mnedlrxm7xydxwc2um4l28qan7n5ln95jk',
 ];
 
 int _compareContacts(AddressEntry a, AddressEntry b) {

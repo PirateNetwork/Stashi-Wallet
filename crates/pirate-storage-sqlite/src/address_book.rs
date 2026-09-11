@@ -21,7 +21,7 @@ pub const DONATION_CONTACTS: [(&str, &str, &str); 2] = [
         "The official address for the Pirate Chain general fund",
     ),
     (
-        "zs1z5k5cjhuhxc59yllfky60w6rk4n6v2ytmnejl6lapjr2p7ej3m6kw8d4z8cqltepds4ssnxxcuw",
+        "zs15v92wrnvuwlrdvsm88prkhazhthkeu3p4ts09jw73mnedlrxm7xydxwc2um4l28qan7n5ln95jk",
         "Pirate Chain's Development Donation Fund",
         "The official address for the Pirate Chain development fund",
     ),
