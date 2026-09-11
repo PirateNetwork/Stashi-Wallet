@@ -272,63 +272,42 @@ class _DisclosureHero extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return PCard(
-      elevated: true,
+      padding: const EdgeInsets.all(PSpacing.lg),
       backgroundColor: AppColors.backgroundElevated,
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(PSpacing.radiusCard),
-          gradient: LinearGradient(
-            colors: [
-              AppColors.gradientAStart.withValues(alpha: 0.22),
-              AppColors.gradientBStart.withValues(alpha: 0.12),
-              Colors.transparent,
-            ],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
-        padding: const EdgeInsets.all(PSpacing.lg),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                color: AppColors.accentPrimary.withValues(alpha: 0.16),
-                borderRadius: BorderRadius.circular(PSpacing.radiusLG),
-                border: Border.all(
-                  color: AppColors.accentPrimary.withValues(alpha: 0.35),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: AppColors.selectedBackground,
+                  borderRadius: BorderRadius.circular(PSpacing.radiusSM),
+                ),
+                child: Icon(
+                  Icons.fact_check_outlined,
+                  color: AppColors.focusRing,
+                  size: 22,
                 ),
               ),
-              child: Icon(
-                Icons.verified_user_outlined,
-                color: AppColors.accentPrimary,
-                size: 28,
+              const SizedBox(width: PSpacing.md),
+              Expanded(
+                child: Text(
+                  'Verify a payment disclosure'.tr,
+                  style: PTypography.heading4(color: AppColors.textPrimary),
+                ),
               ),
-            ),
-            const SizedBox(width: PSpacing.md),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Verify a payment disclosure'.tr,
-                    style: PTypography.heading4(color: AppColors.textPrimary),
-                  ),
-                  const SizedBox(height: PSpacing.xs),
-                  Text(
-                    "Paste a disclosure key to confirm the transaction, recipient, amount, and memo for one shielded output. It does not require a viewing key and does not reveal anyone else's wallet history."
-                        .tr,
-                    style: PTypography.bodyMedium(
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+            ],
+          ),
+          const SizedBox(height: PSpacing.md),
+          Text(
+            "Paste a disclosure key to confirm the transaction, recipient, amount, and memo for one shielded output. It does not require a viewing key and does not reveal anyone else's wallet history."
+                .tr,
+            style: PTypography.bodyMedium(color: AppColors.textSecondary),
+          ),
+        ],
       ),
     );
   }
