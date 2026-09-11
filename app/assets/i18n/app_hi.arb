@@ -1573,5 +1573,14 @@
   "Could not open log folder": "लॉग फ़ोल्डर नहीं खोला जा सका",
   "Open log folder": "लॉग फ़ोल्डर खोलें",
   "Viewing key copied. Clears in 30 seconds.": "व्यूइंग की कॉपी की गई। 30 सेकंड में मिट जाएगी।",
-  "Viewing key unavailable": "व्यूइंग की उपलब्ध नहीं है"
+  "Viewing key unavailable": "व्यूइंग की उपलब्ध नहीं है",
+  "Enter a valid Sapling or Ironwood address.": "एक मान्य Sapling या Ironwood पता दर्ज करें।",
+  "Current": "वर्तमान",
+  "Filter by key group": "कुंजी समूह के अनुसार फ़िल्टर करें",
+  "Current is the address shown above. Older and archived addresses still receive payments.": "«वर्तमान» ऊपर दिखाए गए पते को दर्शाता है। पुराने और संग्रहीत पते अब भी भुगतान प्राप्त कर सकते हैं।",
+  "Receive at this address": "इस पते पर प्राप्त करें",
+  "This is your current receive address.": "यह आपका वर्तमान प्राप्ति पता है।",
+  "You can still receive payments here. Your current receive address stays the same.": "आप यहाँ अब भी भुगतान प्राप्त कर सकते हैं। आपका वर्तमान प्राप्ति पता नहीं बदलेगा।",
+  "The server is temporarily unavailable. Try again shortly or choose another server.": "सर्वर अस्थायी रूप से उपलब्ध नहीं है। थोड़ी देर बाद फिर कोशिश करें या कोई दूसरा सर्वर चुनें।",
+  "Endpoint": "कनेक्शन बिंदु"
 }

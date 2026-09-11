@@ -1573,5 +1573,14 @@
   "Could not open log folder": "Günlük klasörü açılamadı",
   "Open log folder": "Günlük klasörünü aç",
   "Viewing key copied. Clears in 30 seconds.": "Görüntüleme anahtarı kopyalandı. 30 saniye sonra silinir.",
-  "Viewing key unavailable": "Görüntüleme anahtarı kullanılamıyor"
+  "Viewing key unavailable": "Görüntüleme anahtarı kullanılamıyor",
+  "Enter a valid Sapling or Ironwood address.": "Geçerli bir Sapling veya Ironwood adresi girin.",
+  "Current": "Geçerli",
+  "Filter by key group": "Anahtar grubuna göre filtrele",
+  "Current is the address shown above. Older and archived addresses still receive payments.": "“Geçerli”, yukarıda gösterilen adresi belirtir. Eski ve arşivlenmiş adresler ödeme almaya devam eder.",
+  "Receive at this address": "Bu adreste al",
+  "This is your current receive address.": "Bu, geçerli alım adresinizdir.",
+  "You can still receive payments here. Your current receive address stays the same.": "Burada ödeme almaya devam edebilirsiniz. Geçerli alım adresiniz değişmez.",
+  "The server is temporarily unavailable. Try again shortly or choose another server.": "Sunucu geçici olarak kullanılamıyor. Biraz sonra yeniden deneyin veya başka bir sunucu seçin.",
+  "Endpoint": "Bağlantı noktası"
 }

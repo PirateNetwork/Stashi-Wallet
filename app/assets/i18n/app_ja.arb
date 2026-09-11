@@ -1573,5 +1573,14 @@
   "Could not open log folder": "ログフォルダーを開けませんでした",
   "Open log folder": "ログフォルダーを開く",
   "Viewing key copied. Clears in 30 seconds.": "閲覧キーをコピーしました。30秒後に消去されます。",
-  "Viewing key unavailable": "閲覧キーを利用できません"
+  "Viewing key unavailable": "閲覧キーを利用できません",
+  "Enter a valid Sapling or Ironwood address.": "有効なSaplingまたはIronwoodのアドレスを入力してください。",
+  "Current": "現在",
+  "Filter by key group": "キーグループで絞り込む",
+  "Current is the address shown above. Older and archived addresses still receive payments.": "「現在」は上に表示されているアドレスを示します。以前のアドレスやアーカイブ済みのアドレスでも引き続き支払いを受け取れます。",
+  "Receive at this address": "このアドレスで受け取る",
+  "This is your current receive address.": "これは現在の受取アドレスです。",
+  "You can still receive payments here. Your current receive address stays the same.": "このアドレスでも引き続き支払いを受け取れます。現在の受取アドレスは変わりません。",
+  "The server is temporarily unavailable. Try again shortly or choose another server.": "サーバーは一時的に利用できません。しばらくしてから再試行するか、別のサーバーを選択してください。",
+  "Endpoint": "接続先"
 }

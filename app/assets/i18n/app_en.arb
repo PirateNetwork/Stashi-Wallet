@@ -1573,5 +1573,14 @@
   "~30 min": "~30 min",
   "≈ 1 ARRR": "≈ 1 ARRR",
   "⚠️ Latest block height not retrieved - connection failed before data could be fetched.": "⚠️ Latest block height not retrieved - connection failed before data could be fetched.",
-  "⚠️ Security Warning": "⚠️ Security Warning"
+  "⚠️ Security Warning": "⚠️ Security Warning",
+  "Enter a valid Sapling or Ironwood address.": "Enter a valid Sapling or Ironwood address.",
+  "Current": "Current",
+  "Filter by key group": "Filter by key group",
+  "Current is the address shown above. Older and archived addresses still receive payments.": "Current is the address shown above. Older and archived addresses still receive payments.",
+  "Receive at this address": "Receive at this address",
+  "This is your current receive address.": "This is your current receive address.",
+  "You can still receive payments here. Your current receive address stays the same.": "You can still receive payments here. Your current receive address stays the same.",
+  "The server is temporarily unavailable. Try again shortly or choose another server.": "The server is temporarily unavailable. Try again shortly or choose another server.",
+  "Endpoint": "Endpoint"
 }

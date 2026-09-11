@@ -1573,5 +1573,14 @@
   "Could not open log folder": "无法打开日志文件夹",
   "Open log folder": "打开日志文件夹",
   "Viewing key copied. Clears in 30 seconds.": "查看密钥已复制。将在30秒后清除。",
-  "Viewing key unavailable": "查看密钥不可用"
+  "Viewing key unavailable": "查看密钥不可用",
+  "Enter a valid Sapling or Ironwood address.": "请输入有效的 Sapling 或 Ironwood 地址。",
+  "Current": "当前",
+  "Filter by key group": "按密钥组筛选",
+  "Current is the address shown above. Older and archived addresses still receive payments.": "“当前”表示上方显示的地址。旧地址和已归档的地址仍可接收付款。",
+  "Receive at this address": "使用此地址接收",
+  "This is your current receive address.": "这是您当前的收款地址。",
+  "You can still receive payments here. Your current receive address stays the same.": "您仍可在此地址接收付款。您当前的收款地址保持不变。",
+  "The server is temporarily unavailable. Try again shortly or choose another server.": "服务器暂时不可用。请稍后重试或选择其他服务器。",
+  "Endpoint": "连接端点"
 }

@@ -1573,5 +1573,14 @@
   "Could not open log folder": "Não foi possível abrir a pasta de logs",
   "Open log folder": "Abrir pasta de logs",
   "Viewing key copied. Clears in 30 seconds.": "Chave de visualização copiada. Será apagada em 30 segundos.",
-  "Viewing key unavailable": "Chave de visualização indisponível"
+  "Viewing key unavailable": "Chave de visualização indisponível",
+  "Enter a valid Sapling or Ironwood address.": "Insira um endereço Sapling ou Ironwood válido.",
+  "Current": "Atual",
+  "Filter by key group": "Filtrar por grupo de chaves",
+  "Current is the address shown above. Older and archived addresses still receive payments.": "«Atual» indica o endereço apresentado acima. Os endereços anteriores e arquivados continuam a receber pagamentos.",
+  "Receive at this address": "Receber neste endereço",
+  "This is your current receive address.": "Este é o seu endereço de receção atual.",
+  "You can still receive payments here. Your current receive address stays the same.": "Pode continuar a receber pagamentos aqui. O seu endereço de receção atual permanece o mesmo.",
+  "The server is temporarily unavailable. Try again shortly or choose another server.": "O servidor está temporariamente indisponível. Tente novamente dentro de instantes ou escolha outro servidor.",
+  "Endpoint": "Ponto de ligação"
 }

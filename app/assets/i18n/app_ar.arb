@@ -1573,5 +1573,14 @@
   "Could not open log folder": "تعذر فتح مجلد السجلات",
   "Open log folder": "فتح مجلد السجلات",
   "Viewing key copied. Clears in 30 seconds.": "تم نسخ مفتاح العرض. سيُمسح خلال 30 ثانية.",
-  "Viewing key unavailable": "مفتاح العرض غير متاح"
+  "Viewing key unavailable": "مفتاح العرض غير متاح",
+  "Enter a valid Sapling or Ironwood address.": "أدخل عنوان Sapling أو Ironwood صالحًا.",
+  "Current": "الحالي",
+  "Filter by key group": "تصفية حسب مجموعة المفاتيح",
+  "Current is the address shown above. Older and archived addresses still receive payments.": "«الحالي» هو العنوان المعروض أعلاه. لا تزال العناوين القديمة والمؤرشفة تستقبل المدفوعات.",
+  "Receive at this address": "الاستلام على هذا العنوان",
+  "This is your current receive address.": "هذا هو عنوان الاستلام الحالي الخاص بك.",
+  "You can still receive payments here. Your current receive address stays the same.": "لا يزال بإمكانك استقبال المدفوعات هنا. سيبقى عنوان الاستلام الحالي الخاص بك كما هو.",
+  "The server is temporarily unavailable. Try again shortly or choose another server.": "الخادم غير متاح مؤقتًا. حاول مجددًا بعد قليل أو اختر خادمًا آخر.",
+  "Endpoint": "نقطة الاتصال"
 }

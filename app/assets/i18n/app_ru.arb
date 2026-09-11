@@ -1573,5 +1573,14 @@
   "Could not open log folder": "Не удалось открыть папку журналов",
   "Open log folder": "Открыть папку журналов",
   "Viewing key copied. Clears in 30 seconds.": "Ключ просмотра скопирован. Будет удалён через 30 секунд.",
-  "Viewing key unavailable": "Ключ просмотра недоступен"
+  "Viewing key unavailable": "Ключ просмотра недоступен",
+  "Enter a valid Sapling or Ironwood address.": "Введите действительный адрес Sapling или Ironwood.",
+  "Current": "Текущий",
+  "Filter by key group": "Фильтр по группе ключей",
+  "Current is the address shown above. Older and archived addresses still receive payments.": "«Текущий» — это адрес, показанный выше. Прежние и архивные адреса по-прежнему могут получать платежи.",
+  "Receive at this address": "Получать на этот адрес",
+  "This is your current receive address.": "Это ваш текущий адрес для получения платежей.",
+  "You can still receive payments here. Your current receive address stays the same.": "Вы по-прежнему можете получать платежи на этот адрес. Ваш текущий адрес для получения платежей не изменится.",
+  "The server is temporarily unavailable. Try again shortly or choose another server.": "Сервер временно недоступен. Повторите попытку через некоторое время или выберите другой сервер.",
+  "Endpoint": "Точка подключения"
 }

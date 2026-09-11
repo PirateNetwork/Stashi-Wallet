@@ -1573,5 +1573,14 @@
   "Could not open log folder": "Logmap kon niet worden geopend",
   "Open log folder": "Logmap openen",
   "Viewing key copied. Clears in 30 seconds.": "Weergavesleutel gekopieerd. Wordt na 30 seconden gewist.",
-  "Viewing key unavailable": "Weergavesleutel niet beschikbaar"
+  "Viewing key unavailable": "Weergavesleutel niet beschikbaar",
+  "Enter a valid Sapling or Ironwood address.": "Voer een geldig Sapling- of Ironwood-adres in.",
+  "Current": "Huidig",
+  "Filter by key group": "Filteren op sleutelgroep",
+  "Current is the address shown above. Older and archived addresses still receive payments.": "‘Huidig’ verwijst naar het hierboven weergegeven adres. Oudere en gearchiveerde adressen kunnen nog steeds betalingen ontvangen.",
+  "Receive at this address": "Op dit adres ontvangen",
+  "This is your current receive address.": "Dit is uw huidige ontvangstadres.",
+  "You can still receive payments here. Your current receive address stays the same.": "U kunt hier nog steeds betalingen ontvangen. Uw huidige ontvangstadres blijft ongewijzigd.",
+  "The server is temporarily unavailable. Try again shortly or choose another server.": "De server is tijdelijk niet beschikbaar. Probeer het over enkele ogenblikken opnieuw of kies een andere server.",
+  "Endpoint": "Eindpunt"
 }

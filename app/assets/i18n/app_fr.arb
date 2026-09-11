@@ -1573,5 +1573,14 @@
   "Could not open log folder": "Impossible d’ouvrir le dossier des journaux",
   "Open log folder": "Ouvrir le dossier des journaux",
   "Viewing key copied. Clears in 30 seconds.": "Clé de visualisation copiée. Effacement dans 30 secondes.",
-  "Viewing key unavailable": "Clé de visualisation indisponible"
+  "Viewing key unavailable": "Clé de visualisation indisponible",
+  "Enter a valid Sapling or Ironwood address.": "Saisissez une adresse Sapling ou Ironwood valide.",
+  "Current": "Actuelle",
+  "Filter by key group": "Filtrer par groupe de clés",
+  "Current is the address shown above. Older and archived addresses still receive payments.": "« Actuelle » désigne l’adresse affichée ci-dessus. Les anciennes adresses et les adresses archivées peuvent toujours recevoir des paiements.",
+  "Receive at this address": "Recevoir à cette adresse",
+  "This is your current receive address.": "Il s’agit de votre adresse de réception actuelle.",
+  "You can still receive payments here. Your current receive address stays the same.": "Vous pouvez toujours recevoir des paiements ici. Votre adresse de réception actuelle reste inchangée.",
+  "The server is temporarily unavailable. Try again shortly or choose another server.": "Le serveur est temporairement indisponible. Réessayez dans quelques instants ou choisissez un autre serveur.",
+  "Endpoint": "Point de connexion"
 }

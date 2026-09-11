@@ -1573,5 +1573,14 @@
   "Could not open log folder": "로그 폴더를 열 수 없습니다",
   "Open log folder": "로그 폴더 열기",
   "Viewing key copied. Clears in 30 seconds.": "보기 키를 복사했습니다. 30초 후 삭제됩니다.",
-  "Viewing key unavailable": "보기 키를 사용할 수 없습니다"
+  "Viewing key unavailable": "보기 키를 사용할 수 없습니다",
+  "Enter a valid Sapling or Ironwood address.": "유효한 Sapling 또는 Ironwood 주소를 입력하세요.",
+  "Current": "현재",
+  "Filter by key group": "키 그룹별 필터",
+  "Current is the address shown above. Older and archived addresses still receive payments.": "“현재”는 위에 표시된 주소를 뜻합니다. 이전 주소와 보관된 주소에서도 계속 결제를 받을 수 있습니다.",
+  "Receive at this address": "이 주소로 받기",
+  "This is your current receive address.": "현재 수신 주소입니다.",
+  "You can still receive payments here. Your current receive address stays the same.": "이 주소에서도 계속 결제를 받을 수 있습니다. 현재 수신 주소는 변경되지 않습니다.",
+  "The server is temporarily unavailable. Try again shortly or choose another server.": "서버를 일시적으로 사용할 수 없습니다. 잠시 후 다시 시도하거나 다른 서버를 선택하세요.",
+  "Endpoint": "연결 지점"
 }

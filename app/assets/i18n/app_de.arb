@@ -1573,5 +1573,14 @@
   "Could not open log folder": "Protokollordner konnte nicht geöffnet werden",
   "Open log folder": "Protokollordner öffnen",
   "Viewing key copied. Clears in 30 seconds.": "Ansichtsschlüssel kopiert. Wird nach 30 Sekunden gelöscht.",
-  "Viewing key unavailable": "Ansichtsschlüssel nicht verfügbar"
+  "Viewing key unavailable": "Ansichtsschlüssel nicht verfügbar",
+  "Enter a valid Sapling or Ironwood address.": "Geben Sie eine gültige Sapling- oder Ironwood-Adresse ein.",
+  "Current": "Aktuell",
+  "Filter by key group": "Nach Schlüsselgruppe filtern",
+  "Current is the address shown above. Older and archived addresses still receive payments.": "„Aktuell“ bezeichnet die oben angezeigte Adresse. Ältere und archivierte Adressen können weiterhin Zahlungen empfangen.",
+  "Receive at this address": "An dieser Adresse empfangen",
+  "This is your current receive address.": "Dies ist Ihre aktuelle Empfangsadresse.",
+  "You can still receive payments here. Your current receive address stays the same.": "Sie können hier weiterhin Zahlungen empfangen. Ihre aktuelle Empfangsadresse bleibt unverändert.",
+  "The server is temporarily unavailable. Try again shortly or choose another server.": "Der Server ist vorübergehend nicht verfügbar. Versuchen Sie es in Kürze erneut oder wählen Sie einen anderen Server.",
+  "Endpoint": "Endpunkt"
 }

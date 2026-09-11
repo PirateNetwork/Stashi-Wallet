@@ -1573,5 +1573,14 @@
   "Could not open log folder": "Tidak dapat membuka folder log",
   "Open log folder": "Buka folder log",
   "Viewing key copied. Clears in 30 seconds.": "Kunci tampilan disalin. Dihapus dalam 30 detik.",
-  "Viewing key unavailable": "Kunci tampilan tidak tersedia"
+  "Viewing key unavailable": "Kunci tampilan tidak tersedia",
+  "Enter a valid Sapling or Ironwood address.": "Masukkan alamat Sapling atau Ironwood yang valid.",
+  "Current": "Saat ini",
+  "Filter by key group": "Filter berdasarkan grup kunci",
+  "Current is the address shown above. Older and archived addresses still receive payments.": "“Saat ini” menandai alamat yang ditampilkan di atas. Alamat lama dan yang diarsipkan tetap dapat menerima pembayaran.",
+  "Receive at this address": "Terima di alamat ini",
+  "This is your current receive address.": "Ini adalah alamat penerimaan Anda saat ini.",
+  "You can still receive payments here. Your current receive address stays the same.": "Anda tetap dapat menerima pembayaran di sini. Alamat penerimaan Anda saat ini tidak berubah.",
+  "The server is temporarily unavailable. Try again shortly or choose another server.": "Server tidak tersedia untuk sementara. Coba lagi sebentar atau pilih server lain.",
+  "Endpoint": "Titik akhir"
 }
