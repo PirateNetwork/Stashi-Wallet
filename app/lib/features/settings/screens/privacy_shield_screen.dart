@@ -20,6 +20,7 @@ import '../../../ui/organisms/p_scaffold.dart';
 import '../../../core/ffi/ffi_bridge.dart';
 import '../../../core/providers/wallet_providers.dart';
 import '../providers/transport_providers.dart';
+import '../providers/endpoint_health_provider.dart';
 import '../../../core/i18n/arb_text_localizer.dart';
 
 /// Network Privacy settings screen
@@ -940,6 +941,7 @@ class _PrivacyShieldScreenState extends ConsumerState<PrivacyShieldScreen> {
   Future<void> _testNodeConnection(BuildContext context, WidgetRef ref) async {
     final generation = ++_connectionTestGeneration;
     final testedMode = ref.read(transportConfigProvider).mode.toLowerCase();
+    final testedWallet = ref.read(activeWalletProvider);
     setState(() {
       _isTestingConnection = true;
     });
@@ -949,27 +951,39 @@ class _PrivacyShieldScreenState extends ConsumerState<PrivacyShieldScreen> {
       final endpointConfig = await ref.read(
         lightdEndpointConfigProvider.future,
       );
-      final url = endpointConfig.url;
-      final tlsPin = endpointConfig.tlsPin?.trim();
-      final normalizedPin = tlsPin == null || tlsPin.isEmpty ? null : tlsPin;
-
-      // Test the node connection
-      final result = await FfiBridge.testNode(
-        url: url,
-        tlsPin: normalizedPin,
-      ).timeout(_connectionTestTimeout(testedMode));
+      final tested = await testEndpointSelection(
+        config: endpointConfig,
+        probe: ref.read(lightdEndpointProbeProvider),
+        timeout: _connectionTestTimeout(testedMode),
+        transportMode: testedMode,
+      );
+      final result = tested.result;
+      if (!context.mounted) return;
+      final currentConfig = ref
+          .read(lightdEndpointConfigProvider)
+          .asData
+          ?.value;
 
       if (!context.mounted ||
           generation != _connectionTestGeneration ||
+          ref.read(activeWalletProvider) != testedWallet ||
+          currentConfig?.url != endpointConfig.url ||
+          currentConfig?.tlsPin != endpointConfig.tlsPin ||
+          currentConfig?.automaticFailover !=
+              endpointConfig.automaticFailover ||
           ref.read(transportConfigProvider).mode.toLowerCase() != testedMode) {
         return;
       }
 
+      ref
+          .read(endpointHealthProvider.notifier)
+          .recordManualTest(tested.url, result);
+
       // Show result dialog
       if (result.success) {
-        _showSuccessDialog(context, result);
+        _showSuccessDialog(context, result, tested.url);
       } else {
-        _showFailureDialog(context, result);
+        _showFailureDialog(context, result, tested.url);
       }
     } on TimeoutException {
       if (!context.mounted || generation != _connectionTestGeneration) return;
@@ -1004,7 +1018,11 @@ class _PrivacyShieldScreenState extends ConsumerState<PrivacyShieldScreen> {
       : 'The connection test timed out. The selected network may still be starting; try again shortly.'
             .tr;
 
-  void _showSuccessDialog(BuildContext context, NodeTestResult result) {
+  void _showSuccessDialog(
+    BuildContext context,
+    NodeTestResult result,
+    String url,
+  ) {
     showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
@@ -1028,10 +1046,8 @@ class _PrivacyShieldScreenState extends ConsumerState<PrivacyShieldScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildResultRow(
-              'Transport'.tr,
-              '${result.transportIcon} ${result.transportMode.toUpperCase()}',
-            ),
+            _buildResultRow('Endpoint'.tr, url),
+            _buildResultRow('Transport'.tr, result.transportMode.toUpperCase()),
             _buildResultRow(
               'TLS',
               result.tlsEnabled ? 'Enabled ✓'.tr : 'Disabled'.tr,
@@ -1067,7 +1083,11 @@ class _PrivacyShieldScreenState extends ConsumerState<PrivacyShieldScreen> {
     );
   }
 
-  void _showFailureDialog(BuildContext context, NodeTestResult result) {
+  void _showFailureDialog(
+    BuildContext context,
+    NodeTestResult result,
+    String url,
+  ) {
     final isPinMismatch = result.tlsPinMatched == false;
 
     showDialog<void>(
@@ -1098,9 +1118,10 @@ class _PrivacyShieldScreenState extends ConsumerState<PrivacyShieldScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              _buildResultRow('Endpoint'.tr, url),
               _buildResultRow(
                 'Transport'.tr,
-                '${result.transportIcon} ${result.transportMode.toUpperCase()}',
+                result.transportMode.toUpperCase(),
               ),
               _buildResultRow(
                 'TLS',
@@ -1205,7 +1226,7 @@ class _PrivacyShieldScreenState extends ConsumerState<PrivacyShieldScreen> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              result.errorMessage!,
+                              _connectionErrorSummary(result.errorMessage!),
                               style: TextStyle(
                                 color: AppColors.textSecondary,
                                 fontSize: 13,
@@ -1214,18 +1235,6 @@ class _PrivacyShieldScreenState extends ConsumerState<PrivacyShieldScreen> {
                           ),
                         ],
                       ),
-                      if (result.latestBlockHeight == null) ...[
-                        const SizedBox(height: 8),
-                        Text(
-                          '⚠️ Latest block height not retrieved - connection failed before data could be fetched.'
-                              .tr,
-                          style: TextStyle(
-                            color: Colors.orange,
-                            fontSize: 11,
-                            fontStyle: FontStyle.italic,
-                          ),
-                        ),
-                      ],
                     ],
                   ),
                 ),
@@ -1255,6 +1264,19 @@ class _PrivacyShieldScreenState extends ConsumerState<PrivacyShieldScreen> {
     );
   }
 
+  String _connectionErrorSummary(String error) {
+    if (RegExp(r'\b50[234]\b').hasMatch(error)) {
+      return 'The server is temporarily unavailable. Try again shortly or choose another server.'
+          .tr;
+    }
+    if (error.toLowerCase().contains('timeout') ||
+        error.toLowerCase().contains('timed out')) {
+      return 'The connection test timed out. The selected network may still be starting; try again shortly.'
+          .tr;
+    }
+    return error.length > 500 ? '${error.substring(0, 500)}…' : error;
+  }
+
   void _showErrorDialog(BuildContext context, String error) {
     showDialog<void>(
       context: context,
@@ -1275,7 +1297,10 @@ class _PrivacyShieldScreenState extends ConsumerState<PrivacyShieldScreen> {
             ),
           ],
         ),
-        content: Text(error, style: TextStyle(color: AppColors.textSecondary)),
+        content: Text(
+          _connectionErrorSummary(error),
+          style: TextStyle(color: AppColors.textSecondary),
+        ),
         actions: [
           PTextButton(
             label: 'OK'.tr,
@@ -1287,6 +1312,25 @@ class _PrivacyShieldScreenState extends ConsumerState<PrivacyShieldScreen> {
   }
 
   Widget _buildResultRow(String label, String value, {Color? valueColor}) {
+    if (label == 'Endpoint'.tr) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              value,
+              style: TextStyle(color: AppColors.textPrimary, fontSize: 13),
+            ),
+          ],
+        ),
+      );
+    }
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(

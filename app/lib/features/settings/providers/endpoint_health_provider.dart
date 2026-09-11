@@ -90,6 +90,79 @@ final lightdEndpointProbeProvider = Provider<LightdEndpointProbe>((ref) {
   return FfiBridge.testNode;
 });
 
+/// Test the selected route, including the same curated pool used by Auto sync.
+/// A pinned or custom server is always tested on its own.
+Future<({String url, NodeTestResult result})> testEndpointSelection({
+  required LightdEndpointConfig config,
+  required LightdEndpointProbe probe,
+  required Duration timeout,
+  String transportMode = 'direct',
+}) async {
+  final selected = LightdEndpoint.tryParse(
+    config.url,
+    tlsPin: config.tlsPin,
+    automaticFailover: config.automaticFailover,
+  );
+  final preset = selected == null
+      ? null
+      : LightdEndpoint.currentAutomaticPreset(selected);
+  final urls = <String>{config.url};
+  if (config.automaticFailover &&
+      preset != null &&
+      (config.tlsPin == null || config.tlsPin!.trim().isEmpty)) {
+    urls.addAll(LightdEndpoint.failoverCandidates(preset).map((e) => e.url));
+  }
+  final results = await Future.wait(
+    urls.map((url) async {
+      try {
+        final result = await probe(
+          url: url,
+          tlsPin: config.tlsPin,
+        ).timeout(timeout);
+        return (url: url, result: result);
+      } catch (error) {
+        return (
+          url: url,
+          result: NodeTestResult(
+            success: false,
+            transportMode: transportMode,
+            tlsEnabled: Uri.parse(url).scheme == 'https',
+            responseTimeMs: 0,
+            errorMessage: error.toString(),
+          ),
+        );
+      }
+    }),
+  );
+  final healthy =
+      results.where((entry) {
+        final chain = entry.result.chainName?.toLowerCase().trim();
+        return entry.result.success &&
+            (preset?.network != LightdNetwork.mainnet ||
+                chain == null ||
+                chain.isEmpty ||
+                chain == 'main' ||
+                chain == 'mainnet');
+      }).toList()..sort(
+        (a, b) => (b.result.latestBlockHeight ?? -1).compareTo(
+          a.result.latestBlockHeight ?? -1,
+        ),
+      );
+  if (healthy.isNotEmpty) return healthy.first;
+  final failed = results.first;
+  if (!failed.result.success) return failed;
+  return (
+    url: failed.url,
+    result: NodeTestResult(
+      success: false,
+      transportMode: failed.result.transportMode,
+      tlsEnabled: failed.result.tlsEnabled,
+      responseTimeMs: failed.result.responseTimeMs,
+      errorMessage: 'Endpoint reported an unexpected chain',
+    ),
+  );
+}
+
 final endpointHealthProvider =
     NotifierProvider.autoDispose<EndpointHealthNotifier, EndpointHealthState>(
       EndpointHealthNotifier.new,
@@ -112,6 +185,34 @@ class EndpointHealthNotifier extends Notifier<EndpointHealthState> {
   int _consecutiveStaleChecks = 0;
   int _checkGeneration = 0;
   String? _observedSelection;
+
+  /// Apply a fresh manual test so connection badges do not retain an older
+  /// successful check after the same selected route has just failed.
+  void recordManualTest(String url, NodeTestResult result) {
+    _checkGeneration += 1;
+    _resetFailureTracking();
+    _storeRecord(
+      EndpointHealthRecord(
+        url: url,
+        healthy: result.success,
+        checkedAt: DateTime.now(),
+        height: result.latestBlockHeight,
+        responseTimeMs: result.responseTimeMs,
+        chainName: result.chainName,
+        error: result.errorMessage,
+      ),
+    );
+    state = state.copyWith(
+      phase: result.success
+          ? EndpointHealthPhase.healthy
+          : EndpointHealthPhase.offline,
+      activeUrl: url,
+      clearSwitch: true,
+    );
+    if (!result.success) {
+      _scheduleCheck(_offlineRetryDelay, probePool: true);
+    }
+  }
 
   @override
   EndpointHealthState build() {
