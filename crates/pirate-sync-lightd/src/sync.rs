@@ -2000,6 +2000,15 @@ impl SyncEngine {
             account_keys = repo.get_account_keys(secret.account_id)?;
         }
 
+        // Wallet metadata describes the original key. Imported keys can require
+        // older history, including after an interrupted rescan or app restart.
+        // Apply this floor to every engine path, including trial decryption.
+        if let Some(birthday) = repo.get_wallet_birthday_height(secret.account_id)? {
+            let birthday = u32::try_from(birthday)
+                .map_err(|_| Error::Sync("Invalid account key birthday".into()))?;
+            self.birthday_height = self.birthday_height.min(birthday);
+        }
+
         let seed_derived_keys = repo
             .get_seed_derived_account_keys(secret.account_id)?
             .into_iter()
