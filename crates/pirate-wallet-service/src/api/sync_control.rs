@@ -64,6 +64,26 @@ pub(super) async fn acquire_exclusive_key_import(
     Ok(operation_guard)
 }
 
+/// Background engines are not registered foreground sessions. Keep their key
+/// snapshot serialized with imports and defer full historical replay to the
+/// foreground rescan path, which owns replay completion and spendability gates.
+pub(super) async fn acquire_background_sync(
+    wallet_id: &WalletId,
+) -> Result<tokio::sync::OwnedMutexGuard<()>> {
+    let guard = sync_operation_lock(wallet_id).lock_owned().await;
+    if is_sync_running(wallet_id.clone())? {
+        return Err(anyhow!("Foreground synchronization is already running"));
+    }
+    let (db, repo) = open_wallet_db_for(wallet_id)?;
+    repo.ensure_imported_key_replay_migration()?;
+    if required_key_replay(&SpendabilityStateStorage::new(&db).load_state()?)?.is_some() {
+        return Err(anyhow!(
+            "Open the wallet to finish scanning imported-key history"
+        ));
+    }
+    Ok(guard)
+}
+
 /// True when a sync task ended because it was cancelled rather than because it failed.
 fn is_cancelled_sync_error(error: &anyhow::Error) -> bool {
     error
@@ -723,6 +743,19 @@ pub(super) async fn start_sync(wallet_id: WalletId, mode: SyncMode) -> Result<()
             session.startup_in_progress = false;
         }
     }
+    // Import may have committed immediately before the app was closed. Resume
+    // through the full replay path; ordinary tip sync cannot establish coverage
+    // for a key that was absent from the previous engine's key snapshot.
+    let pending_replay = {
+        let (db, repo) = open_wallet_db_for(&wallet_id)?;
+        repo.ensure_imported_key_replay_migration()?;
+        required_key_replay(&SpendabilityStateStorage::new(&db).load_state()?)?
+    };
+    if let Some(pending) = pending_replay {
+        drop(_operation_guard);
+        return rescan(wallet_id, pending.from_height).await;
+    }
+
     log_orchard_address_samples(&wallet_id);
     pirate_core::debug_log::with_locked_file(|file| {
         let ts = std::time::SystemTime::now()
@@ -1932,7 +1965,8 @@ pub(super) async fn rescan(wallet_id: WalletId, from_height: u32) -> Result<()> 
         rescan_storage_access_error(&wallet_id, "verify encrypted wallet data", error)
     })?;
     let required_key_replay = {
-        let (db, _repo) = open_wallet_db_for(&wallet_id)?;
+        let (db, repo) = open_wallet_db_for(&wallet_id)?;
+        repo.ensure_imported_key_replay_migration()?;
         let state = SpendabilityStateStorage::new(&db).load_state()?;
         required_key_replay(&state)?
     };

@@ -33,6 +33,7 @@ async fn start_background_sync_inner(
         mode
     );
 
+    let _operation_guard = sync_control::acquire_background_sync(&wallet_id).await?;
     let (birthday_height, endpoint_config) = {
         let wallet = get_wallet_meta(&wallet_id)?;
         let birthday_height = wallet.birthday_height;

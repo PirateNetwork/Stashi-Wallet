@@ -665,13 +665,16 @@ impl WalletService {
                 ironwood_key,
                 label,
                 birthday_height,
-            } => serialize(ffi::import_spending_key(
-                wallet_id,
-                sapling_key,
-                ironwood_key,
-                label,
-                birthday_height,
-            )?),
+            } => serialize(
+                ffi::import_spending_key_async(
+                    wallet_id,
+                    sapling_key,
+                    ironwood_key,
+                    label,
+                    birthday_height,
+                )
+                .await?,
+            ),
             WalletServiceRequest::ImportSpendingKeyVerified {
                 wallet_id,
                 pool,

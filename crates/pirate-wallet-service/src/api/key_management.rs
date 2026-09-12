@@ -414,7 +414,7 @@ pub(super) fn generate_address_for_key(
     Ok(address.address)
 }
 
-pub(super) fn import_spending_key(
+pub(super) async fn import_spending_key(
     wallet_id: WalletId,
     sapling_key: Option<String>,
     ironwood_key: Option<String>,
@@ -430,7 +430,12 @@ pub(super) fn import_spending_key(
         ironwood_requested,
     );
 
-    let (_db, repo) = open_wallet_db_for(&wallet_id)?;
+    let _sync_operation_guard = sync_control::acquire_exclusive_key_import(&wallet_id).await?;
+    let (db, repo) = open_wallet_db_for(&wallet_id)?;
+    let known_tip = pirate_storage_sqlite::SpendabilityStateStorage::new(&db)
+        .load_state()?
+        .target_height;
+    validate_import_birthday(birthday_height, known_tip)?;
     let secret = repo
         .get_wallet_secret(&wallet_id)?
         .ok_or_else(|| anyhow!("Wallet secret not found for {}", wallet_id))?;
@@ -498,9 +503,8 @@ pub(super) fn import_spending_key(
         encrypted_mnemonic: None,
     };
 
-    let encrypted = repo.encrypt_account_key_fields(&key)?;
     let key_id = repo
-        .upsert_account_key(&encrypted)
+        .import_spending_key_with_rescan(&key, SPENDABILITY_REASON_ERR_RESCAN_REQUIRED)
         .map_err(|e| anyhow!(e.to_string()))?;
     let inventory = repo.get_account_keys(secret.account_id).ok().map(|keys| {
         let seed_derived_key_ids = repo

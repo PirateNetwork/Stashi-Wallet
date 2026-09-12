@@ -1532,6 +1532,25 @@ pub fn import_spending_key(
     label: Option<String>,
     birthday_height: u32,
 ) -> Result<i64> {
+    run_on_runtime_blocking(move || {
+        key_management::import_spending_key(
+            wallet_id,
+            sapling_key,
+            ironwood_key,
+            label,
+            birthday_height,
+        )
+    })
+}
+
+/// Import from an async host without blocking its sync cancellation runtime.
+pub async fn import_spending_key_async(
+    wallet_id: WalletId,
+    sapling_key: Option<String>,
+    ironwood_key: Option<String>,
+    label: Option<String>,
+    birthday_height: u32,
+) -> Result<i64> {
     key_management::import_spending_key(
         wallet_id,
         sapling_key,
@@ -1539,6 +1558,7 @@ pub fn import_spending_key(
         label,
         birthday_height,
     )
+    .await
 }
 
 /// Import one spending key only after proving a caller-supplied address.

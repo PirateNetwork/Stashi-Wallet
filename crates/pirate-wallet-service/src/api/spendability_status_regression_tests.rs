@@ -52,6 +52,69 @@ fn record_verified_tip(wallet_id: &str, tip_height: u64) {
 }
 
 #[test]
+fn ordinary_import_durably_requires_replay_before_background_sync() {
+    let _guard = GLOBAL_WALLET_STATE_TEST_MUTEX.lock().unwrap();
+    reset_global_wallet_state_for_tests();
+    let temp_dir = tempdir().unwrap();
+    configure_wallet_storage(
+        temp_dir.path().to_string_lossy().to_string(),
+        "test-passphrase-123".into(),
+    )
+    .unwrap();
+    let wallet_id = create_wallet("Import recovery".into(), None, Some(3_000_000), None).unwrap();
+    record_verified_tip(&wallet_id, 3_100_000);
+    let key = ExtendedSpendingKey::from_mnemonic(
+        "legal winner thank year wave sausage worth useful legal winner thank yellow",
+    )
+    .unwrap();
+    let encoded = zcash_client_backend::encoding::encode_extended_spending_key(
+        "secret-extended-key-main",
+        key.inner(),
+    );
+    assert!(import_spending_key(
+        wallet_id.clone(),
+        Some(encoded.clone()),
+        None,
+        None,
+        3_200_000
+    )
+    .unwrap_err()
+    .to_string()
+    .contains("exceeds"));
+    let id = import_spending_key(wallet_id.clone(), Some(encoded), None, None, 200_000).unwrap();
+    // Reopen storage without making the UI's second rescan call: this is the
+    // crash/navigation boundary that previously left a key with no replay gate.
+    let (db, repo) = open_wallet_db_for(&wallet_id).unwrap();
+    let stored = repo
+        .get_account_keys(
+            repo.get_wallet_secret(&wallet_id)
+                .unwrap()
+                .unwrap()
+                .account_id,
+        )
+        .unwrap();
+    assert_eq!(
+        stored
+            .iter()
+            .find(|k| k.id == Some(id))
+            .unwrap()
+            .sapling_extsk,
+        Some(key.to_bytes())
+    );
+    let state = SpendabilityStateStorage::new(&db).load_state().unwrap();
+    assert!(state.rescan_required);
+    assert!(!state.spendable);
+    assert_eq!(state.required_rescan_from_height, 200_000);
+    drop(repo);
+    drop(db);
+    let error = test_runtime()
+        .block_on(sync_control::acquire_background_sync(&wallet_id))
+        .unwrap_err();
+    assert!(error.to_string().contains("imported-key history"));
+    reset_global_wallet_state_for_tests();
+}
+
+#[test]
 fn an_interrupted_sync_makes_the_public_status_report_not_spendable() {
     let _guard = GLOBAL_WALLET_STATE_TEST_MUTEX.lock().unwrap();
     reset_global_wallet_state_for_tests();

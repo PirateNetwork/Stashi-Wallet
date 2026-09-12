@@ -949,13 +949,14 @@ async fn legacy_import(
 ) -> Result<Value> {
     if ExtendedSpendingKey::from_bech32_any(&key).is_ok() {
         let wallet_id = resolve_wallet_id(service, wallet_id).await?;
-        let key_id = pirate_wallet_service::import_spending_key(
+        let key_id = pirate_wallet_service::import_spending_key_async(
             wallet_id.clone(),
             Some(key),
             None,
             None,
             birthday,
-        )?;
+        )
+        .await?;
         if !no_rescan {
             service
                 .execute(WalletServiceRequest::Rescan {
@@ -969,13 +970,14 @@ async fn legacy_import(
 
     if IronwoodExtendedSpendingKey::from_bech32_any(&key).is_ok() {
         let wallet_id = resolve_wallet_id(service, wallet_id).await?;
-        let key_id = pirate_wallet_service::import_spending_key(
+        let key_id = pirate_wallet_service::import_spending_key_async(
             wallet_id.clone(),
             None,
             Some(key),
             None,
             birthday,
-        )?;
+        )
+        .await?;
         if !no_rescan {
             service
                 .execute(WalletServiceRequest::Rescan {
