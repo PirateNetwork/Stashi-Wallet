@@ -494,8 +494,12 @@ class _ReviewRoutesState extends ConsumerState<_ReviewRoutes> {
 
 void main() {
   testWidgets(
-    'address book Send opens the real Send route with its recipient',
+    'address book Send preserves amount focus while Android keyboard opens',
     (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
       RustLib.initMock(api: _ReviewApi());
       addTearDown(RustLib.dispose);
       await tester.pumpWidget(
@@ -514,7 +518,32 @@ void main() {
         tester.widget<TextField>(find.byType(TextField).first).controller!.text,
         'zs1samplecontactaddressnotforpayments',
       );
+      final amount = find.descendant(
+        of: find.widgetWithText(PInput, 'Amount (ARRR)'),
+        matching: find.byType(TextField),
+      );
+      await tester.ensureVisible(amount);
+      await tester.tap(amount);
+      await tester.pump();
+      final focus = tester.widget<TextField>(amount).focusNode!;
+      expect(focus.hasFocus, isTrue);
+      // Android resizes the form as the IME opens. Do not use enterText here:
+      // it would refocus a replacement field and hide this regression.
+      for (final inset in [150.0, 320.0, 360.0]) {
+        tester.view.viewInsets = FakeViewPadding(bottom: inset);
+        await tester.pumpAndSettle();
+        expect(tester.widget<TextField>(amount).focusNode, same(focus));
+        expect(focus.hasFocus, isTrue);
+      }
+      tester.testTextInput.enterText('0.25');
+      await tester.pump();
+      expect(tester.widget<TextField>(amount).controller!.text, '0.25');
+      tester.view.viewInsets = FakeViewPadding.zero;
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(amount).focusNode, same(focus));
+      expect(tester.widget<TextField>(amount).controller!.text, '0.25');
       expect(tester.takeException(), isNull);
+      debugDefaultTargetPlatformOverride = null;
     },
   );
 

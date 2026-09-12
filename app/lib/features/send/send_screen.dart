@@ -2501,29 +2501,30 @@ class _RecipientsStep extends StatelessWidget {
         }
         // Let everything scroll when the keyboard or enlarged text leaves little
         // room. Otherwise keep the payment total and review action in view.
-        if (constraints.maxHeight < 500 ||
-            MediaQuery.textScalerOf(context).scale(1) > 1.3) {
-          return ListView(
-            padding: const EdgeInsets.all(AppSpacing.md),
-            children: [
-              ...fields,
-              const SizedBox(height: AppSpacing.lg),
-              summary,
-            ],
-          );
-        }
+        final scrollSummary =
+            constraints.maxHeight < 500 ||
+            MediaQuery.textScalerOf(context).scale(1) > 1.3;
+        // Preserve the fields' ancestry while the IME resizes the viewport.
+        // Replacing Column with ListView disposes their focus nodes mid-edit.
         return Column(
           children: [
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.all(AppSpacing.md),
-                children: fields,
+                children: [
+                  ...fields,
+                  if (scrollSummary) ...[
+                    const SizedBox(height: AppSpacing.lg),
+                    summary,
+                  ],
+                ],
               ),
             ),
-            PrimaryActionDock(
-              padding: const EdgeInsets.all(AppSpacing.md),
-              child: summary,
-            ),
+            if (!scrollSummary)
+              PrimaryActionDock(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                child: summary,
+              ),
           ],
         );
       },
