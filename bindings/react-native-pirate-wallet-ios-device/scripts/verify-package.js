@@ -73,7 +73,7 @@ if (packageJson.private === true) {
 }
 if (
   packageJson.repository?.url !==
-  'https://github.com/PirateNetwork/Pirate-Unified-Light-Wallet.git'
+  'git+https://github.com/PirateNetwork/Stashi-Wallet.git'
 ) {
   fail('The repository URL must match the GitHub repository used for npm provenance');
 }
