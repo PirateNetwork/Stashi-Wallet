@@ -48,6 +48,28 @@ The manually added account sequence is saved. These accounts remain available ev
 
 ## Import separate keys
 
+### Komodo and Gleec
+
+Legacy Komodo/Gleec seed phrases can produce different Pirate addresses when
+restored using Stashi's standard seed derivation. Export the Pirate spending key
+for the funded account in the old wallet, then import that key through
+**Settings > Keys & addresses > Spending Key**. Synchronise Stashi first so it can
+check the birthday height against a known chain tip.
+
+Choose a birthday height before the first payment. After import, compare the
+receiving address in the imported key's details with the old wallet's address;
+the main Receive screen may still have a different key selected. Allow historical
+scanning to finish before comparing balances. If an address differs, confirm the
+exported account and address selection locally; never send anyone the private
+key or seed phrase.
+
+Stashi saves the historical scan requirement with the imported key. If scanning
+is interrupted, reopen the wallet to continue recovery. Upgrading a wallet with
+keys imported by an older release can trigger a one-time historical rescan to
+verify coverage. Keep the old wallet and backups until recovery is confirmed.
+
+### Other separately imported keys
+
 A seed phrase cannot recreate a private key that was imported separately into Treasure Chest or Pirate Wallet Lite.
 
 For each separately imported key:
