@@ -2478,6 +2478,116 @@ impl<'a> Repository<'a> {
         }
     }
 
+    /// Older import callers did not record historical coverage requirements.
+    /// Schedule one conservative replay for those wallets, atomically with a
+    /// migration marker so a completed recovery is not repeated on every open.
+    pub fn ensure_imported_key_replay_migration(&self) -> Result<()> {
+        let tx = self.db.conn().unchecked_transaction()?;
+        let applied = tx
+            .query_row(
+                "SELECT 1 FROM migration_state WHERE key = 'imported_key_recovery_v1'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()?
+            .is_some();
+        if !applied {
+            let birthday: Option<i64> = tx.query_row(
+                "SELECT MIN(CASE WHEN birthday_height > 0 THEN birthday_height ELSE 1 END)
+                 FROM account_keys WHERE key_type = 'import_spend'",
+                [],
+                |row| row.get(0),
+            )?;
+            if let Some(birthday) = birthday {
+                let changed = tx.execute(
+                    "UPDATE spendability_state SET spendable = 0, rescan_required = 1,
+                     required_rescan_from_height = CASE
+                       WHEN required_rescan_from_height > 0 AND required_rescan_from_height < ?1
+                       THEN required_rescan_from_height ELSE ?1 END,
+                     key_import_generation = key_import_generation + 1,
+                     repair_queued = 0, repair_from_height = 0,
+                     reason_code = 'ERR_RESCAN_REQUIRED', updated_at = ?2 WHERE id = 1",
+                    params![birthday, chrono::Utc::now().to_rfc3339()],
+                )?;
+                if changed != 1 {
+                    return Err(Error::Storage(
+                        "Spendability state row is unavailable".into(),
+                    ));
+                }
+            }
+            tx.execute("INSERT INTO migration_state (key, value, updated_at) VALUES ('imported_key_recovery_v1', '1', ?1)", [chrono::Utc::now().timestamp()])?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Persist decoded spending keys and their historical replay requirement
+    /// together. Supports the legacy API's combined Sapling/Ironwood group.
+    pub fn import_spending_key_with_rescan(
+        &self,
+        key: &AccountKey,
+        rescan_reason_code: &str,
+    ) -> Result<i64> {
+        if key.id.is_some()
+            || key.key_type != KeyType::ImportSpend
+            || key.key_scope != KeyScope::Account
+            || !key.spendable
+            || key.birthday_height <= 0
+            || (key.sapling_extsk.is_none() && key.orchard_extsk.is_none())
+            || key.sapling_extsk.is_some() != key.sapling_dfvk.is_some()
+            || key.orchard_extsk.is_some() != key.orchard_fvk.is_some()
+        {
+            return Err(Error::Validation(
+                "Invalid spending-key import metadata".into(),
+            ));
+        }
+        let tx = self.db.conn().unchecked_transaction()?;
+        let mut imported = key.clone();
+        if let Some(existing) =
+            self.get_account_keys(key.account_id)?
+                .into_iter()
+                .find(|existing| {
+                    existing.sapling_extsk == key.sapling_extsk
+                        && existing.orchard_extsk == key.orchard_extsk
+                })
+        {
+            imported.id = existing.id;
+            imported.key_type = existing.key_type;
+            imported.key_scope = existing.key_scope;
+            imported.encrypted_mnemonic = existing.encrypted_mnemonic;
+            imported.created_at = existing.created_at;
+            imported.label = existing.label.or(imported.label);
+            if existing.birthday_height > 0 {
+                imported.birthday_height = imported.birthday_height.min(existing.birthday_height);
+            }
+        }
+        let encrypted = self.encrypt_account_key_fields(&imported)?;
+        let id = self.upsert_account_key(&encrypted)?;
+        // Even a repeated import explicitly requests historical recovery. Never
+        // let a later request raise an earlier unfinished replay requirement.
+        let changed = tx.execute(
+            "UPDATE spendability_state SET spendable = 0, rescan_required = 1,
+             required_rescan_from_height = CASE
+               WHEN required_rescan_from_height > 0 AND required_rescan_from_height < ?1
+               THEN required_rescan_from_height ELSE ?1 END,
+             key_import_generation = key_import_generation + 1,
+             repair_queued = 0, repair_from_height = 0, reason_code = ?2, updated_at = ?3
+             WHERE id = 1",
+            params![
+                imported.birthday_height,
+                rescan_reason_code,
+                chrono::Utc::now().to_rfc3339()
+            ],
+        )?;
+        if changed != 1 {
+            return Err(Error::Storage(
+                "Spendability state row is unavailable".into(),
+            ));
+        }
+        tx.commit()?;
+        Ok(id)
+    }
+
     /// Atomically import a caller-verified spending key and its receive address.
     ///
     /// The key and address must already have been cryptographically validated by
@@ -6514,6 +6624,111 @@ mod tests {
             color_tag: ColorTag::None,
             address_scope: AddressScope::External,
         }
+    }
+
+    #[test]
+    fn legacy_import_replay_migration_runs_once_and_survives_completion() {
+        let db = test_db();
+        let repo = Repository::new(&db);
+        let account_id = repo
+            .insert_account(&Account {
+                id: None,
+                name: "Legacy import".into(),
+                created_at: 1,
+            })
+            .unwrap();
+        let key = verified_sapling_import(account_id, 0x31, 400);
+        repo.upsert_account_key(&repo.encrypt_account_key_fields(&key).unwrap())
+            .unwrap();
+        repo.ensure_imported_key_replay_migration().unwrap();
+        let pending = crate::SpendabilityStateStorage::new(&db)
+            .load_state()
+            .unwrap();
+        assert_eq!(pending.required_rescan_from_height, 400);
+        assert!(pending.rescan_required);
+        repo.ensure_imported_key_replay_migration().unwrap();
+        assert_eq!(
+            crate::SpendabilityStateStorage::new(&db)
+                .load_state()
+                .unwrap()
+                .key_import_generation,
+            pending.key_import_generation
+        );
+        db.conn().execute("UPDATE spendability_state SET rescan_required = 0, required_rescan_from_height = 0 WHERE id = 1", []).unwrap();
+        repo.ensure_imported_key_replay_migration().unwrap();
+        assert!(
+            !crate::SpendabilityStateStorage::new(&db)
+                .load_state()
+                .unwrap()
+                .rescan_required
+        );
+    }
+
+    #[test]
+    fn spending_key_import_keeps_both_pools_and_the_earliest_replay() {
+        let db = test_db();
+        let repo = Repository::new(&db);
+        let account_id = repo
+            .insert_account(&Account {
+                id: None,
+                name: "Import".into(),
+                created_at: 1,
+            })
+            .unwrap();
+        let mut key = verified_sapling_import(account_id, 0x31, 500);
+        let ironwood = verified_ironwood_import(account_id, 0x41, 500);
+        key.orchard_extsk = ironwood.orchard_extsk;
+        key.orchard_fvk = ironwood.orchard_fvk;
+        let first = repo
+            .import_spending_key_with_rescan(&key, "ERR_RESCAN_REQUIRED")
+            .unwrap();
+        key.birthday_height = 400;
+        assert_eq!(
+            repo.import_spending_key_with_rescan(&key, "ERR_RESCAN_REQUIRED")
+                .unwrap(),
+            first
+        );
+        key.birthday_height = 900;
+        assert_eq!(
+            repo.import_spending_key_with_rescan(&key, "ERR_RESCAN_REQUIRED")
+                .unwrap(),
+            first
+        );
+        let keys = repo.get_account_keys(account_id).unwrap();
+        assert_eq!(keys.len(), 1);
+        assert_eq!(keys[0].birthday_height, 400);
+        assert_eq!(keys[0].sapling_extsk, key.sapling_extsk);
+        assert_eq!(keys[0].orchard_extsk, key.orchard_extsk);
+        let state = crate::SpendabilityStateStorage::new(&db)
+            .load_state()
+            .unwrap();
+        assert!(!state.spendable);
+        assert!(state.rescan_required);
+        assert_eq!(state.required_rescan_from_height, 400);
+        assert_eq!(state.key_import_generation, 3);
+    }
+
+    #[test]
+    fn spending_key_import_rolls_back_if_replay_cannot_be_recorded() {
+        let db = test_db();
+        let repo = Repository::new(&db);
+        let account_id = repo
+            .insert_account(&Account {
+                id: None,
+                name: "Import".into(),
+                created_at: 1,
+            })
+            .unwrap();
+        db.conn()
+            .execute("DELETE FROM spendability_state", [])
+            .unwrap();
+        assert!(repo
+            .import_spending_key_with_rescan(
+                &verified_sapling_import(account_id, 0x31, 500),
+                "ERR_RESCAN_REQUIRED",
+            )
+            .is_err());
+        assert!(repo.get_account_keys(account_id).unwrap().is_empty());
     }
 
     #[test]
