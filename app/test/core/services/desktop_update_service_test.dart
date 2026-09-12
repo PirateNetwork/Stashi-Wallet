@@ -2,6 +2,69 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pirate_wallet/core/services/desktop_update_service.dart';
 
 void main() {
+  group('official release asset URLs', () {
+    const path = '/releases/download/v1.2.2/installer.exe';
+    const current = 'https://github.com/PirateNetwork/Stashi-Wallet';
+
+    test('accepts current and legacy repository downloads', () {
+      for (final repository in [
+        'Stashi-Wallet',
+        'Pirate-Unified-Light-Wallet',
+      ]) {
+        expect(
+          DesktopUpdateService.isOfficialReleaseAssetUrl(
+            'https://github.com/PirateNetwork/$repository$path',
+            tagName: 'v1.2.2',
+            assetName: 'installer.exe',
+          ),
+          isTrue,
+        );
+      }
+    });
+
+    test('rejects spoofed origins, paths, tags and filenames', () {
+      for (final url in [
+        'http://github.com/PirateNetwork/Stashi-Wallet$path',
+        'https://github.com.evil.example/PirateNetwork/Stashi-Wallet$path',
+        'https://github.com@evil.example/PirateNetwork/Stashi-Wallet$path',
+        'https://github.com/OtherOwner/Stashi-Wallet$path',
+        'https://github.com/PirateNetwork/OtherRepository$path',
+        '$current/releases/download/v1.2.1/installer.exe',
+        '$current/releases/download/v1.2.2/other.exe',
+        '$current/releases/latest/download/installer.exe',
+        '$current$path?download=1',
+        '$current$path#fragment',
+        '$current/releases/download/v1.2.2/../installer.exe',
+      ]) {
+        expect(
+          DesktopUpdateService.isOfficialReleaseAssetUrl(
+            url,
+            tagName: 'v1.2.2',
+            assetName: 'installer.exe',
+          ),
+          isFalse,
+          reason: url,
+        );
+      }
+    });
+
+    test('rejects traversal even when it matches supplied metadata', () {
+      for (final pair in [
+        ['v1.2.2/..', 'installer.exe'],
+        ['v1.2.2', '../installer.exe'],
+      ]) {
+        expect(
+          DesktopUpdateService.isOfficialReleaseAssetUrl(
+            '$current/releases/download/${pair[0]}/${pair[1]}',
+            tagName: pair[0],
+            assetName: pair[1],
+          ),
+          isFalse,
+        );
+      }
+    });
+  });
+
   test('semantic versions order stable, numeric prereleases and metadata', () {
     for (final pair in [
       ['v1.2.1', '1.2.0'],

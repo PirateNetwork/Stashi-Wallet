@@ -133,9 +133,11 @@ class DesktopUpdateService {
         .hasMatch(candidate.asset.name)) {
       throw const FormatException('Invalid release asset filename');
     }
-    final expectedUrl =
-        'https://github.com/PirateNetwork/Pirate-Unified-Light-Wallet/releases/download/${candidate.release.tagName}/${candidate.asset.name}';
-    if (candidate.asset.downloadUrl != expectedUrl) {
+    if (!isOfficialReleaseAssetUrl(
+      candidate.asset.downloadUrl,
+      tagName: candidate.release.tagName,
+      assetName: candidate.asset.name,
+    )) {
       throw const FormatException(
         'Update asset is not an official release URL',
       );
@@ -188,6 +190,24 @@ class DesktopUpdateService {
         );
         return const DesktopUpdateLaunchResult(shouldCloseApp: false);
     }
+  }
+
+  @visibleForTesting
+  static bool isOfficialReleaseAssetUrl(
+    String url, {
+    required String tagName,
+    required String assetName,
+  }) {
+    if (!RegExp(r'^v?\d+\.\d+\.\d+(?:\+[0-9A-Za-z.-]+)?$').hasMatch(tagName) ||
+        !RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]*$').hasMatch(assetName)) {
+      return false;
+    }
+    // Keep legacy release links valid without trusting other GitHub projects.
+    return const ['Stashi-Wallet', 'Pirate-Unified-Light-Wallet'].any(
+      (repository) =>
+          url ==
+          'https://github.com/PirateNetwork/$repository/releases/download/$tagName/$assetName',
+    );
   }
 
   Future<DesktopReleaseInfo?> _fetchLatestEligibleRelease() async {
