@@ -122,6 +122,39 @@ class _ImportHarness {
 }
 
 void main() {
+  testWidgets('starts scanning even if the import route was removed', (
+    tester,
+  ) async {
+    final harness = _ImportHarness()..pendingImport = Completer<int>();
+    await harness.pump(tester);
+    await harness.enter(tester, 'secret-extended-key-main1qqqq');
+    await harness.submit(tester);
+    harness.router.go('/');
+    await tester.pumpAndSettle();
+    harness.pendingImport!.complete(42);
+    await tester.pumpAndSettle();
+    expect(harness.scans, 1);
+    expect(harness.scannedWallet, 'import-wallet');
+    expect(harness.scannedHeight, 100);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final entry in {
+    'Wallet chain tip is unknown': 'Sync this wallet before importing',
+    "Birthday height exceeds the wallet's known chain tip":
+        'The birthday height is ahead',
+  }.entries) {
+    testWidgets('explains ${entry.key}', (tester) async {
+      final harness = _ImportHarness()..importError = StateError(entry.key);
+      await harness.pump(tester);
+      await harness.enter(tester, 'secret-extended-key-main1qqqq');
+      await harness.submit(tester);
+      await tester.pumpAndSettle();
+      expect(find.textContaining(entry.value), findsOneWidget);
+      expect(harness.scans, 0);
+    });
+  }
+
   for (final key in [
     'secret-extended-key-main1qqqq',
     'pirate-secret-extended-key1qqqq',
