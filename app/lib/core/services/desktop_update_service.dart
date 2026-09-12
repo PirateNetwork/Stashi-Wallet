@@ -79,7 +79,7 @@ class DesktopUpdateService {
       _DesktopUpdateAssetSelectionHelper();
 
   static const String _releaseApiUrl =
-      'https://api.github.com/repos/PirateNetwork/Pirate-Unified-Light-Wallet/releases';
+      'https://api.github.com/repos/PirateNetwork/Stashi-Wallet/releases';
   static const Duration minimumReleaseAge = Duration(hours: 1);
   static const Duration _networkTimeout = Duration(seconds: 25);
 
