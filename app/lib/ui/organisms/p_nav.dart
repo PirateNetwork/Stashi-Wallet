@@ -70,9 +70,9 @@ class PNav extends StatelessWidget {
       return BottomNavigationBar(
         currentIndex: currentIndex,
         onTap: onDestinationSelected,
-        backgroundColor: AppColors.backgroundSurface,
-        selectedItemColor: AppColors.focusRing,
-        unselectedItemColor: AppColors.textSecondary,
+        backgroundColor: AppColors.of(context).backgroundSurface,
+        selectedItemColor: AppColors.of(context).focusRing,
+        unselectedItemColor: AppColors.of(context).textSecondary,
         type: BottomNavigationBarType.fixed,
         elevation: 0,
         items: destinations
@@ -99,9 +99,12 @@ class PNav extends StatelessWidget {
       child: Container(
         key: mobileNavigationKey,
         decoration: BoxDecoration(
-          color: AppColors.backgroundSurface,
+          color: AppColors.of(context).backgroundSurface,
           border: Border(
-            top: BorderSide(color: AppColors.borderSubtle, width: 1.0),
+            top: BorderSide(
+              color: AppColors.of(context).borderSubtle,
+              width: 1.0,
+            ),
           ),
         ),
         padding: EdgeInsets.symmetric(
@@ -172,13 +175,13 @@ class _DesktopNavItemState extends State<_DesktopNavItem> {
   Widget build(BuildContext context) {
     final radius = BorderRadius.circular(PSpacing.radiusSM);
     final iconColor = widget.isSelected
-        ? AppColors.focusRing
-        : AppColors.textSecondary;
+        ? AppColors.of(context).focusRing
+        : AppColors.of(context).textSecondary;
     final labelColor = widget.isSelected
-        ? AppColors.textPrimary
-        : AppColors.textSecondary;
+        ? AppColors.of(context).textPrimary
+        : AppColors.of(context).textSecondary;
     final background = widget.isSelected
-        ? AppColors.selectedBackground
+        ? AppColors.of(context).selectedBackground
         : Colors.transparent;
     final reduceMotion =
         MediaQuery.maybeOf(context)?.disableAnimations ?? false;
@@ -197,9 +200,9 @@ class _DesktopNavItemState extends State<_DesktopNavItem> {
           borderRadius: radius,
           border: Border.all(
             color: _isFocused
-                ? AppColors.focusRing
+                ? AppColors.of(context).focusRing
                 : widget.isSelected
-                ? AppColors.selectedBorder
+                ? AppColors.of(context).selectedBorder
                 : Colors.transparent,
             width: _isFocused ? 2 : 1,
           ),
@@ -215,10 +218,10 @@ class _DesktopNavItemState extends State<_DesktopNavItem> {
             },
             mouseCursor: SystemMouseCursors.click,
             borderRadius: radius,
-            hoverColor: AppColors.hoverOverlay,
-            focusColor: AppColors.focusRingSubtle,
-            highlightColor: AppColors.pressedOverlay,
-            splashColor: AppColors.pressedOverlay,
+            hoverColor: AppColors.of(context).hoverOverlay,
+            focusColor: AppColors.of(context).focusRingSubtle,
+            highlightColor: AppColors.of(context).pressedOverlay,
+            splashColor: AppColors.of(context).pressedOverlay,
             child: Padding(
               padding: EdgeInsets.symmetric(
                 horizontal: widget.compact ? PSpacing.xxs : PSpacing.xs,
@@ -281,7 +284,9 @@ class _NavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = isSelected ? AppColors.focusRing : AppColors.textSecondary;
+    final color = isSelected
+        ? AppColors.of(context).focusRing
+        : AppColors.of(context).textSecondary;
     final content = compact
         ? Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -351,7 +356,7 @@ class _PayAction extends StatelessWidget {
             children: [
               Icon(
                 icon,
-                color: AppColors.textSecondary,
+                color: AppColors.of(context).textSecondary,
                 size: PSpacing.iconMD,
                 semanticLabel: label,
               ),
@@ -361,7 +366,9 @@ class _PayAction extends StatelessWidget {
                   label,
                   maxLines: 2,
                   textAlign: TextAlign.center,
-                  style: PTypography.labelSmall(color: AppColors.textSecondary),
+                  style: PTypography.labelSmall(
+                    color: AppColors.of(context).textSecondary,
+                  ),
                 ),
               ),
             ],
@@ -372,7 +379,7 @@ class _PayAction extends StatelessWidget {
             children: [
               Icon(
                 icon,
-                color: AppColors.textSecondary,
+                color: AppColors.of(context).textSecondary,
                 size: PSpacing.iconMD,
                 semanticLabel: label,
               ),
@@ -381,7 +388,9 @@ class _PayAction extends StatelessWidget {
                 label,
                 maxLines: 2,
                 textAlign: TextAlign.center,
-                style: PTypography.labelSmall(color: AppColors.textSecondary),
+                style: PTypography.labelSmall(
+                  color: AppColors.of(context).textSecondary,
+                ),
               ),
             ],
           );

@@ -38,25 +38,25 @@ class BalanceHero extends StatelessWidget {
         : (isHidden ? _maskedBalanceText : secondaryText!);
     final cardPadding = compact ? PSpacing.sm : PSpacing.lg;
     final titleStyle = compact
-        ? PTypography.heading4(color: AppColors.textPrimary)
-        : PTypography.displaySmall(color: AppColors.textPrimary);
+        ? PTypography.heading4(color: AppColors.of(context).textPrimary)
+        : PTypography.displaySmall(color: AppColors.of(context).textPrimary);
 
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.backgroundSurface,
+        color: AppColors.of(context).backgroundSurface,
         borderRadius: BorderRadius.circular(PSpacing.radiusCard),
-        border: Border.all(color: AppColors.borderStrong),
+        border: Border.all(color: AppColors.of(context).borderStrong),
         gradient: LinearGradient(
           colors: [
-            AppColors.gradientAStart.withValues(alpha: 0.08),
-            AppColors.gradientBStart.withValues(alpha: 0.06),
+            AppColors.of(context).gradientAStart.withValues(alpha: 0.08),
+            AppColors.of(context).gradientBStart.withValues(alpha: 0.06),
           ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         boxShadow: [
           BoxShadow(
-            color: AppColors.shadow,
+            color: AppColors.of(context).shadow,
             blurRadius: compact ? 8 : 12,
             offset: Offset(0, compact ? 4 : 6),
           ),
@@ -71,14 +71,16 @@ class BalanceHero extends StatelessWidget {
             children: [
               Text(
                 label,
-                style: PTypography.labelLarge(color: AppColors.textSecondary),
+                style: PTypography.labelLarge(
+                  color: AppColors.of(context).textSecondary,
+                ),
               ),
               const Spacer(),
               if (onToggleVisibility != null)
                 PIconButton(
                   icon: Icon(
                     isHidden ? Icons.visibility_off : Icons.visibility,
-                    color: AppColors.textSecondary,
+                    color: AppColors.of(context).textSecondary,
                   ),
                   onPressed: onToggleVisibility,
                   tooltip: isHidden ? 'Show balance'.tr : 'Hide balance'.tr,
@@ -109,7 +111,7 @@ class BalanceHero extends StatelessWidget {
                   child: Text(
                     displaySecondaryText,
                     style: PTypography.labelSmall(
-                      color: AppColors.textSecondary,
+                      color: AppColors.of(context).textSecondary,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -117,7 +119,10 @@ class BalanceHero extends StatelessWidget {
                 ),
                 if (onSwapDisplay != null)
                   PIconButton(
-                    icon: Icon(Icons.swap_vert, color: AppColors.textSecondary),
+                    icon: Icon(
+                      Icons.swap_vert,
+                      color: AppColors.of(context).textSecondary,
+                    ),
                     onPressed: onSwapDisplay,
                     tooltip: 'Swap balance display'.tr,
                     size: compact
@@ -131,7 +136,9 @@ class BalanceHero extends StatelessWidget {
             SizedBox(height: compact ? PSpacing.xxs : PSpacing.sm),
             Text(
               helperText!,
-              style: PTypography.bodySmall(color: AppColors.textSecondary),
+              style: PTypography.bodySmall(
+                color: AppColors.of(context).textSecondary,
+              ),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),

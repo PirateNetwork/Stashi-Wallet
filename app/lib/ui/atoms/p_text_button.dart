@@ -43,10 +43,10 @@ class _PTextButtonState extends State<PTextButton> {
   @override
   Widget build(BuildContext context) {
     final textColor = widget._isDisabled
-        ? AppColors.textDisabled
-        : widget.variant.textColor;
-    final hoverColor = widget.variant.hoverColor;
-    final focusOutline = widget.variant.focusColor;
+        ? AppColors.of(context).textDisabled
+        : widget.variant.textColor(context);
+    final hoverColor = widget.variant.hoverColor(context);
+    final focusOutline = widget.variant.focusColor(context);
 
     final horizontalPadding = widget.compact ? PSpacing.sm : PSpacing.md;
     final verticalPadding = widget.compact ? PSpacing.xs : PSpacing.sm;
@@ -125,42 +125,42 @@ class _PTextButtonState extends State<PTextButton> {
 enum PTextButtonVariant { accent, neutral, subtle, danger }
 
 extension _VariantColorExtension on PTextButtonVariant {
-  Color get textColor {
+  Color textColor(BuildContext context) {
     switch (this) {
       case PTextButtonVariant.accent:
-        return AppColors.gradientAStart;
+        return AppColors.of(context).gradientAStart;
       case PTextButtonVariant.neutral:
-        return AppColors.textPrimary;
+        return AppColors.of(context).textPrimary;
       case PTextButtonVariant.subtle:
-        return AppColors.textSecondary;
+        return AppColors.of(context).textSecondary;
       case PTextButtonVariant.danger:
-        return AppColors.error;
+        return AppColors.of(context).error;
     }
   }
 
-  Color get hoverColor {
+  Color hoverColor(BuildContext context) {
     switch (this) {
       case PTextButtonVariant.accent:
-        return AppColors.gradientAStart.withValues(alpha: 0.08);
+        return AppColors.of(context).gradientAStart.withValues(alpha: 0.08);
       case PTextButtonVariant.neutral:
-        return AppColors.hoverOverlay;
+        return AppColors.of(context).hoverOverlay;
       case PTextButtonVariant.subtle:
-        return AppColors.hoverOverlay;
+        return AppColors.of(context).hoverOverlay;
       case PTextButtonVariant.danger:
-        return AppColors.error.withValues(alpha: 0.12);
+        return AppColors.of(context).error.withValues(alpha: 0.12);
     }
   }
 
-  Color get focusColor {
+  Color focusColor(BuildContext context) {
     switch (this) {
       case PTextButtonVariant.accent:
-        return AppColors.gradientAEnd;
+        return AppColors.of(context).gradientAEnd;
       case PTextButtonVariant.neutral:
-        return AppColors.focusRing;
+        return AppColors.of(context).focusRing;
       case PTextButtonVariant.subtle:
-        return AppColors.focusRing.withValues(alpha: 0.7);
+        return AppColors.of(context).focusRing.withValues(alpha: 0.7);
       case PTextButtonVariant.danger:
-        return AppColors.error;
+        return AppColors.of(context).error;
     }
   }
 }

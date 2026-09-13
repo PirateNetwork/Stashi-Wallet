@@ -119,8 +119,8 @@ class PAppBar extends StatelessWidget implements PreferredSizeWidget {
     final gradient = useGradientBackground
         ? LinearGradient(
             colors: [
-              AppColors.gradientAStart.withValues(alpha: 0.35),
-              AppColors.gradientAEnd.withValues(alpha: 0.2),
+              AppColors.of(context).gradientAStart.withValues(alpha: 0.35),
+              AppColors.of(context).gradientAEnd.withValues(alpha: 0.2),
             ],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
@@ -131,15 +131,17 @@ class PAppBar extends StatelessWidget implements PreferredSizeWidget {
       color: gradient == null
           ? (surfaceColor ??
                 (preserveLayout
-                    ? AppColors.backgroundSurface
-                    : AppColors.backgroundBase))
+                    ? AppColors.of(context).backgroundSurface
+                    : AppColors.of(context).backgroundBase))
           : null,
       gradient: gradient,
-      border: Border(bottom: BorderSide(color: AppColors.borderSubtle)),
+      border: Border(
+        bottom: BorderSide(color: AppColors.of(context).borderSubtle),
+      ),
       boxShadow: preserveLayout
           ? [
               BoxShadow(
-                color: AppColors.shadow,
+                color: AppColors.of(context).shadow,
                 blurRadius: 12,
                 offset: const Offset(0, 6),
               ),
@@ -147,16 +149,18 @@ class PAppBar extends StatelessWidget implements PreferredSizeWidget {
           : null,
     );
 
-    final titleStyle = PTypography.titleMedium(color: AppColors.textPrimary)
-        .copyWith(
-          fontSize: preserveLayout
-              ? (isMobile ? 16 : (isNarrow ? 15 : 17))
-              : 18,
-          fontWeight: FontWeight.w600,
-          height: preserveLayout ? 1.5 : 1.2,
-        );
-    final subtitleStyle = PTypography.caption(color: AppColors.textSecondary)
-        .copyWith(fontSize: isMobile ? 10 : 11);
+    final titleStyle =
+        PTypography.titleMedium(color: AppColors.of(context).textPrimary)
+            .copyWith(
+              fontSize: preserveLayout
+                  ? (isMobile ? 16 : (isNarrow ? 15 : 17))
+                  : 18,
+              fontWeight: FontWeight.w600,
+              height: preserveLayout ? 1.5 : 1.2,
+            );
+    final subtitleStyle = PTypography.caption(
+      color: AppColors.of(context).textSecondary,
+    ).copyWith(fontSize: isMobile ? 10 : 11);
     final showSubtitle =
         preserveLayout &&
         subtitle != null &&
@@ -233,7 +237,10 @@ class PAppBar extends StatelessWidget implements PreferredSizeWidget {
       child: Align(
         alignment: Alignment.centerLeft,
         child: PIconButton(
-          icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
+          icon: Icon(
+            Icons.arrow_back,
+            color: AppColors.of(context).textPrimary,
+          ),
           onPressed: onBack ?? () => Navigator.of(context).maybePop(),
           tooltip: 'Back'.tr,
           size: PIconButtonSize.medium,

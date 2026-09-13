@@ -70,7 +70,7 @@ class PScaffold extends StatelessWidget {
 
     if (useCustomTitleBar) {
       return Scaffold(
-        backgroundColor: AppColors.backgroundBase,
+        backgroundColor: AppColors.of(context).backgroundBase,
         body: Column(
           children: [
             // Custom titlebar for desktop
@@ -103,7 +103,7 @@ class PScaffold extends StatelessWidget {
     }
 
     return Scaffold(
-      backgroundColor: AppColors.backgroundBase,
+      backgroundColor: AppColors.of(context).backgroundBase,
       appBar: resolvedAppBar,
       body: dismissibleContent,
       drawer: drawer,

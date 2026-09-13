@@ -38,7 +38,7 @@ class WalletSwitcherButton extends ConsumerWidget {
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       style: (compact ? PTypography.labelSmall : PTypography.labelMedium)(
-        color: AppColors.textPrimary,
+        color: AppColors.of(context).textPrimary,
       ),
     );
 
@@ -52,9 +52,9 @@ class WalletSwitcherButton extends ConsumerWidget {
           vertical: compact ? PSpacing.xs : PSpacing.sm,
         ),
         decoration: BoxDecoration(
-          color: AppColors.backgroundSurface,
+          color: AppColors.of(context).backgroundSurface,
           borderRadius: BorderRadius.circular(PSpacing.radiusMD),
-          border: Border.all(color: AppColors.borderSubtle),
+          border: Border.all(color: AppColors.of(context).borderSubtle),
         ),
         child: Row(
           mainAxisSize: fullWidth ? MainAxisSize.max : MainAxisSize.min,
@@ -62,7 +62,7 @@ class WalletSwitcherButton extends ConsumerWidget {
             Icon(
               Icons.account_balance_wallet_outlined,
               size: compact ? PSpacing.iconSM : PSpacing.iconMD,
-              color: AppColors.textSecondary,
+              color: AppColors.of(context).textSecondary,
             ),
             SizedBox(width: compact ? PSpacing.xs : PSpacing.sm),
             if (fullWidth)
@@ -84,7 +84,7 @@ class WalletSwitcherButton extends ConsumerWidget {
             Icon(
               Icons.expand_more,
               size: compact ? PSpacing.iconSM : PSpacing.iconMD,
-              color: AppColors.textSecondary,
+              color: AppColors.of(context).textSecondary,
             ),
           ],
         ),
@@ -253,7 +253,9 @@ class _WalletSwitcherContent extends ConsumerWidget {
       content: Text(
         'This deletes "{walletName}" from this device. Make sure you have the seed saved if you want it back.'
             .trArgs({'walletName': wallet.name}),
-        style: PTypography.bodyMedium(color: AppColors.textSecondary),
+        style: PTypography.bodyMedium(
+          color: AppColors.of(context).textSecondary,
+        ),
       ),
       actions: [
         PDialogAction(label: 'Cancel'.tr, variant: PButtonVariant.outline),
@@ -294,7 +296,7 @@ class _WalletSwitcherContent extends ConsumerWidget {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: AppColors.error,
+        backgroundColor: AppColors.of(context).error,
         behavior: SnackBarBehavior.floating,
       ),
     );
@@ -319,9 +321,11 @@ class _WalletRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final background = isActive
-        ? AppColors.selectedBackground
-        : AppColors.backgroundSurface;
-    final border = isActive ? AppColors.selectedBorder : AppColors.borderSubtle;
+        ? AppColors.of(context).selectedBackground
+        : AppColors.of(context).backgroundSurface;
+    final border = isActive
+        ? AppColors.of(context).selectedBorder
+        : AppColors.of(context).borderSubtle;
 
     return InkWell(
       onTap: onSelect,
@@ -340,7 +344,7 @@ class _WalletRow extends StatelessWidget {
                   ? Icons.visibility_outlined
                   : Icons.account_balance_wallet_outlined,
               size: PSpacing.iconMD,
-              color: AppColors.textSecondary,
+              color: AppColors.of(context).textSecondary,
             ),
             const SizedBox(width: PSpacing.sm),
             Expanded(
@@ -349,13 +353,15 @@ class _WalletRow extends StatelessWidget {
                 children: [
                   Text(
                     wallet.name,
-                    style: PTypography.labelLarge(color: AppColors.textPrimary),
+                    style: PTypography.labelLarge(
+                      color: AppColors.of(context).textPrimary,
+                    ),
                   ),
                   const SizedBox(height: PSpacing.xxs),
                   Text(
                     wallet.watchOnly ? 'View only'.tr : 'Full access'.tr,
                     style: PTypography.bodySmall(
-                      color: AppColors.textSecondary,
+                      color: AppColors.of(context).textSecondary,
                     ),
                   ),
                 ],
@@ -369,8 +375,11 @@ class _WalletRow extends StatelessWidget {
               ),
             const SizedBox(width: PSpacing.xs),
             PopupMenuButton<_WalletAction>(
-              icon: Icon(Icons.more_horiz, color: AppColors.textSecondary),
-              color: AppColors.backgroundElevated,
+              icon: Icon(
+                Icons.more_horiz,
+                color: AppColors.of(context).textSecondary,
+              ),
+              color: AppColors.of(context).backgroundElevated,
               onSelected: (action) {
                 switch (action) {
                   case _WalletAction.rename:
@@ -390,7 +399,7 @@ class _WalletRow extends StatelessWidget {
                   value: _WalletAction.delete,
                   child: Text(
                     'Remove'.tr,
-                    style: TextStyle(color: AppColors.error),
+                    style: TextStyle(color: AppColors.of(context).error),
                   ),
                 ),
               ],
@@ -416,12 +425,14 @@ class _EmptyWalletState extends StatelessWidget {
       children: [
         Text(
           'No wallets yet.'.tr,
-          style: PTypography.heading4(color: AppColors.textPrimary),
+          style: PTypography.heading4(color: AppColors.of(context).textPrimary),
         ),
         const SizedBox(height: PSpacing.xs),
         Text(
           'Create a new wallet or import an existing one.'.tr,
-          style: PTypography.bodyMedium(color: AppColors.textSecondary),
+          style: PTypography.bodyMedium(
+            color: AppColors.of(context).textSecondary,
+          ),
         ),
         const SizedBox(height: PSpacing.lg),
         PButton(
@@ -448,12 +459,14 @@ class _WalletErrorState extends StatelessWidget {
       children: [
         Text(
           'Could not load wallets.'.tr,
-          style: PTypography.heading4(color: AppColors.textPrimary),
+          style: PTypography.heading4(color: AppColors.of(context).textPrimary),
         ),
         const SizedBox(height: PSpacing.xs),
         Text(
           message,
-          style: PTypography.bodySmall(color: AppColors.textSecondary),
+          style: PTypography.bodySmall(
+            color: AppColors.of(context).textSecondary,
+          ),
         ),
         const SizedBox(height: PSpacing.md),
         PButton(

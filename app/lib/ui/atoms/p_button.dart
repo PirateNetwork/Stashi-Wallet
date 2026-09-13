@@ -47,8 +47,8 @@ class _PButtonState extends State<PButton> {
     final focusBorderColor =
         widget.variant == PButtonVariant.primary ||
             widget.variant == PButtonVariant.secondary
-        ? AppColors.textOnAccent
-        : AppColors.focusRing;
+        ? AppColors.of(context).textOnAccent
+        : AppColors.of(context).focusRing;
     final contentChild =
         widget.child ?? Text(widget.text ?? '', textAlign: TextAlign.center);
 
@@ -69,21 +69,26 @@ class _PButtonState extends State<PButton> {
                   constraints: BoxConstraints(minHeight: widget.size.height),
                   decoration: BoxDecoration(
                     color: widget.variant == PButtonVariant.soft
-                        ? AppColors.accentPrimary.withValues(alpha: 0.09)
+                        ? AppColors.of(context).gradientAStart
+                              .withValues(alpha: 0.09)
                         : null,
                     gradient: widget.variant.gradient(
+                      context,
                       isDisabled: isVisuallyDisabled,
                       isHovered: _isHovered,
                       isPressed: _isPressed,
                     ),
                     border: _isFocused && !isDisabled
                         ? Border.all(color: focusBorderColor, width: 2)
-                        : widget.variant.border(isDisabled: isVisuallyDisabled),
+                        : widget.variant.border(
+                            context,
+                            isDisabled: isVisuallyDisabled,
+                          ),
                     borderRadius: BorderRadius.circular(PSpacing.radiusMD),
                     boxShadow: _isHovered && !isDisabled
                         ? [
                             BoxShadow(
-                              color: AppColors.shadow,
+                              color: AppColors.of(context).shadow,
                               blurRadius: 8.0,
                               offset: const Offset(0, 4),
                             ),
@@ -100,8 +105,8 @@ class _PButtonState extends State<PButton> {
                         }
                       },
                       borderRadius: BorderRadius.circular(PSpacing.radiusMD),
-                      splashColor: AppColors.pressedOverlay,
-                      highlightColor: AppColors.hoverOverlay,
+                      splashColor: AppColors.of(context).pressedOverlay,
+                      highlightColor: AppColors.of(context).hoverOverlay,
                       child: Padding(
                         padding: widget.size.padding,
                         child: Row(
@@ -116,6 +121,7 @@ class _PButtonState extends State<PButton> {
                                   strokeWidth: 2.0,
                                   valueColor: AlwaysStoppedAnimation<Color>(
                                     widget.variant.textColor(
+                                      context,
                                       isDisabled: isVisuallyDisabled,
                                     ),
                                   ),
@@ -126,6 +132,7 @@ class _PButtonState extends State<PButton> {
                               IconTheme(
                                 data: IconThemeData(
                                   color: widget.variant.textColor(
+                                    context,
                                     isDisabled: isVisuallyDisabled,
                                   ),
                                   size: widget.size.iconSize,
@@ -139,6 +146,7 @@ class _PButtonState extends State<PButton> {
                                 textAlign: TextAlign.center,
                                 style: widget.size.textStyle.copyWith(
                                   color: widget.variant.textColor(
+                                    context,
                                     isDisabled: isVisuallyDisabled,
                                   ),
                                 ),
@@ -171,7 +179,8 @@ enum PButtonVariant {
   ghost,
   danger;
 
-  Gradient? gradient({
+  Gradient? gradient(
+    BuildContext context, {
     required bool isDisabled,
     required bool isHovered,
     required bool isPressed,
@@ -181,13 +190,19 @@ enum PButtonVariant {
     switch (this) {
       case PButtonVariant.primary:
         return LinearGradient(
-          colors: [AppColors.gradientAStart, AppColors.gradientAEnd],
+          colors: [
+            AppColors.of(context).gradientAStart,
+            AppColors.of(context).gradientAEnd,
+          ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         );
       case PButtonVariant.secondary:
         return LinearGradient(
-          colors: [AppColors.gradientBStart, AppColors.gradientBEnd],
+          colors: [
+            AppColors.of(context).gradientBStart,
+            AppColors.of(context).gradientBEnd,
+          ],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         );
@@ -199,36 +214,38 @@ enum PButtonVariant {
     }
   }
 
-  BoxBorder? border({required bool isDisabled}) {
+  BoxBorder? border(BuildContext context, {required bool isDisabled}) {
     if (this == PButtonVariant.soft) {
       return Border.all(
         color: isDisabled
-            ? AppColors.borderSubtle
-            : AppColors.accentPrimary.withValues(alpha: 0.45),
+            ? AppColors.of(context).borderSubtle
+            : AppColors.of(context).gradientAStart.withValues(alpha: 0.45),
       );
     }
     if (this == PButtonVariant.outline) {
       return Border.all(
-        color: isDisabled ? AppColors.borderSubtle : AppColors.borderDefault,
+        color: isDisabled
+            ? AppColors.of(context).borderSubtle
+            : AppColors.of(context).borderDefault,
         width: 1.5,
       );
     }
     return null;
   }
 
-  Color textColor({required bool isDisabled}) {
-    if (isDisabled) return AppColors.textDisabled;
+  Color textColor(BuildContext context, {required bool isDisabled}) {
+    if (isDisabled) return AppColors.of(context).textDisabled;
 
     switch (this) {
       case PButtonVariant.primary:
       case PButtonVariant.secondary:
-        return AppColors.textOnAccent;
+        return AppColors.of(context).textOnAccent;
       case PButtonVariant.danger:
-        return AppColors.error;
+        return AppColors.of(context).error;
       case PButtonVariant.outline:
       case PButtonVariant.soft:
       case PButtonVariant.ghost:
-        return AppColors.textPrimary;
+        return AppColors.of(context).textPrimary;
     }
   }
 }
@@ -343,14 +360,14 @@ class _PIconButtonState extends State<PIconButton> {
         clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
           color: _isHovered && widget.onPressed != null
-              ? AppColors.hoverOverlay
+              ? AppColors.of(context).hoverOverlay
               : Colors.transparent,
           shape: isCircular ? BoxShape.circle : BoxShape.rectangle,
           borderRadius: isCircular
               ? null
               : BorderRadius.circular(PSpacing.radiusSM),
           border: _focusNode.hasFocus
-              ? Border.all(color: AppColors.focusRing, width: 2)
+              ? Border.all(color: AppColors.of(context).focusRing, width: 2)
               : null,
         ),
         child: IconButton(
@@ -359,8 +376,8 @@ class _PIconButtonState extends State<PIconButton> {
           focusNode: _focusNode,
           iconSize: widget.size.iconSize,
           color: widget.onPressed == null
-              ? AppColors.textDisabled
-              : AppColors.textPrimary,
+              ? AppColors.of(context).textDisabled
+              : AppColors.of(context).textPrimary,
           padding: EdgeInsets.zero,
         ),
       ),

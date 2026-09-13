@@ -44,21 +44,21 @@ class _PCardState extends State<PCard> {
       color:
           widget.backgroundColor ??
           (widget.elevated
-              ? AppColors.backgroundElevated
-              : AppColors.backgroundSurface),
+              ? AppColors.of(context).backgroundElevated
+              : AppColors.of(context).backgroundSurface),
       borderRadius: BorderRadius.circular(PSpacing.radiusCard),
       border: Border.all(
         color: _isFocused
-            ? AppColors.focusRing
+            ? AppColors.of(context).focusRing
             : isHovered
-            ? AppColors.borderStrong
-            : AppColors.borderSubtle,
+            ? AppColors.of(context).borderStrong
+            : AppColors.of(context).borderSubtle,
         width: _isFocused ? 2.0 : 1.0,
       ),
       boxShadow: isHovered
           ? [
               BoxShadow(
-                color: AppColors.shadow,
+                color: AppColors.of(context).shadow,
                 blurRadius: 16.0,
                 offset: const Offset(0, 8),
               ),
@@ -88,8 +88,8 @@ class _PCardState extends State<PCard> {
               }
             },
             borderRadius: BorderRadius.circular(PSpacing.radiusCard),
-            splashColor: AppColors.pressedOverlay,
-            highlightColor: AppColors.hoverOverlay,
+            splashColor: AppColors.of(context).pressedOverlay,
+            highlightColor: AppColors.of(context).hoverOverlay,
             child: Padding(
               padding: widget.padding ?? EdgeInsets.all(PSpacing.cardPadding),
               child: widget.child,
