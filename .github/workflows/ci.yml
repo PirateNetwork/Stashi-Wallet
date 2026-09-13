@@ -2770,10 +2770,11 @@ jobs:
   publish-react-native-npm:
     name: Publish - React Native Plugin (npm)
     runs-on: ubuntu-latest
+    # A previous release may have failed to publish this package version.
+    # Check npm on every eligible release; the verifier below skips identical versions.
     if: >-
       github.event_name == 'push' &&
       startsWith(github.ref, 'refs/tags/v') &&
-      needs.backend-release-plan.outputs.react_native_plugin_changed == 'true' &&
       vars.NPM_PUBLISH_ENABLED == 'true'
     environment: npm-publish
     permissions:

@@ -69,6 +69,27 @@ class NpmViewIntegrityTest(unittest.TestCase):
             workflow[verification:],
         )
 
+    def test_release_can_retry_an_unchanged_unpublished_version(self) -> None:
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        publication = workflow.split("  publish-react-native-npm:\n", 1)[1]
+        gate = publication.split("    if: >-\n", 1)[1].split(
+            "    environment:", 1
+        )[0]
+
+        # Registry state must decide whether to publish, even when the previous
+        # release tag declared the same version but its npm publication failed.
+        self.assertEqual(
+            " ".join(gate.split()),
+            "github.event_name == 'push' && "
+            "startsWith(github.ref, 'refs/tags/v') && "
+            "vars.NPM_PUBLISH_ENABLED == 'true'",
+        )
+        dependencies = publication.split("    needs:\n", 1)[1].split(
+            "    steps:", 1
+        )[0]
+        self.assertIn("      - release\n", dependencies)
+        self.assertIn("      - backend-release-plan\n", dependencies)
+
 
 if __name__ == "__main__":
     unittest.main()
