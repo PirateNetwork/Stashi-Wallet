@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -36,20 +38,63 @@ class KeyDetailScreen extends ConsumerStatefulWidget {
 class _KeyDetailScreenState extends ConsumerState<KeyDetailScreen> {
   Future<_KeyDetailData>? _loadFuture;
   WalletId? _walletId;
+  bool _isDecoy = false;
+  Timer? _balanceRefreshTimer;
+  bool _refreshingBalances = false;
   bool _isGenerating = false;
   String? _error;
 
   @override
   void initState() {
     super.initState();
-    _setWallet(ref.read(activeWalletProvider));
+    _setWallet(ref.read(activeWalletProvider), ref.read(decoyModeProvider));
+    // Address balances can change even when the total is unchanged (for
+    // example, a transfer between this wallet's addresses).
+    _balanceRefreshTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      unawaited(_refreshBalances());
+    });
   }
 
-  void _setWallet(WalletId? walletId) {
-    if (_walletId == walletId) return;
+  @override
+  void dispose() {
+    _balanceRefreshTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant KeyDetailScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.keyId != widget.keyId) {
+      _loadFuture = _walletId == null ? null : _fetchDetail(_walletId!);
+    }
+  }
+
+  void _setWallet(WalletId? walletId, bool isDecoy) {
+    if (_walletId == walletId && _isDecoy == isDecoy) return;
     _walletId = walletId;
-    if (walletId != null) {
-      _loadFuture = _fetchDetail(walletId);
+    _isDecoy = isDecoy;
+    _error = null;
+    _loadFuture = walletId == null ? null : _fetchDetail(walletId);
+  }
+
+  Future<void> _refreshBalances() async {
+    final walletId = _walletId;
+    if (walletId == null || _isDecoy || _refreshingBalances || _isGenerating) {
+      return;
+    }
+    final previousLoad = _loadFuture;
+    _refreshingBalances = true;
+    try {
+      final data = await _fetchDetail(walletId);
+      // A wallet/key/mode change or manual refresh supersedes this request.
+      if (!mounted || !identical(previousLoad, _loadFuture)) return;
+      setState(() {
+        _loadFuture = Future.value(data);
+      });
+    } catch (_) {
+      // Keep the last successful snapshot and retry on the next tick.
+    } finally {
+      _refreshingBalances = false;
     }
   }
 
@@ -433,7 +478,8 @@ class _KeyDetailScreenState extends ConsumerState<KeyDetailScreen> {
   Widget build(BuildContext context) {
     final padding = PSpacing.screenPadding(MediaQuery.of(context).size.width);
     final walletId = ref.watch(activeWalletProvider);
-    _setWallet(walletId);
+    final isDecoy = ref.watch(decoyModeProvider);
+    _setWallet(walletId, isDecoy);
 
     return PScaffold(
       bodyMaxWidth: 760,
@@ -445,9 +491,11 @@ class _KeyDetailScreenState extends ConsumerState<KeyDetailScreen> {
       body: walletId == null
           ? _buildEmptyWallet()
           : FutureBuilder<_KeyDetailData>(
+              key: ValueKey((walletId, widget.keyId, isDecoy)),
               future: _loadFuture,
               builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
+                if (snapshot.connectionState == ConnectionState.waiting &&
+                    !snapshot.hasData) {
                   return const Center(child: CircularProgressIndicator());
                 }
                 if (snapshot.hasError) {
