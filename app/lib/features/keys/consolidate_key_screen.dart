@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/ffi/ffi_bridge.dart';
 import '../../core/ffi/generated/models.dart' hide AddressBookColorTag;
 import '../../core/providers/wallet_providers.dart';
+import '../../core/security/transaction_authorization.dart';
 import '../../design/input_decorations.dart';
 import '../../design/tokens/colors.dart';
 import '../../design/tokens/spacing.dart';
@@ -34,6 +35,7 @@ class _ConsolidateKeyScreenState extends ConsumerState<ConsolidateKeyScreen> {
   bool _isLoading = true;
   bool _isBuilding = false;
   bool _isSending = false;
+  bool _isAuthorizing = false;
   String? _error;
   PendingTx? _pending;
 
@@ -170,14 +172,29 @@ class _ConsolidateKeyScreenState extends ConsumerState<ConsolidateKeyScreen> {
   Future<void> _send() async {
     final walletId = _walletId;
     final pending = _pending;
-    if (walletId == null || pending == null) return;
+    if (_isSending || _isAuthorizing || walletId == null || pending == null) {
+      return;
+    }
+    final keyId = widget.keyId;
 
     setState(() {
-      _isSending = true;
+      _isAuthorizing = true;
       _error = null;
     });
 
     try {
+      final authorized = await authorizeTransaction(context, ref);
+      if (!mounted || !authorized) return;
+      if (ref.read(activeWalletProvider) != walletId ||
+          ref.read(decoyModeProvider) ||
+          widget.keyId != keyId ||
+          !identical(_pending, pending)) {
+        return;
+      }
+      setState(() {
+        _isAuthorizing = false;
+        _isSending = true;
+      });
       final signed = await FfiBridge.signTxForKey(
         walletId: walletId,
         pending: pending,
@@ -206,10 +223,13 @@ class _ConsolidateKeyScreenState extends ConsumerState<ConsolidateKeyScreen> {
         actions: [PDialogAction(label: 'Close'.tr)],
       );
     } catch (e) {
-      setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = e.toString());
     } finally {
       if (mounted) {
-        setState(() => _isSending = false);
+        setState(() {
+          _isSending = false;
+          _isAuthorizing = false;
+        });
       }
     }
   }
@@ -259,10 +279,14 @@ class _ConsolidateKeyScreenState extends ConsumerState<ConsolidateKeyScreen> {
                     _buildSummary(_pending!),
                     SizedBox(height: PSpacing.md),
                     PButton(
-                      onPressed: _isSending ? null : _send,
+                      onPressed: _isSending || _isAuthorizing ? null : _send,
                       variant: PButtonVariant.primary,
                       child: Text(
-                        _isSending ? 'Sending...'.tr : 'Confirm and send'.tr,
+                        _isAuthorizing
+                            ? 'Verifying...'.tr
+                            : _isSending
+                            ? 'Sending...'.tr
+                            : 'Confirm and send'.tr,
                       ),
                     ),
                   ],
