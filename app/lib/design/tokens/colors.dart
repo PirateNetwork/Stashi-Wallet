@@ -8,6 +8,16 @@ export 'default_colors.dart';
 class AppColors {
   AppColors._();
 
+  /// Registers a theme dependency so retained routes and const widgets update
+  /// when appearance changes. Prefer this over the legacy global getters.
+  static WalletPalette of(BuildContext context) {
+    final theme = Theme.of(context);
+    return theme.extension<WalletPalette>() ??
+        (theme.brightness == Brightness.light
+            ? defaultLightPalette
+            : defaultDarkPalette);
+  }
+
   static Brightness _brightness = Brightness.dark;
   static WalletPalette _dark = defaultDarkPalette;
   static WalletPalette _light = defaultLightPalette;

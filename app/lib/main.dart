@@ -183,6 +183,11 @@ class _StashiWalletAppState extends ConsumerState<StashiWalletApp>
   bool get _isDesktop =>
       Platform.isWindows || Platform.isLinux || Platform.isMacOS;
 
+  @override
+  void didChangePlatformBrightness() {
+    if (mounted) setState(() {});
+  }
+
   void _syncWindowBackground(Color color) {
     if (!_isDesktop) {
       return;
@@ -362,13 +367,13 @@ class _StashiWalletAppState extends ConsumerState<StashiWalletApp>
       );
     }
 
-    // Determine brightness based on theme mode
-    // For system mode, we'll sync in the builder after MaterialApp is built
+    // Resolve once before any legacy color consumers build. Never temporarily
+    // install a dark palette while Material resolves a light system appearance.
     final brightness = themeModeSetting.themeMode == ThemeMode.dark
         ? Brightness.dark
         : themeModeSetting.themeMode == ThemeMode.light
         ? Brightness.light
-        : Brightness.dark; // Default to dark, will be updated in builder for system mode
+        : WidgetsBinding.instance.platformDispatcher.platformBrightness;
     AppColors.syncWithTheme(
       brightness,
       light: walletTheme.light,
@@ -376,7 +381,7 @@ class _StashiWalletAppState extends ConsumerState<StashiWalletApp>
     );
 
     return MaterialApp.router(
-      key: ValueKey((themeModeSetting.themeMode, walletTheme.id)),
+      key: ValueKey((brightness, walletTheme.id)),
       title: 'Stashi Wallet',
       debugShowCheckedModeBanner: false,
       scrollBehavior: const PirateScrollBehavior(),
@@ -388,22 +393,12 @@ class _StashiWalletAppState extends ConsumerState<StashiWalletApp>
       themeMode: themeModeSetting.themeMode,
 
       builder: (context, child) {
-        // Sync colors with current theme brightness on every build
-        // This ensures AppColors stays in sync when theme changes
-        // For system mode, this will use the actual resolved brightness
-        final currentBrightness = Theme.of(context).brightness;
-        AppColors.syncWithTheme(
-          currentBrightness,
-          light: walletTheme.light,
-          dark: walletTheme.dark,
-        );
-
         if (Platform.isWindows) {
           _syncWindowBackground(AppColors.backgroundBase);
         }
 
-        // Return a widget that forces rebuild when theme changes
-        // This ensures all child widgets rebuild when AppColors changes
+        // Localized chrome follows catalog updates. Color consumers subscribe
+        // to Theme independently, including retained router children.
         return AnimatedBuilder(
           animation: ArbTextLocalizer.instance,
           builder: (context, _) {
