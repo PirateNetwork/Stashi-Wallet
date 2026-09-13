@@ -33,7 +33,7 @@ import '../../core/ffi/generated/models.dart' hide AddressBookEntryFfi;
 import '../../core/providers/wallet_providers.dart';
 import '../../core/providers/price_providers.dart';
 import '../../core/errors/transaction_errors.dart';
-import '../../core/security/biometric_auth.dart';
+import '../../core/security/transaction_authorization.dart';
 import '../settings/providers/preferences_providers.dart';
 import '../address_book/address_book_screen.dart';
 import '../address_book/models/address_entry.dart';
@@ -220,6 +220,7 @@ class _SendScreenState extends ConsumerState<SendScreen> {
   double _change = 0;
   bool _isValidating = false;
   bool _isSending = false;
+  bool _isAuthorizing = false;
   bool _showFiatAmounts = false;
   ArrrPriceQuote? _lastKnownQuote;
   bool _isApplyingFiatFallback = false;
@@ -1709,172 +1710,24 @@ class _SendScreenState extends ConsumerState<SendScreen> {
     }
   }
 
-  Future<bool> _isBiometricsEnabledForSend() async {
-    if (ref.read(biometricsEnabledProvider)) {
-      return true;
-    }
-    try {
-      return await ref
-          .read(biometricsEnabledProvider.notifier)
-          .readPersistedValue();
-    } catch (_) {
-      return false;
-    }
-  }
-
-  Future<String?> _promptSendPassphrase() async {
-    final controller = TextEditingController();
-    String? errorText;
-    String? passphrase;
-
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: true,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              backgroundColor: AppColors.backgroundElevated,
-              title: Text(
-                'Confirm send'.tr,
-                style: AppTypography.h3.copyWith(color: AppColors.textPrimary),
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Enter your passphrase to authorize this transaction.'.tr,
-                    style: AppTypography.body.copyWith(
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  TextField(
-                    controller: controller,
-                    obscureText: true,
-                    autofocus: true,
-                    autocorrect: false,
-                    enableSuggestions: false,
-                    enableIMEPersonalizedLearning: false,
-                    keyboardType: TextInputType.visiblePassword,
-                    smartDashesType: SmartDashesType.disabled,
-                    smartQuotesType: SmartQuotesType.disabled,
-                    style: AppTypography.body.copyWith(
-                      color: AppColors.textPrimary,
-                    ),
-                    decoration: InputDecoration(
-                      hintText: 'Passphrase'.tr,
-                      errorText: errorText,
-                    ),
-                    onSubmitted: (_) {
-                      final value = controller.text.trim();
-                      if (value.isEmpty) {
-                        setDialogState(
-                          () => errorText = 'Passphrase is required.'.tr,
-                        );
-                        return;
-                      }
-                      passphrase = value;
-                      Navigator.of(context).pop();
-                    },
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: Text(
-                    'Cancel'.tr,
-                    style: AppTypography.body.copyWith(
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                ),
-                TextButton(
-                  onPressed: () {
-                    final value = controller.text.trim();
-                    if (value.isEmpty) {
-                      setDialogState(
-                        () => errorText = 'Passphrase is required.'.tr,
-                      );
-                      return;
-                    }
-                    passphrase = value;
-                    Navigator.of(context).pop();
-                  },
-                  child: Text(
-                    'Confirm'.tr,
-                    style: AppTypography.bodyBold.copyWith(
-                      color: AppColors.accentPrimary,
-                    ),
-                  ),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-
-    controller.dispose();
-    return passphrase;
-  }
-
-  Future<bool> _authorizeSend() async {
-    final biometricsEnabled = await _isBiometricsEnabledForSend();
-    if (biometricsEnabled) {
-      try {
-        final available = await BiometricAuth.isAvailable();
-        if (available) {
-          final authenticated = await BiometricAuth.authenticate(
-            reason: 'Authenticate to send this transaction'.tr,
-            biometricOnly: true,
-          );
-          if (authenticated) {
-            return true;
-          }
-        }
-      } on BiometricException catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text(e.message)));
-        }
-      } catch (_) {
-        // Fall through to passphrase check.
-      }
-    }
-
-    final passphrase = await _promptSendPassphrase();
-    if (passphrase == null || passphrase.isEmpty) {
-      return false;
-    }
-
-    try {
-      final valid = await FfiBridge.verifyAppPassphrase(passphrase);
-      if (!valid) {
-        if (mounted) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text('Invalid passphrase.'.tr)));
-        }
-        return false;
-      }
-      return true;
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not verify passphrase.'.tr)),
-        );
-      }
-      return false;
-    }
-  }
-
   Future<void> _authorizeAndSendTransaction() async {
-    if (_isSending) return;
-    final authorized = await _authorizeSend();
-    if (!authorized) return;
-    await _sendTransaction();
+    if (_isSending || _isAuthorizing) return;
+    final walletId = ref.read(activeWalletProvider);
+    final pending = _pendingTx;
+    if (walletId == null || pending == null) return;
+    _isAuthorizing = true;
+    try {
+      final authorized = await authorizeTransaction(context, ref);
+      if (!mounted || !authorized) return;
+      if (ref.read(activeWalletProvider) != walletId ||
+          ref.read(decoyModeProvider) ||
+          !identical(_pendingTx, pending)) {
+        return;
+      }
+      await _sendTransaction();
+    } finally {
+      _isAuthorizing = false;
+    }
   }
 
   /// Send transaction - sign and broadcast via FFI
