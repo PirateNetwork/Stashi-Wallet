@@ -1,9 +1,7 @@
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-
-import '../security/app_secure_storage.dart';
+import '../security/app_preference_storage.dart';
 
 class SyncStatusCache {
-  static const FlutterSecureStorage _storage = appSecureStorage;
+  static const AppPreferenceStorage _storage = appPreferenceStorage;
   static const String _heightKey = 'sync_last_known_height_v1';
   static const Duration _writeInterval = Duration(seconds: 10);
   static int? _cachedHeight;

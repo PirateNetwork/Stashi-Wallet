@@ -2,10 +2,9 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path_provider/path_provider.dart';
 
-import '../../../core/security/app_secure_storage.dart';
+import '../../../core/security/app_preference_storage.dart';
 import '../../../core/security/biometric_auth.dart';
 import '../../../core/security/keystore_channel.dart';
 import '../../../core/security/passphrase_cache.dart';
@@ -355,24 +354,37 @@ extension CurrencyPreferenceX on CurrencyPreference {
 }
 
 class ThemeModeNotifier extends Notifier<AppThemeMode> {
-  late final FlutterSecureStorage _storage;
+  late final AppPreferenceStorage _storage;
+  int _revision = 0;
+  Future<void> _writes = Future.value();
   static const String _storageKey = 'ui_theme_mode_v1';
 
   @override
   AppThemeMode build() {
-    _storage = appSecureStorage;
+    _storage = appPreferenceStorage;
     _load();
     return AppThemeMode.system;
   }
 
   Future<void> setThemeMode(AppThemeMode mode) async {
+    ++_revision;
     state = mode;
-    await _storage.write(key: _storageKey, value: mode.name);
+    final write = _writes.then(
+      (_) => _storage.write(key: _storageKey, value: mode.name),
+    );
+    _writes = write.catchError((Object _) {});
+    await write;
   }
 
   Future<void> _load() async {
-    final raw = await _storage.read(key: _storageKey);
-    if (!ref.mounted) {
+    final revision = _revision;
+    String? raw;
+    try {
+      raw = await _storage.read(key: _storageKey);
+    } catch (_) {
+      return; // Appearance must not block wallet startup.
+    }
+    if (!ref.mounted || revision != _revision) {
       return;
     }
     if (raw == null || raw.isEmpty) {
@@ -387,12 +399,12 @@ class ThemeModeNotifier extends Notifier<AppThemeMode> {
 }
 
 class CurrencyPreferenceNotifier extends Notifier<CurrencyPreference> {
-  late final FlutterSecureStorage _storage;
+  late final AppPreferenceStorage _storage;
   static const String _storageKey = 'ui_currency_pref_v1';
 
   @override
   CurrencyPreference build() {
-    _storage = appSecureStorage;
+    _storage = appPreferenceStorage;
     _load();
     return CurrencyPreference.usd;
   }
@@ -424,12 +436,12 @@ class CurrencyPreferenceNotifier extends Notifier<CurrencyPreference> {
 
 class SwapInterfacePreferenceNotifier
     extends Notifier<SwapInterfacePreference> {
-  late final FlutterSecureStorage _storage;
+  late final AppPreferenceStorage _storage;
   static const String _storageKey = 'ui_swap_interface_pref_v1';
 
   @override
   SwapInterfacePreference build() {
-    _storage = appSecureStorage;
+    _storage = appPreferenceStorage;
     _load();
     return SwapInterfacePreference.simple;
   }
@@ -454,13 +466,13 @@ class SwapInterfacePreferenceNotifier
 }
 
 class LocalePreferenceNotifier extends Notifier<AppLocalePreference> {
-  late final FlutterSecureStorage _storage;
+  late final AppPreferenceStorage _storage;
   var _activationGeneration = 0;
   static const String _storageKey = 'ui_locale_pref_v1';
 
   @override
   AppLocalePreference build() {
-    _storage = appSecureStorage;
+    _storage = appPreferenceStorage;
     _load();
     return AppLocalePreference.english;
   }
@@ -503,12 +515,12 @@ class LocalePreferenceNotifier extends Notifier<AppLocalePreference> {
 }
 
 class SeedPhraseLanguagePreferenceNotifier extends Notifier<MnemonicLanguage> {
-  late final FlutterSecureStorage _storage;
+  late final AppPreferenceStorage _storage;
   static const String _storageKey = 'seed_phrase_language_pref_v1';
 
   @override
   MnemonicLanguage build() {
-    _storage = appSecureStorage;
+    _storage = appPreferenceStorage;
     _load();
     return MnemonicLanguage.english;
   }
@@ -545,14 +557,14 @@ class SeedPhraseLanguagePreferenceNotifier extends Notifier<MnemonicLanguage> {
 }
 
 class BiometricsPreferenceNotifier extends Notifier<bool> {
-  late final FlutterSecureStorage _storage;
+  late final AppPreferenceStorage _storage;
   Future<void> _initialLoad = Future.value();
   static const String _storageKey = 'ui_biometrics_enabled_v1';
   static const String _fallbackFileName = 'ui_biometrics_enabled_v1.txt';
 
   @override
   bool build() {
-    _storage = appSecureStorage;
+    _storage = appPreferenceStorage;
     _initialLoad = _load();
     return false;
   }
@@ -768,17 +780,20 @@ class BiometricsPreferenceNotifier extends Notifier<bool> {
   }
 }
 
-abstract class _SecureBoolPreferenceNotifier extends Notifier<bool> {
-  late final FlutterSecureStorage _storage;
+abstract class _BoolPreferenceNotifier extends Notifier<bool> {
+  late final AppPreferenceStorage _storage;
 
   String get storageKey;
   bool get defaultValue;
+  bool get _initialValue =>
+      !(Platform.isMacOS && storageKey.startsWith('ui_external_api_')) &&
+      defaultValue;
 
   @override
   bool build() {
-    _storage = appSecureStorage;
+    _storage = appPreferenceStorage;
     _load();
-    return defaultValue;
+    return _initialValue;
   }
 
   Future<void> setValue({required bool value}) async {
@@ -793,17 +808,17 @@ abstract class _SecureBoolPreferenceNotifier extends Notifier<bool> {
         return;
       }
       if (raw == null || raw.isEmpty) {
-        state = defaultValue;
+        state = _initialValue;
         return;
       }
       state = raw.toLowerCase() == 'true';
     } catch (_) {
-      state = defaultValue;
+      if (ref.mounted) state = _initialValue;
     }
   }
 }
 
-class BalancePrimaryFiatNotifier extends _SecureBoolPreferenceNotifier {
+class BalancePrimaryFiatNotifier extends _BoolPreferenceNotifier {
   @override
   String get storageKey => 'ui_balance_primary_fiat_v1';
 
@@ -814,7 +829,7 @@ class BalancePrimaryFiatNotifier extends _SecureBoolPreferenceNotifier {
       setValue(value: enabled);
 }
 
-class ExternalApiMasterNotifier extends _SecureBoolPreferenceNotifier {
+class ExternalApiMasterNotifier extends _BoolPreferenceNotifier {
   @override
   String get storageKey => 'ui_external_api_master_v1';
 
@@ -824,7 +839,7 @@ class ExternalApiMasterNotifier extends _SecureBoolPreferenceNotifier {
   Future<void> setEnabled({required bool enabled}) => setValue(value: enabled);
 }
 
-class ExternalPriceApiNotifier extends _SecureBoolPreferenceNotifier {
+class ExternalPriceApiNotifier extends _BoolPreferenceNotifier {
   @override
   String get storageKey => 'ui_external_api_prices_v1';
 
@@ -834,7 +849,7 @@ class ExternalPriceApiNotifier extends _SecureBoolPreferenceNotifier {
   Future<void> setEnabled({required bool enabled}) => setValue(value: enabled);
 }
 
-class ExternalGithubApiNotifier extends _SecureBoolPreferenceNotifier {
+class ExternalGithubApiNotifier extends _BoolPreferenceNotifier {
   @override
   String get storageKey => 'ui_external_api_github_v1';
 
@@ -844,7 +859,7 @@ class ExternalGithubApiNotifier extends _SecureBoolPreferenceNotifier {
   Future<void> setEnabled({required bool enabled}) => setValue(value: enabled);
 }
 
-class ExternalDesktopUpdateApiNotifier extends _SecureBoolPreferenceNotifier {
+class ExternalDesktopUpdateApiNotifier extends _BoolPreferenceNotifier {
   @override
   String get storageKey => 'ui_external_api_desktop_updates_v1';
 
@@ -854,7 +869,7 @@ class ExternalDesktopUpdateApiNotifier extends _SecureBoolPreferenceNotifier {
   Future<void> setEnabled({required bool enabled}) => setValue(value: enabled);
 }
 
-class ExternalKomodoSwapApiNotifier extends _SecureBoolPreferenceNotifier {
+class ExternalKomodoSwapApiNotifier extends _BoolPreferenceNotifier {
   @override
   String get storageKey => 'ui_external_api_komodo_swaps_v1';
 

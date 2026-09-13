@@ -1,6 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/security/app_secure_storage.dart';
+import '../../../core/security/app_preference_storage.dart';
 import '../../../design/themes/theme_registry.dart';
 
 /// Bundled styles approved through repository review. Override only in tests.
@@ -16,8 +16,9 @@ final themePreferenceStoreProvider = Provider<ThemePreferenceStore>(
 class ThemePreferenceStore {
   const ThemePreferenceStore();
   static const key = 'ui_theme_style_v1';
-  Future<String?> read() => appSecureStorage.read(key: key);
-  Future<void> write(String id) => appSecureStorage.write(key: key, value: id);
+  Future<String?> read() => appPreferenceStorage.read(key: key);
+  Future<void> write(String id) =>
+      appPreferenceStorage.write(key: key, value: id);
 }
 
 class WalletThemeNotifier extends Notifier<WalletTheme> {

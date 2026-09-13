@@ -4,14 +4,14 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
 import 'package:url_launcher/url_launcher.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../../features/settings/providers/preferences_providers.dart';
 import '../../ui/molecules/p_snack.dart';
 import '../i18n/arb_text_localizer.dart';
-import '../security/app_secure_storage.dart';
+import '../security/app_preference_storage.dart';
 import '../services/desktop_update_service.dart';
 import 'desktop_update_dialog.dart';
 
@@ -39,7 +39,7 @@ class _DesktopUpdatePromptHostState
   static const Duration _initialDelay = Duration(seconds: 25);
   static const Duration _pollInterval = Duration(minutes: 30);
 
-  final FlutterSecureStorage _storage = appSecureStorage;
+  final AppPreferenceStorage _storage = appPreferenceStorage;
   Timer? _initialTimer;
   Timer? _periodicTimer;
   bool _checkInProgress = false;
