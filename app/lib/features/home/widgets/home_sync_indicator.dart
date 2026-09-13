@@ -45,10 +45,10 @@ class HomeSyncIndicator extends StatelessWidget {
         ? Icons.check_circle
         : Icons.sync_disabled;
     final iconColor = isSyncing
-        ? AppColors.accentPrimary
+        ? AppColors.of(context).gradientAStart
         : isComplete
-        ? AppColors.success
-        : AppColors.textSecondary;
+        ? AppColors.of(context).success
+        : AppColors.of(context).textSecondary;
     final statusText =
         eta ??
         (isComplete
@@ -57,8 +57,8 @@ class HomeSyncIndicator extends StatelessWidget {
             ? 'Calculating...'.tr
             : null);
     final statusColor = isComplete && eta == null
-        ? AppColors.success
-        : AppColors.textSecondary;
+        ? AppColors.of(context).success
+        : AppColors.of(context).textSecondary;
     final blockProgressText = (targetHeight > 0 && currentHeight > 0)
         ? 'Block {currentHeight} / {targetHeight}'.trArgs({
             'currentHeight': currentHeight,
@@ -103,7 +103,7 @@ class HomeSyncIndicator extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: PTypography.caption().copyWith(
-                      color: AppColors.textPrimary,
+                      color: AppColors.of(context).textPrimary,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -113,7 +113,7 @@ class HomeSyncIndicator extends StatelessWidget {
                   Text(
                     '${(progress * 100).toStringAsFixed(1)}%',
                     style: PTypography.caption().copyWith(
-                      color: AppColors.accentPrimary,
+                      color: AppColors.of(context).gradientAStart,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -126,9 +126,9 @@ class HomeSyncIndicator extends StatelessWidget {
                 borderRadius: BorderRadius.circular(4),
                 child: LinearProgressIndicator(
                   value: progress.clamp(0.0, 1.0),
-                  backgroundColor: AppColors.surfaceElevated,
+                  backgroundColor: AppColors.of(context).backgroundElevated,
                   valueColor: AlwaysStoppedAnimation<Color>(
-                    AppColors.accentPrimary,
+                    AppColors.of(context).gradientAStart,
                   ),
                   minHeight: 4,
                   semanticsLabel: 'Sync progress'.tr,
@@ -262,14 +262,16 @@ class _SyncMetric extends StatelessWidget {
             label,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: PTypography.labelSmall(color: AppColors.textMuted),
+            style: PTypography.labelSmall(
+              color: AppColors.of(context).textTertiary,
+            ),
           ),
           const SizedBox(height: PSpacing.xxs),
           Text(
             value,
             key: valueKey,
             style: PTypography.codeSmall(
-              color: valueColor ?? AppColors.textSecondary,
+              color: valueColor ?? AppColors.of(context).textSecondary,
             ).copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
           ),
         ],

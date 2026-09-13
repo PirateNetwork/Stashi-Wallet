@@ -56,8 +56,10 @@ class DesktopStatusBar extends ConsumerWidget {
       key: barKey,
       height: PSpacing.desktopStatusBarHeight,
       decoration: BoxDecoration(
-        color: AppColors.backgroundSurface,
-        border: Border(top: BorderSide(color: AppColors.borderSubtle)),
+        color: AppColors.of(context).backgroundSurface,
+        border: Border(
+          top: BorderSide(color: AppColors.of(context).borderSubtle),
+        ),
       ),
       child: Row(
         children: [
@@ -105,7 +107,9 @@ class _UtilityArea extends StatelessWidget {
     return Container(
       width: PSpacing.desktopNavRailWidth,
       decoration: BoxDecoration(
-        border: Border(right: BorderSide(color: AppColors.borderSubtle)),
+        border: Border(
+          right: BorderSide(color: AppColors.of(context).borderSubtle),
+        ),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -123,7 +127,7 @@ class _UtilityArea extends StatelessWidget {
               clipBehavior: Clip.antiAlias,
               decoration: BoxDecoration(
                 color: settingsSelected
-                    ? AppColors.selectedBackground
+                    ? AppColors.of(context).selectedBackground
                     : Colors.transparent,
                 borderRadius: BorderRadius.circular(PSpacing.radiusSM),
               ),
@@ -131,8 +135,8 @@ class _UtilityArea extends StatelessWidget {
                 icon: Icon(
                   settingsSelected ? Icons.settings : Icons.settings_outlined,
                   color: settingsSelected
-                      ? AppColors.focusRing
-                      : AppColors.textSecondary,
+                      ? AppColors.of(context).focusRing
+                      : AppColors.of(context).textSecondary,
                 ),
                 onPressed: onSettingsTap,
                 tooltip: 'Settings'.tr,
@@ -186,7 +190,7 @@ class _RuntimeStatus extends StatelessWidget {
                   child: VerticalDivider(
                     width: 1,
                     thickness: 1,
-                    color: AppColors.borderDefault,
+                    color: AppColors.of(context).borderDefault,
                   ),
                 ),
                 const SizedBox(width: PSpacing.sm),
@@ -197,7 +201,7 @@ class _RuntimeStatus extends StatelessWidget {
                     key: DesktopStatusBar.transportKey,
                     maxLines: 1,
                     style: PTypography.caption(
-                      color: AppColors.textTertiary,
+                      color: AppColors.of(context).textTertiary,
                     ).copyWith(fontSize: 11),
                   ),
                 ),
@@ -230,10 +234,10 @@ class _ConnectionSummary extends StatelessWidget {
       ConnectionStatusLevel.offline => 'Offline'.tr,
     };
     final color = switch (level) {
-      ConnectionStatusLevel.secure => AppColors.success,
-      ConnectionStatusLevel.limited => AppColors.highlight,
-      ConnectionStatusLevel.connecting => AppColors.info,
-      ConnectionStatusLevel.offline => AppColors.error,
+      ConnectionStatusLevel.secure => AppColors.of(context).success,
+      ConnectionStatusLevel.limited => AppColors.of(context).highlight,
+      ConnectionStatusLevel.connecting => AppColors.of(context).info,
+      ConnectionStatusLevel.offline => AppColors.of(context).error,
     };
 
     return Tooltip(
@@ -258,7 +262,7 @@ class _ConnectionSummary extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: PTypography.caption(
-                    color: AppColors.textSecondary,
+                    color: AppColors.of(context).textSecondary,
                   ).copyWith(fontSize: 11),
                 ),
               ),
@@ -288,7 +292,7 @@ class _SyncSummary extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: PTypography.caption(
-              color: AppColors.textTertiary,
+              color: AppColors.of(context).textTertiary,
             ).copyWith(fontSize: 11),
           ),
         ),
@@ -300,8 +304,8 @@ class _SyncSummary extends StatelessWidget {
               key: DesktopStatusBar.progressKey,
               value: percent / 100,
               minHeight: 3,
-              color: AppColors.focusRing,
-              backgroundColor: AppColors.backgroundElevated,
+              color: AppColors.of(context).focusRing,
+              backgroundColor: AppColors.of(context).backgroundElevated,
               semanticsLabel: label,
               semanticsValue: percentLabel,
             ),
@@ -315,7 +319,7 @@ class _SyncSummary extends StatelessWidget {
             textAlign: TextAlign.end,
             maxLines: 1,
             style: PTypography.caption(
-              color: AppColors.textSecondary,
+              color: AppColors.of(context).textSecondary,
             ).copyWith(fontSize: 11),
           ),
         ),

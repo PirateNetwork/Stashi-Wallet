@@ -168,9 +168,11 @@ class AppShell extends ConsumerWidget {
                   children: [
                     DecoratedBox(
                       decoration: BoxDecoration(
-                        color: AppColors.backgroundSurface,
+                        color: AppColors.of(context).backgroundSurface,
                         border: Border(
-                          right: BorderSide(color: AppColors.borderSubtle),
+                          right: BorderSide(
+                            color: AppColors.of(context).borderSubtle,
+                          ),
                         ),
                       ),
                       child: SafeArea(right: false, child: nav),

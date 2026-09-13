@@ -87,7 +87,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   child: _QuickActionButton(
                     icon: Icons.arrow_upward,
                     label: 'Send'.tr,
-                    color: AppColors.accentPrimary,
+                    color: AppColors.of(context).gradientAStart,
                     onTap: () => context.push('/send'),
                   ),
                 ),
@@ -96,7 +96,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   child: _QuickActionButton(
                     icon: Icons.arrow_downward,
                     label: 'Receive'.tr,
-                    color: AppColors.accentSecondary,
+                    color: AppColors.of(context).gradientBStart,
                     onTap: () => context.push('/receive'),
                   ),
                 ),
@@ -123,7 +123,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     key: HomeScreen.recentActivityTitleKey,
                     'Recent activity'.tr,
                     style: PTypography.heading3().copyWith(
-                      color: AppColors.textPrimary,
+                      color: AppColors.of(context).textPrimary,
                     ),
                   ),
                 ),
@@ -226,7 +226,7 @@ class _HomeHeader extends ConsumerWidget {
 
     final headerSurface = DecoratedBox(
       key: HomeScreen.headerSurfaceKey,
-      decoration: BoxDecoration(color: AppColors.backgroundBase),
+      decoration: BoxDecoration(color: AppColors.of(context).backgroundBase),
       child: SafeArea(
         bottom: false,
         child: Padding(
@@ -514,7 +514,7 @@ class _QuickActionButton extends StatelessWidget {
                   softWrap: false,
                   style: PTypography.bodyMedium().copyWith(
                     fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
+                    color: AppColors.of(context).textPrimary,
                   ),
                 ),
               ),
