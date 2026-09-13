@@ -411,7 +411,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.pirate.wallet.RunnerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/app.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/app";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Stashi Wallet.app/Contents/MacOS/Stashi Wallet";
 			};
 			name = Debug;
 		};
@@ -425,7 +425,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.pirate.wallet.RunnerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/app.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/app";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Stashi Wallet.app/Contents/MacOS/Stashi Wallet";
 			};
 			name = Release;
 		};
@@ -439,7 +439,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.pirate.wallet.RunnerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/app.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/app";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Stashi Wallet.app/Contents/MacOS/Stashi Wallet";
 			};
 			name = Profile;
 		};
