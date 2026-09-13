@@ -20,10 +20,6 @@ class PassphraseCache {
     final encoded = base64Encode(sealed);
     if (Platform.isMacOS) {
       await _writeFallbackMarker(encoded);
-      // Best-effort compatibility path for already provisioned builds.
-      try {
-        await _storage.write(key: _key, value: encoded);
-      } catch (_) {}
       return;
     }
     await _storage.write(key: _key, value: encoded);
@@ -46,10 +42,8 @@ class PassphraseCache {
 
   static Future<void> clear() async {
     if (Platform.isMacOS) {
+      await KeystoreChannel.deleteKey('pirate_wallet_master_key');
       await _deleteFallbackMarker();
-      try {
-        await _storage.delete(key: _key);
-      } catch (_) {}
       return;
     }
     await _storage.delete(key: _key);
@@ -66,11 +60,15 @@ class PassphraseCache {
     }
 
     try {
-      final secureStorageValue = await _storage.read(key: _key);
-      if (secureStorageValue != null && secureStorageValue.isNotEmpty) {
-        await _writeFallbackMarker(secureStorageValue);
+      // The native macOS wrapper returns an opaque existence marker, not
+      // ciphertext. Discover legacy caches through metadata only; opening the
+      // app/settings must never read the protected passphrase itself.
+      if (await KeystoreChannel.keyExists('pirate_wallet_master_key')) {
+        final marker = base64Encode(utf8.encode('macos-keychain-v1'));
+        await _writeFallbackMarker(marker);
+        return marker;
       }
-      return secureStorageValue;
+      return null;
     } catch (e) {
       debugPrint('PassphraseCache secure-storage marker read failed: $e');
       return null;
