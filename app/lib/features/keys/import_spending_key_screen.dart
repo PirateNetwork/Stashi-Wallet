@@ -153,16 +153,12 @@ class _ImportSpendingKeyScreenState
       final invalidKey =
           message.contains('Invalid Sapling spending key') ||
           message.contains('Invalid Ironwood spending key');
-      final unknownTip = message.contains('chain tip is unknown');
       final futureBirthday = message.contains(
         "exceeds the wallet's known chain tip",
       );
       setState(() {
         _error = _imported != null
             ? 'Your key is imported. Scanning could not start. Retry scanning without importing again.'
-                  .tr
-            : unknownTip
-            ? 'Sync this wallet before importing so the birthday height can be checked.'
                   .tr
             : futureBirthday
             ? 'The birthday height is ahead of the last synced block. Use a height before the first payment, or sync the wallet and try again.'
@@ -229,14 +225,6 @@ class _ImportSpendingKeyScreenState
                   const SizedBox(height: PSpacing.sm),
                   Text(
                     'Import a Sapling or Ironwood spending key. The format is detected automatically.'
-                        .tr,
-                    style: PTypography.bodyMedium(
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                  const SizedBox(height: PSpacing.sm),
-                  Text(
-                    'Moving from Komodo or Gleec? Export the spending key for the account that received your funds. Legacy seed phrases can produce a different address here.'
                         .tr,
                     style: PTypography.bodyMedium(
                       color: AppColors.textSecondary,
@@ -312,27 +300,6 @@ class _ImportSpendingKeyScreenState
                         ),
                       ],
                     ),
-                  ),
-                  const SizedBox(height: PSpacing.md),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(
-                        Icons.manage_search,
-                        size: 20,
-                        color: AppColors.textSecondary,
-                      ),
-                      const SizedBox(width: PSpacing.xs),
-                      Expanded(
-                        child: Text(
-                          'After import, compare the receiving address in this key’s details with your old wallet. Scanning starts from the birthday height; your full balance may not appear until it finishes.'
-                              .tr,
-                          style: PTypography.bodySmall(
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                      ),
-                    ],
                   ),
                   if (_error != null) ...[
                     const SizedBox(height: PSpacing.md),

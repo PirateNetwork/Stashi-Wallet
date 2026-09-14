@@ -21,7 +21,7 @@
   "24 words": "24 woorden",
   "5 days ago": "5 dagen geleden",
   "A private note only the receiver can read.": "Een privénotitie die alleen de ontvanger kan lezen.",
-  "A rescan will start automatically from the birthday height.": "Opnieuw scannen begint automatisch bij de startblokhoogte.",
+  "The birthday height is ahead of the last synced block. Use a height before the first payment, or sync the wallet and try again.": "De startblokhoogte ligt hoger dan het laatst gesynchroniseerde blok. Gebruik een hoogte van vóór de eerste betaling, of synchroniseer de wallet en probeer het opnieuw.",
   "A viewing key can view incoming activity but cannot spend. Keep your full seed backed up separately.": "Met een inzagesleutel kun je inkomende transacties bekijken, maar geen tegoeden uitgeven. Bewaar apart een volledige back-up van je herstelzin.",
   "ARRR amount must be positive.": "ARRR-bedrag moet positief zijn.",
   "About": "Over",

@@ -140,7 +140,7 @@ void main() {
   });
 
   for (final entry in {
-    'Wallet chain tip is unknown': 'Sync this wallet before importing',
+    'Wallet chain tip is unknown': 'Could not import the key.',
     "Birthday height exceeds the wallet's known chain tip":
         'The birthday height is ahead',
   }.entries) {

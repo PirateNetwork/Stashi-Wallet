@@ -21,7 +21,7 @@
   "24 words": "24 слова",
   "5 days ago": "5 дней назад",
   "A private note only the receiver can read.": "Личная заметка, которую может прочитать только получатель.",
-  "A rescan will start automatically from the birthday height.": "Повторное сканирование начнется автоматически с начальной высоты блока.",
+  "The birthday height is ahead of the last synced block. Use a height before the first payment, or sync the wallet and try again.": "Начальная высота блока выше последнего синхронизированного блока. Укажите высоту до первого платежа или синхронизируйте кошелёк и повторите попытку.",
   "A viewing key can view incoming activity but cannot spend. Keep your full seed backed up separately.": "Ключ просмотра позволяет видеть входящие операции, но не позволяет тратить средства. Храните отдельную полную резервную копию сид-фразы.",
   "ARRR amount must be positive.": "Сумма ARRR должна быть положительной.",
   "About": "О нас",

@@ -21,7 +21,7 @@
   "24 words": "24 Wörter",
   "5 days ago": "Vor 5 Tagen",
   "A private note only the receiver can read.": "Eine private Notiz, die nur der Empfänger lesen kann.",
-  "A rescan will start automatically from the birthday height.": "Der erneute Scan beginnt automatisch bei der Startblockhöhe.",
+  "The birthday height is ahead of the last synced block. Use a height before the first payment, or sync the wallet and try again.": "Die Starthöhe liegt über dem zuletzt synchronisierten Block. Verwende eine Höhe vor der ersten Zahlung oder synchronisiere die Wallet und versuche es erneut.",
   "A viewing key can view incoming activity but cannot spend. Keep your full seed backed up separately.": "Mit einem Ansichtsschlüssel können eingehende Transaktionen angezeigt, aber keine Guthaben ausgegeben werden. Sichere deine vollständige Wiederherstellungsphrase separat.",
   "ARRR amount must be positive.": "Der Betrag ARRR muss positiv sein.",
   "About": "Über",

@@ -21,7 +21,7 @@
   "24 words": "24 kata",
   "5 days ago": "5 hari lalu",
   "A private note only the receiver can read.": "Catatan pribadi yang hanya bisa dibaca oleh penerima.",
-  "A rescan will start automatically from the birthday height.": "Pemindaian ulang akan dimulai secara otomatis dari tinggi blok pembuatan (birthday height).",
+  "The birthday height is ahead of the last synced block. Use a height before the first payment, or sync the wallet and try again.": "Ketinggian blok awal melebihi blok terakhir yang disinkronkan. Gunakan ketinggian sebelum pembayaran pertama, atau sinkronkan dompet lalu coba lagi.",
   "A viewing key can view incoming activity but cannot spend. Keep your full seed backed up separately.": "Viewing key dapat melihat aktivitas masuk tetapi tidak dapat membelanjakan dana. Simpan cadangan frasa pemulihan (seed) Anda secara terpisah.",
   "ARRR amount must be positive.": "Jumlah ARRR harus bernilai positif.",
   "About": "Tentang",

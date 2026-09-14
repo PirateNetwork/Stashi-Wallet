@@ -21,7 +21,7 @@
   "24 words": "24 个字",
   "5 days ago": "5 天前",
   "A private note only the receiver can read.": "只有接收者可以阅读的私人注释。",
-  "A rescan will start automatically from the birthday height.": "重新扫描将从起始区块高度自动开始。",
+  "The birthday height is ahead of the last synced block. Use a height before the first payment, or sync the wallet and try again.": "起始区块高度高于最后同步的区块。请使用首次收款之前的高度，或同步钱包后重试。",
   "A viewing key can view incoming activity but cannot spend. Keep your full seed backed up separately.": "查看密钥可以查看入账活动，但不能动用资金。请另行完整备份您的助记词。",
   "ARRR amount must be positive.": "ARRR 金额必须为正数。",
   "About": "关于",

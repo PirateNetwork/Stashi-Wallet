@@ -21,7 +21,7 @@
   "24 words": "24 كلمة",
   "5 days ago": "منذ 5 أيام",
   "A private note only the receiver can read.": "ملاحظة خاصة لا يستطيع قراءتها إلا المتلقي.",
-  "A rescan will start automatically from the birthday height.": "ستبدأ عملية إعادة الفحص تلقائيًا من ارتفاع كتلة البداية.",
+  "The birthday height is ahead of the last synced block. Use a height before the first payment, or sync the wallet and try again.": "ارتفاع كتلة البداية أعلى من آخر كتلة تمت مزامنتها. استخدم ارتفاعًا يسبق أول دفعة، أو زامن المحفظة وحاول مجددًا.",
   "A viewing key can view incoming activity but cannot spend. Keep your full seed backed up separately.": "يتيح مفتاح العرض رؤية العمليات الواردة، لكنه لا يتيح إنفاق الأموال. احتفظ بنسخة احتياطية كاملة ومنفصلة من عبارة الاسترداد.",
   "ARRR amount must be positive.": "يجب أن يكون مبلغ ARRR موجبًا.",
   "About": "نبذة",

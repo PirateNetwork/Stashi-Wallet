@@ -21,7 +21,7 @@
   "24 words": "24 kelime",
   "5 days ago": "5 gün önce",
   "A private note only the receiver can read.": "Yalnızca alıcının okuyabileceği özel bir not.",
-  "A rescan will start automatically from the birthday height.": "Yeniden tarama otomatik olarak başlangıç blok yüksekliğinden başlayacak.",
+  "The birthday height is ahead of the last synced block. Use a height before the first payment, or sync the wallet and try again.": "Başlangıç blok yüksekliği, son senkronize edilen bloktan ileride. İlk ödemeden önceki bir yüksekliği kullanın veya cüzdanı senkronize edip tekrar deneyin.",
   "A viewing key can view incoming activity but cannot spend. Keep your full seed backed up separately.": "Görüntüleme anahtarı gelen işlemleri görebilir, ancak para harcayamaz. Kurtarma ifadenizin tam bir yedeğini ayrıca saklayın.",
   "ARRR amount must be positive.": "ARRR miktarı pozitif olmalıdır.",
   "About": "Hakkında",

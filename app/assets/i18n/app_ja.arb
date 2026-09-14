@@ -21,7 +21,7 @@
   "24 words": "24単語",
   "5 days ago": "5日前",
   "A private note only the receiver can read.": "受信者だけが読むことができるプライベートなメモ。",
-  "A rescan will start automatically from the birthday height.": "再スキャンは開始ブロック高から自動的に始まります。",
+  "The birthday height is ahead of the last synced block. Use a height before the first payment, or sync the wallet and try again.": "開始ブロック高が最後に同期したブロックより先になっています。最初の入金より前のブロック高を指定するか、ウォレットを同期してから再試行してください。",
   "A viewing key can view incoming activity but cannot spend. Keep your full seed backed up separately.": "閲覧キーでは受信トランザクションを確認できますが、資金を使用することはできません。完全なリカバリーフレーズは別途バックアップしてください。",
   "ARRR amount must be positive.": "ARRR の量は正の値である必要があります。",
   "About": "について",

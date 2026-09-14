@@ -21,7 +21,7 @@
   "24 words": "24 शब्द",
   "5 days ago": "5 दिन पहले",
   "A private note only the receiver can read.": "एक निजी नोट केवल प्राप्तकर्ता ही पढ़ सकता है।",
-  "A rescan will start automatically from the birthday height.": "रीस्कैन शुरुआती ब्लॉक ऊंचाई से अपने आप शुरू होगा।",
+  "The birthday height is ahead of the last synced block. Use a height before the first payment, or sync the wallet and try again.": "शुरुआती ब्लॉक ऊँचाई आखिरी सिंक किए गए ब्लॉक से आगे है। पहले भुगतान से पहले की ऊँचाई इस्तेमाल करें, या वॉलेट को सिंक करके फिर कोशिश करें।",
   "A viewing key can view incoming activity but cannot spend. Keep your full seed backed up separately.": "देखने की कुंजी से आने वाले लेन-देन देखे जा सकते हैं, लेकिन धन खर्च नहीं किया जा सकता। अपने रिकवरी वाक्यांश का पूरा बैकअप अलग से रखें।",
   "ARRR amount must be positive.": "ARRR राशि सकारात्मक होनी चाहिए।",
   "About": "के बारे में",

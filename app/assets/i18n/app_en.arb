@@ -12,7 +12,7 @@
   "5 days ago": "5 days ago",
   "A new Stashi Wallet is ready": "A new Stashi Wallet is ready",
   "A private note only the receiver can read.": "A private note only the receiver can read.",
-  "A rescan will start automatically from the birthday height.": "A rescan will start automatically from the birthday height.",
+  "The birthday height is ahead of the last synced block. Use a height before the first payment, or sync the wallet and try again.": "The birthday height is ahead of the last synced block. Use a height before the first payment, or sync the wallet and try again.",
   "A viewing key can view incoming activity but cannot spend. Keep your full seed backed up separately.": "A viewing key can view incoming activity but cannot spend. Keep your full seed backed up separately.",
   "ARRR amount must be positive.": "ARRR amount must be positive.",
   "ARRR prices and fiat conversion use CoinGecko first, with CoinPaprika and CoinMarketCap as backups.": "ARRR prices and fiat conversion use CoinGecko first, with CoinPaprika and CoinMarketCap as backups.",
