@@ -534,7 +534,7 @@
   "Import viewing keys": "Görüntüleme Anahtarlarını İçe Aktar",
   "Import a spending key to manage legacy addresses.": "Eski adresleri yönetmek için bir harcama anahtarını içe aktarın.",
   "Import existing wallet": "Mevcut cüzdanı içe aktar",
-  "Import spending key": "Harcama anahtarını içe aktar",
+  "Import private key": "Özel anahtarı içe aktar",
   "Import view only wallet": "Salt görüntülenebilir cüzdanı içe aktar",
   "Import viewing key": "Görüntüleme anahtarını içe aktar",
   "Imported keys can create new addresses, but not new accounts.": "İçe aktarılan anahtarlarla yeni adresler oluşturulabilir, ancak yeni hesaplar oluşturulamaz.",

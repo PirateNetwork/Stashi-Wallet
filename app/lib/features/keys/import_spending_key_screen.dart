@@ -184,7 +184,7 @@ class _ImportSpendingKeyScreenState
       child: PScaffold(
         bodyMaxWidth: 760,
         appBar: PAppBar(
-          title: 'Import spending key'.tr,
+          title: 'Import private key'.tr,
           subtitle: 'Add an existing key to this wallet'.tr,
           showBackButton: true,
         ),

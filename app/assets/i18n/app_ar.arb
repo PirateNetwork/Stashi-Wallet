@@ -534,7 +534,7 @@
   "Import viewing keys": "استيراد مفاتيح العرض",
   "Import a spending key to manage legacy addresses.": "قم باستيراد مفتاح الإنفاق لإدارة العناوين القديمة.",
   "Import existing wallet": "استيراد المحفظة الموجودة",
-  "Import spending key": "استيراد مفتاح الإنفاق",
+  "Import private key": "استيراد مفتاح خاص",
   "Import view only wallet": "استيراد محفظة للعرض فقط",
   "Import viewing key": "استيراد مفتاح العرض",
   "Imported keys can create new addresses, but not new accounts.": "يمكن للمفاتيح المستوردة إنشاء عناوين جديدة، لكن لا يمكنها إنشاء حسابات جديدة.",

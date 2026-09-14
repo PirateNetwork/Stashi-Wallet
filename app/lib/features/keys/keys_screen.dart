@@ -892,7 +892,7 @@ class _KeyManagementScreenState extends ConsumerState<KeyManagementScreen> {
           ),
           SizedBox(height: PSpacing.md),
           PTextButton(
-            label: 'Import spending key'.tr,
+            label: 'Import private key'.tr,
             leadingIcon: Icons.add,
             onPressed: () => context.push('/settings/keys/import'),
           ),

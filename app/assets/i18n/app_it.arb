@@ -534,7 +534,7 @@
   "Import viewing keys": "Importa chiavi di visualizzazione",
   "Import a spending key to manage legacy addresses.": "Importa una chiave di spesa per gestire gli indirizzi legacy.",
   "Import existing wallet": "Importa il portafoglio esistente",
-  "Import spending key": "chiave di spesa per importazione",
+  "Import private key": "Importa chiave privata",
   "Import view only wallet": "Importa portafoglio di sola lettura",
   "Import viewing key": "Importa chiave di visualizzazione",
   "Imported keys can create new addresses, but not new accounts.": "Le chiavi importate possono creare nuovi indirizzi, ma non nuovi account.",

@@ -534,7 +534,7 @@
   "Import viewing keys": "दृश्य कुंजियाँ आयात करें",
   "Import a spending key to manage legacy addresses.": "विरासती पतों को प्रबंधित करने के लिए खर्च करने की कुंजी आयात करें।",
   "Import existing wallet": "मौजूदा वॉलेट आयात करें",
-  "Import spending key": "आयात खर्च करने की कुंजी",
+  "Import private key": "निजी कुंजी आयात करें",
   "Import view only wallet": "केवल देखने वाला वॉलेट आयात करें",
   "Import viewing key": "देखने की कुंजी आयात करें",
   "Imported keys can create new addresses, but not new accounts.": "आयात की गई कुंजियों से नए पते बनाए जा सकते हैं, लेकिन नए खाते नहीं।",

@@ -534,7 +534,7 @@
   "Import viewing keys": "Ansichtsschlüssel importieren",
   "Import a spending key to manage legacy addresses.": "Importieren Sie einen Ausgabeschlüssel, um alte Adressen zu verwalten.",
   "Import existing wallet": "Vorhandenes Wallet importieren",
-  "Import spending key": "Ausgabeschlüssel importieren",
+  "Import private key": "Privaten Schlüssel importieren",
   "Import view only wallet": "Nur-Lese-Wallet importieren",
   "Import viewing key": "Ansichtsschlüssel importieren",
   "Imported keys can create new addresses, but not new accounts.": "Importierte Schlüssel können neue Adressen, aber keine neuen Konten erstellen.",

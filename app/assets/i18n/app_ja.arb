@@ -534,7 +534,7 @@
   "Import viewing keys": "閲覧キーのインポート",
   "Import a spending key to manage legacy addresses.": "従来のアドレスを管理するために支出キーをインポートします。",
   "Import existing wallet": "既存のウォレットをインポートする",
-  "Import spending key": "輸入支出キー",
+  "Import private key": "秘密鍵をインポート",
   "Import view only wallet": "閲覧専用ウォレットをインポート",
   "Import viewing key": "インポート閲覧キー",
   "Imported keys can create new addresses, but not new accounts.": "インポートしたキーから新しいアドレスは作成できますが、新しいアカウントは作成できません。",

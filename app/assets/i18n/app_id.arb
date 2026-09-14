@@ -534,7 +534,7 @@
   "Import viewing keys": "Impor Viewing Keys",
   "Import a spending key to manage legacy addresses.": "Impor spending key untuk mengelola alamat lama (legacy).",
   "Import existing wallet": "Impor dompet yang ada",
-  "Import spending key": "Impor spending key",
+  "Import private key": "Impor kunci privat",
   "Import view only wallet": "Impor dompet lihat-saja",
   "Import viewing key": "Impor viewing key",
   "Imported keys can create new addresses, but not new accounts.": "Kunci yang diimpor dapat membuat alamat baru, tetapi bukan akun baru.",
