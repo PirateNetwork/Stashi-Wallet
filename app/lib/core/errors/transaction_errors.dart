@@ -165,9 +165,8 @@ class TransactionErrorMapper {
         type: TransactionErrorType.insufficientFunds,
         message: 'Insufficient funds'.tr,
         technicalDetails: error.toString(),
-        suggestion:
-            "You don't have enough ARRR to complete this transaction including fees."
-                .tr,
+        suggestion: "You don't have enough ARRR to complete this transaction including fees."
+            .tr,
       );
     }
 
@@ -230,18 +229,45 @@ class TransactionErrorMapper {
       );
     }
 
-    // Network/broadcast errors
-    if (errorStr.contains('network') ||
-        errorStr.contains('connection') ||
-        errorStr.contains('timeout')) {
+    // Interpret node rejection reasons before generic transport words.
+    // "Duplicate" alone does not mean this transaction was accepted: shielded
+    // nullifier conflicts refer to funds already used by another transaction.
+    if (errorStr.contains('conflict') ||
+        errorStr.contains('double spend') ||
+        (errorStr.contains('duplicate-nullifier') &&
+            !errorStr.contains('nullifiers-duplicate'))) {
       return TransactionError(
-        type: TransactionErrorType.networkError,
-        message: 'Network connection failed'.tr,
-        suggestion: 'Please check your internet connection and try again.'.tr,
+        type: TransactionErrorType.txConflict,
+        message: 'Transaction conflicts with pending transaction'.tr,
+        technicalDetails: error.toString(),
+        suggestion: 'Wait for your previous transaction to confirm before sending again.'
+            .tr,
       );
     }
 
-    if (errorStr.contains('rejected')) {
+    if (errorStr.contains('expired') || errorStr.contains('expiry')) {
+      return TransactionError(
+        type: TransactionErrorType.txExpired,
+        message: 'Transaction expired'.tr,
+        suggestion: 'Please rebuild and send the transaction again.'.tr,
+      );
+    }
+
+    if (errorStr.contains('already in mempool') ||
+        errorStr.contains('txn-already-in-mempool') ||
+        errorStr.contains('transaction already in block chain')) {
+      return TransactionError(
+        type: TransactionErrorType.txAlreadyInMempool,
+        message: 'Transaction already sent'.tr,
+        suggestion:
+            'This transaction was already broadcast. Check your history.'.tr,
+      );
+    }
+
+    if (errorStr.contains('rejected') ||
+        errorStr.contains('bad-txns') ||
+        errorStr.contains('nullifiers-duplicate') ||
+        errorStr.contains('duplicate proof')) {
       return TransactionError(
         type: TransactionErrorType.txRejected,
         message: 'Transaction rejected by network'.tr,
@@ -251,31 +277,13 @@ class TransactionErrorMapper {
       );
     }
 
-    if (errorStr.contains('already in mempool') ||
-        errorStr.contains('duplicate')) {
+    if (errorStr.contains('network') ||
+        errorStr.contains('connection') ||
+        errorStr.contains('timeout')) {
       return TransactionError(
-        type: TransactionErrorType.txAlreadyInMempool,
-        message: 'Transaction already sent'.tr,
-        suggestion:
-            'This transaction was already broadcast. Check your history.'.tr,
-      );
-    }
-
-    if (errorStr.contains('conflict') || errorStr.contains('double spend')) {
-      return TransactionError(
-        type: TransactionErrorType.txConflict,
-        message: 'Transaction conflicts with pending transaction'.tr,
-        suggestion:
-            'Wait for your previous transaction to confirm before sending again.'
-                .tr,
-      );
-    }
-
-    if (errorStr.contains('expired') || errorStr.contains('expiry')) {
-      return TransactionError(
-        type: TransactionErrorType.txExpired,
-        message: 'Transaction expired'.tr,
-        suggestion: 'Please rebuild and send the transaction again.'.tr,
+        type: TransactionErrorType.networkError,
+        message: 'Network connection failed'.tr,
+        suggestion: 'Please check your internet connection and try again.'.tr,
       );
     }
 
@@ -292,9 +300,8 @@ class TransactionErrorMapper {
       return TransactionError(
         type: TransactionErrorType.watchOnlyCannotSpend,
         message: 'Cannot send from view only wallet'.tr,
-        suggestion:
-            'This wallet can only view incoming transactions. Use the full wallet to send.'
-                .tr,
+        suggestion: 'This wallet can only view incoming transactions. Use the full wallet to send.'
+            .tr,
       );
     }
 
