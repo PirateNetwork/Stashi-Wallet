@@ -2,9 +2,9 @@ param(
     [string]$TorBundleVersion = $(if ($env:TOR_EXPERT_BUNDLE_VERSION) { $env:TOR_EXPERT_BUNDLE_VERSION } else { '15.0.21' }),
     [string]$TorBundleUrl = $env:TOR_EXPERT_BUNDLE_WINDOWS_URL,
     [string]$TorBundleSha256 = $(if ($env:TOR_EXPERT_BUNDLE_WINDOWS_SHA256) { $env:TOR_EXPERT_BUNDLE_WINDOWS_SHA256 } else { 'f22b8b17cb18c9fa775dfcf68acf6a2fe788336535fe94645204ca85158aa490' }),
-    [string]$I2pdVersion = $(if ($env:I2PD_VERSION) { $env:I2PD_VERSION } else { '2.59.0' }),
+    [string]$I2pdVersion = $(if ($env:I2PD_VERSION) { $env:I2PD_VERSION } else { '2.61.0' }),
     [string]$I2pdBaseUrl = $env:I2PD_BASE_URL,
-    [string]$I2pdSha512 = $(if ($env:I2PD_WINDOWS_SHA512) { $env:I2PD_WINDOWS_SHA512 } else { 'c5cae4b2b2166935f1bed9f302f5647e3c201c784a9cf7c4a605ca47906b57358ffe3ce6b45762d4857ce060299e17e1a3ea70f8f1e3f72472b87ea7bb96d0b5' }),
+    [string]$I2pdSha512 = $(if ($env:I2PD_WINDOWS_SHA512) { $env:I2PD_WINDOWS_SHA512 } else { '874d002bb7e35d7a6ad78e08e151ed845a5c802eefa2e860e57e01fe652d8077489bc69e09ff9587698ca866abd31e90261fca2604798b79423ba990aebc2590' }),
     [ValidateSet('i2p', 'bridges')][string[]]$Components = @('i2p', 'bridges')
 )
 $ErrorActionPreference = 'Stop'
