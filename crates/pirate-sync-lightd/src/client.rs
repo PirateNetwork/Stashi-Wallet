@@ -3556,7 +3556,9 @@ impl LightClient {
             let response = client.send_transaction(request).await?;
             let send_response = response.into_inner();
 
-            if send_response.error_code != 0 {
+            if send_response.error_code != 0
+                && !broadcast_reports_known_transaction(&send_response.error_message)
+            {
                 let error_message = send_response.error_message.to_ascii_lowercase();
                 let broadcast_msg = format!(
                     "Broadcast failed: {} (code {})",
@@ -4304,6 +4306,21 @@ fn compute_txid(raw_tx: &[u8]) -> String {
     hex::encode(txid_bytes)
 }
 
+/// A retry of identical bytes can reach a node that already accepted them.
+/// Match only transaction-identity acknowledgements, never a generic duplicate
+/// rejection: duplicate nullifiers or proofs can belong to a different tx.
+fn broadcast_reports_known_transaction(message: &str) -> bool {
+    let message = message.trim().to_ascii_lowercase();
+    let reason = match message.split_once(':') {
+        Some((code, reason)) if code.trim().parse::<i64>().is_ok() => reason.trim(),
+        _ => message.as_str(),
+    };
+    matches!(
+        reason,
+        "already in mempool" | "txn-already-in-mempool" | "transaction already in block chain"
+    )
+}
+
 fn validate_received_subtree_root(
     root: &SubtreeRoot,
     expected_index: u64,
@@ -4366,6 +4383,31 @@ pub struct TransactionStatus {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn broadcast_acknowledges_only_the_same_known_transaction() {
+        for message in [
+            "already in mempool",
+            "18: already in mempool",
+            "txn-already-in-mempool",
+            "transaction already in block chain",
+        ] {
+            assert!(broadcast_reports_known_transaction(message), "{message}");
+        }
+        for message in [
+            "bad-txns-duplicate-nullifier-requirements-not-met",
+            "bad-txns-sapling-duplicate-nullifier",
+            "bad-spend-description-nullifiers-duplicate",
+            "bad-txns-inputs-duplicate",
+            "duplicate proof",
+            "mempool conflict",
+            "tx-expired",
+            "not already in mempool",
+            "",
+        ] {
+            assert!(!broadcast_reports_known_transaction(message), "{message}");
+        }
+    }
 
     static TRANSPORT_STATE_TEST_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
