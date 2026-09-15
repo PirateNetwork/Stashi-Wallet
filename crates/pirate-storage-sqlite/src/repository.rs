@@ -8293,6 +8293,60 @@ mod tests {
     }
 
     #[test]
+    fn expired_outgoing_intent_does_not_release_notes_spent_by_another_transaction() {
+        let db = test_db();
+        let repo = Repository::new(&db);
+        let account_id = repo
+            .insert_account(&Account {
+                id: None,
+                name: "Reconciled conflicting spend".to_string(),
+                created_at: 1,
+            })
+            .unwrap();
+        let pending_txid = [0x55; 32];
+        let confirmed_txid = [0x77; 32];
+        insert_received_note(
+            &repo,
+            account_id,
+            vec![0x11; 32],
+            NoteType::Sapling,
+            0,
+            500_000_000,
+            100,
+            None,
+            None,
+            false,
+            0x31,
+        );
+        repo.mark_note_spent_by_nullifier_with_txid(account_id, &[0x31; 32], &pending_txid)
+            .unwrap();
+        repo.upsert_outgoing_transaction_intent(
+            account_id,
+            &txid_hex_from_bytes(&pending_txid),
+            250_000_000,
+            10_000,
+            2_000,
+            140,
+        )
+        .unwrap();
+        // Sync's fallback must replace the provisional spending txid with the
+        // actual chain spend even though the note was already locally locked.
+        repo.apply_spend_updates_with_txmeta(
+            account_id,
+            &[],
+            &[([0x31; 32], confirmed_txid)],
+            &[(txid_hex_from_bytes(&confirmed_txid), 130, 2_100, 10_000)],
+        )
+        .unwrap();
+        assert_eq!(
+            repo.release_expired_outgoing_notes(account_id, 141)
+                .unwrap(),
+            0
+        );
+        assert!(repo.get_unspent_notes(account_id).unwrap().is_empty());
+    }
+
+    #[test]
     fn legacy_outgoing_intent_waits_one_full_lifetime_after_upgrade() {
         let db = test_db();
         let repo = Repository::new(&db);
