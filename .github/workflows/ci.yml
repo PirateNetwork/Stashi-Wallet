@@ -505,6 +505,9 @@ jobs:
       - name: Setup Android SDK
         if: matrix.platform == 'Android'
         uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
+        with:
+          # Command-line tools are installed by the action; legacy 'tools' is retired.
+          packages: platform-tools
 
       - name: Setup Gradle
         if: matrix.platform == 'Android'
@@ -1012,6 +1015,9 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
+        with:
+          # Command-line tools are installed by the action; legacy 'tools' is retired.
+          packages: platform-tools
 
       - name: Install Android SDK packages
         run: |
@@ -1132,6 +1138,9 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
+        with:
+          # Command-line tools are installed by the action; legacy 'tools' is retired.
+          packages: platform-tools
 
       - name: Install Android SDK packages
         run: |
@@ -1297,6 +1306,9 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
+        with:
+          # Command-line tools are installed by the action; legacy 'tools' is retired.
+          packages: platform-tools
 
       - name: Setup wallet Gradle wrapper caching
         uses: gradle/actions/setup-gradle@9c971963bec38e04b3d30dcc455b5382be2fdbfb
@@ -1991,6 +2003,9 @@ jobs:
       - name: Setup Android SDK
         if: steps.signing.outputs.enabled == 'true'
         uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699
+        with:
+          # Command-line tools are installed by the action; legacy 'tools' is retired.
+          packages: platform-tools
 
       - name: Install Android Build Tools
         if: steps.signing.outputs.enabled == 'true'
