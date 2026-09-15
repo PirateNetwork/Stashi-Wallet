@@ -101,7 +101,7 @@ Toolchain
 
 The project is built and tested in CI with these pinned versions:
 
-- Rust `1.90.0`
+- Rust `1.91.1`
 - Flutter `3.47.2`
 - Dart `3.13.2` (bundled with Flutter)
 - `flutter_rust_bridge_codegen` `2.11.1`

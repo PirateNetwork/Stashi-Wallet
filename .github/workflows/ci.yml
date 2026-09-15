@@ -9,7 +9,7 @@ on:
     branches: [main, develop]
 
 env:
-  RUST_VERSION: "1.90.0"
+  RUST_VERSION: "1.91.1"
   FLUTTER_VERSION: "3.47.2"
   DART_VERSION: "3.13.2"
   FRB_CODEGEN_VERSION: "2.13.0"

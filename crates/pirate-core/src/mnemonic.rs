@@ -6,10 +6,11 @@ use rand::RngCore;
 use serde::{Deserialize, Serialize};
 
 /// Supported BIP39 languages for wallet seed phrases.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MnemonicLanguage {
     /// English word list.
+    #[default]
     English,
     /// Chinese simplified word list.
     ChineseSimplified,
@@ -25,12 +26,6 @@ pub enum MnemonicLanguage {
     Korean,
     /// Spanish word list.
     Spanish,
-}
-
-impl Default for MnemonicLanguage {
-    fn default() -> Self {
-        Self::English
-    }
 }
 
 impl MnemonicLanguage {
