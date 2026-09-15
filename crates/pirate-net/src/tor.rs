@@ -442,7 +442,7 @@ fn find_transport_binary(name: &str) -> Option<PathBuf> {
 
 /// Tor client wrapper using Arti
 pub struct TorClient {
-    client: Arc<Mutex<Option<ArtiClient<PreferredRuntime>>>>,
+    client: Arc<Mutex<Option<Arc<ArtiClient<PreferredRuntime>>>>>,
     config: Arc<Mutex<TorConfig>>,
     status: Arc<Mutex<TorStatus>>,
     bootstrap_lock: Arc<Mutex<()>>,
@@ -734,7 +734,7 @@ impl TorClient {
         config: TorConfig,
         use_bridges: bool,
         generation: u64,
-    ) -> Result<ArtiClient<PreferredRuntime>> {
+    ) -> Result<Arc<ArtiClient<PreferredRuntime>>> {
         if self.bootstrap_generation.load(Ordering::SeqCst) != generation {
             return Err(Error::Tor("Tor bootstrap superseded".to_string()));
         }
@@ -759,7 +759,7 @@ impl TorClient {
 
         std::thread::spawn(move || {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                (|| -> Result<ArtiClient<PreferredRuntime>> {
+                (|| -> Result<Arc<ArtiClient<PreferredRuntime>>> {
                     let runtime = PreferredRuntime::create()
                         .map_err(|e| Error::Tor(format!("Tor runtime init failed: {}", e)))?;
                     let runtime_for_client = runtime.clone();

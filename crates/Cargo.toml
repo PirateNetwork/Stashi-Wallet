@@ -93,9 +93,10 @@ tonic-build = "0.12"
 hyper = { version = "1.5", features = ["full"] }
 tower = "0.5"
 
-# Tor/Arti for privacy
-arti-client = "0.39"
-tor-rtcompat = "0.39"
+# Tor/Arti for privacy. 0.45+ requires crypto-common >=0.2.2, which conflicts
+# with the pinned librustzcash prerelease requirement (=0.2.0-rc.1).
+arti-client = "0.44"
+tor-rtcompat = "0.44"
 
 # Storage
 rusqlite = { version = "0.38", features = ["bundled-sqlcipher-vendored-openssl", "modern_sqlite"] }
