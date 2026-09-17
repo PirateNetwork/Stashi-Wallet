@@ -38,7 +38,7 @@ flutter_build_linux_release() {
     local status=1
     for attempt in 1 2 3; do
         if OVERRIDE_DEFI_API_DOWNLOAD=false flutter build linux --release \
-            --dart-define="PIRATE_RELEASE_TAG=${GITHUB_REF_NAME:-}" --dart-define="STASHI_ALLOW_SCREEN_CAPTURE=${STASHI_ALLOW_SCREEN_CAPTURE:-false}"; then
+            --dart-define="PIRATE_RELEASE_TAG=${GITHUB_REF_NAME:-}"; then
             return 0
         else
             status=$?

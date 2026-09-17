@@ -9,8 +9,6 @@ on:
     branches: [main, develop]
 
 env:
-  # Temporary UI review artifacts; tagged releases retain screenshot protection.
-  STASHI_ALLOW_SCREEN_CAPTURE: ${{ !startsWith(github.ref, 'refs/tags/') }}
   RUST_VERSION: "1.91.1"
   FLUTTER_VERSION: "3.47.2"
   DART_VERSION: "3.13.2"
@@ -606,7 +604,7 @@ jobs:
           cd app
           status=1
           for attempt in 1 2 3; do
-            if flutter build apk --release --split-per-abi --target-platform=android-arm64,android-arm --dart-define=STASHI_ALLOW_SCREEN_CAPTURE="$STASHI_ALLOW_SCREEN_CAPTURE"; then
+            if flutter build apk --release --split-per-abi --target-platform=android-arm64,android-arm; then
               exit 0
             else
               status=$?
@@ -625,7 +623,7 @@ jobs:
         if: matrix.platform == 'iOS'
         run: |
           cd app
-          flutter build ios --release --no-codesign --config-only --dart-define=STASHI_ALLOW_SCREEN_CAPTURE="$STASHI_ALLOW_SCREEN_CAPTURE"
+          flutter build ios --release --no-codesign --config-only
           status=1
           for attempt in 1 2 3; do
             if xcodebuild \
@@ -658,7 +656,7 @@ jobs:
           cd app
           status=1
           for attempt in 1 2 3; do
-            if flutter build linux --release --dart-define=STASHI_ALLOW_SCREEN_CAPTURE="$STASHI_ALLOW_SCREEN_CAPTURE"; then
+            if flutter build linux --release; then
               exit 0
             else
               status=$?
@@ -683,7 +681,7 @@ jobs:
           cd app
           status=1
           for attempt in 1 2 3; do
-            if flutter build macos --release --dart-define=STASHI_ALLOW_SCREEN_CAPTURE="$STASHI_ALLOW_SCREEN_CAPTURE"; then
+            if flutter build macos --release; then
               exit 0
             else
               status=$?
@@ -702,7 +700,7 @@ jobs:
           cd app
           status=1
           for attempt in 1 2 3; do
-            if flutter build windows --release --dart-define=STASHI_ALLOW_SCREEN_CAPTURE="$STASHI_ALLOW_SCREEN_CAPTURE"; then
+            if flutter build windows --release; then
               exit 0
             else
               status=$?

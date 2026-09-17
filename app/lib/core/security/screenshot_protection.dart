@@ -3,19 +3,11 @@
 // Prevents screenshots when viewing sensitive data like seed phrases
 
 import 'dart:io';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 /// Screenshot protection manager
 class ScreenshotProtection {
-  // Opt-in for UI review artifacts; ordinary builds retain protection.
-  // This must be fixed at build time, not exposed as a runtime preference.
-  // ignore: do_not_use_environment
-  static const bool _allowScreenCapture = bool.fromEnvironment(
-    'STASHI_ALLOW_SCREEN_CAPTURE',
-  );
-
   static const MethodChannel _channel = MethodChannel(
     'com.pirate.wallet/security',
   );
@@ -24,7 +16,7 @@ class ScreenshotProtection {
 
   /// Enable screenshot protection
   static Future<void> enable() async {
-    if (_allowScreenCapture || _isProtected) return;
+    if (_isProtected) return;
 
     try {
       if (Platform.isAndroid ||
