@@ -41,6 +41,15 @@ export CARGO_PROFILE_RELEASE_LTO=false
 export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16
 export CARGO_PROFILE_RELEASE_STRIP=debuginfo
 rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
+# Rust archives can contain LLVM bitcode newer than Xcode's LLVM reader.
+# Use the tools from the same pinned Rust toolchain for symbol inspection.
+rustup component add llvm-tools-preview
+RUST_HOST="$(rustc -vV | sed -n 's/^host: //p')"
+RUST_LLVM_NM="$(rustc --print sysroot)/lib/rustlib/$RUST_HOST/bin/llvm-nm"
+if [[ ! -x "$RUST_LLVM_NM" ]]; then
+  echo "Missing Rust toolchain symbol reader: $RUST_LLVM_NM" >&2
+  exit 1
+fi
 
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
@@ -66,7 +75,7 @@ strip_static_archive() {
     exit 1
   fi
 
-  xcrun nm -gjU "$archive" > "$symbols_file"
+  "$RUST_LLVM_NM" --extern-only --defined-only --just-symbol-name "$archive" > "$symbols_file"
   for symbol in \
     _pirate_wallet_service_invoke_json \
     _pirate_wallet_service_free_string; do

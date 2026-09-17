@@ -50,6 +50,22 @@ class IosPackagingPolicyTest(unittest.TestCase):
             "debuginfo",
         )
 
+    def test_symbol_reader_matches_the_rust_toolchain(self) -> None:
+        self.assertIn("rustup component add llvm-tools-preview", self.ios_build)
+        self.assertIn(
+            'RUST_LLVM_NM="$(rustc --print sysroot)/lib/rustlib/$RUST_HOST/bin/llvm-nm"',
+            self.ios_build,
+        )
+        self.assertIn(
+            '"$RUST_LLVM_NM" --extern-only --defined-only --just-symbol-name "$archive"',
+            self.ios_build,
+        )
+        self.assertNotRegex(self.ios_build, r"\bxcrun nm\b")
+        # Both C entry points must remain mandatory after stripping.
+        self.assertIn("_pirate_wallet_service_invoke_json", self.ios_build)
+        self.assertIn("_pirate_wallet_service_free_string", self.ios_build)
+        self.assertIn('if ! grep -Fxq "$symbol" "$symbols_file"; then', self.ios_build)
+
     def test_each_publishable_ios_archive_has_a_size_gate(self) -> None:
         self.assertIn(
             'IOS_NPM_MAX_COMPRESSED_ARCHIVE_BYTES="${IOS_NPM_MAX_COMPRESSED_ARCHIVE_BYTES:-190000000}"',
