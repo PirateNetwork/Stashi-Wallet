@@ -43,7 +43,7 @@ flutter_build_macos_release() {
       FLUTTER_XCODE_CODE_SIGNING_ALLOWED=NO \
       FLUTTER_XCODE_CODE_SIGNING_REQUIRED=NO \
       flutter build macos --release \
-        --dart-define="PIRATE_RELEASE_TAG=${GITHUB_REF_NAME:-}"; then
+        --dart-define="PIRATE_RELEASE_TAG=${GITHUB_REF_NAME:-}" --dart-define="STASHI_ALLOW_SCREEN_CAPTURE=${STASHI_ALLOW_SCREEN_CAPTURE:-false}"; then
       return 0
     else
       status=$?
