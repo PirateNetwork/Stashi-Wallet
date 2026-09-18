@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../tokens/default_colors.dart';
 import 'wallet_palette.dart';
 
 /// Pirate Gold wallet style.
@@ -17,11 +18,11 @@ const pirateGoldDarkPalette = WalletPalette(
 
   // Accent gradients
   gradientAStart: Color(0xFFE8B84A),
-  gradientAEnd: Color(0xFFB87824),
+  gradientAEnd: Color(0xFFC18B38),
   gradientBStart: Color(0xFFD59A36),
-  gradientBEnd: Color(0xFF8E5A20),
+  gradientBEnd: Color(0xFFBD8B49),
   gradientCStart: Color(0xFFF3D27A),
-  gradientCEnd: Color(0xFFC17A24),
+  gradientCEnd: Color(0xFFC18B38),
   highlight: Color(0xFFFFD56A),
 
   // Text
@@ -32,18 +33,18 @@ const pirateGoldDarkPalette = WalletPalette(
   textOnAccent: Color(0xFF211507),
 
   // Semantic states
-  success: Color(0xFF3DBB74),
-  successBackground: Color(0x1A3DBB74),
-  successBorder: Color(0x403DBB74),
-  warning: Color(0xFFF0A62E),
-  warningBackground: Color(0x1AF0A62E),
-  warningBorder: Color(0x40F0A62E),
-  error: Color(0xFFE45B55),
-  errorBackground: Color(0x1AE45B55),
-  errorBorder: Color(0x40E45B55),
-  info: Color(0xFF6E9FD8),
-  infoBackground: Color(0x1A6E9FD8),
-  infoBorder: Color(0x406E9FD8),
+  success: PColors.success,
+  successBackground: PColors.successBackground,
+  successBorder: PColors.successBorder,
+  warning: PColors.warning,
+  warningBackground: PColors.warningBackground,
+  warningBorder: PColors.warningBorder,
+  error: PColors.error,
+  errorBackground: PColors.errorBackground,
+  errorBorder: PColors.errorBorder,
+  info: PColors.info,
+  infoBackground: PColors.infoBackground,
+  infoBorder: PColors.infoBorder,
 
   // Interaction
   focusRing: Color(0xFFE8B84A),
@@ -70,7 +71,7 @@ const pirateGoldDarkPalette = WalletPalette(
   // Charts
   chartColors: [
     Color(0xFFE8B84A),
-    Color(0xFFB87824),
+    Color(0xFFC18B38),
     Color(0xFFD59A36),
     Color(0xFF6E9FD8),
     Color(0xFF3DBB74),
@@ -87,11 +88,11 @@ const pirateGoldLightPalette = WalletPalette(
   backgroundOverlay: Color(0x990D0904),
 
   // Accent gradients
-  gradientAStart: Color(0xFFC88A25),
+  gradientAStart: Color(0xFF946014),
   gradientAEnd: Color(0xFF8E5A18),
-  gradientBStart: Color(0xFFD5A13A),
-  gradientBEnd: Color(0xFFA66A22),
-  gradientCStart: Color(0xFFE0B95B),
+  gradientBStart: Color(0xFF916513),
+  gradientBEnd: Color(0xFF945C1A),
+  gradientCStart: Color(0xFF95651D),
   gradientCEnd: Color(0xFF9A5F1D),
   highlight: Color(0xFFD99A28),
 
@@ -103,21 +104,21 @@ const pirateGoldLightPalette = WalletPalette(
   textOnAccent: Color(0xFFFFFFFF),
 
   // Semantic states
-  success: Color(0xFF238653),
-  successBackground: Color(0x1A238653),
-  successBorder: Color(0x40238653),
-  warning: Color(0xFFB56A0A),
-  warningBackground: Color(0x1AB56A0A),
-  warningBorder: Color(0x40B56A0A),
-  error: Color(0xFFC8433E),
-  errorBackground: Color(0x1AC8433E),
-  errorBorder: Color(0x40C8433E),
-  info: Color(0xFF376FA6),
-  infoBackground: Color(0x1A376FA6),
-  infoBorder: Color(0x40376FA6),
+  success: PColorsLight.success,
+  successBackground: PColorsLight.successBackground,
+  successBorder: PColorsLight.successBorder,
+  warning: PColorsLight.warning,
+  warningBackground: PColorsLight.warningBackground,
+  warningBorder: PColorsLight.warningBorder,
+  error: PColorsLight.error,
+  errorBackground: PColorsLight.errorBackground,
+  errorBorder: PColorsLight.errorBorder,
+  info: PColorsLight.info,
+  infoBackground: PColorsLight.infoBackground,
+  infoBorder: PColorsLight.infoBorder,
 
   // Interaction
-  focusRing: Color(0xFFC88A25),
+  focusRing: Color(0xFF946014),
   focusRingSubtle: Color(0x40C88A25),
   hoverOverlay: Color(0x0D8E5A18),
   pressedOverlay: Color(0x1A8E5A18),
@@ -140,9 +141,9 @@ const pirateGoldLightPalette = WalletPalette(
 
   // Charts
   chartColors: [
-    Color(0xFFC88A25),
+    Color(0xFF946014),
     Color(0xFF8E5A18),
-    Color(0xFFD5A13A),
+    Color(0xFF916513),
     Color(0xFF376FA6),
     Color(0xFF238653),
     Color(0xFFC8433E),

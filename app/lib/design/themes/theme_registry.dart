@@ -41,7 +41,7 @@ class WalletThemes {
   );
 
   static final pirateGoldTheme = WalletTheme(
-    id: 'pirate_gold',
+    id: 'pirate-gold',
     nameBuilder: () => 'Pirate Gold'.tr,
     descriptionBuilder: () => 'Warm gold and dark treasure-inspired tones'.tr,
     light: pirateGoldLightPalette,
