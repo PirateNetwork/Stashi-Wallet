@@ -426,7 +426,9 @@ final class ReleaseVerificationService {
     String armoredPublicKey,
   ) {
     try {
-      final key = OpenPGP.readPublicKey(armoredPublicKey);
+      final key = OpenPGP.readPublicKey(
+        _normalizeArmorLineEndings(armoredPublicKey),
+      );
       // Pin the full release-key fingerprint, not only its short issuer ID.
       if (_expectedSigningKeyId == _unifiedWalletSigningKeyId &&
           _hex(key.fingerprint) != 'e4fb2399aeccf9b9447ded472ce65343401553a6') {
@@ -437,7 +439,7 @@ final class ReleaseVerificationService {
                 .decode(signature, allowMalformed: true)
                 .trimLeft()
                 .startsWith('-----BEGIN PGP SIGNATURE-----')
-            ? utf8.decode(signature)
+            ? _normalizeArmorLineEndings(utf8.decode(signature))
             : _armorSignature(signature),
       );
       for (final packet in detached.packets) {
@@ -476,6 +478,11 @@ final class ReleaseVerificationService {
     }
     return false;
   }
+
+  // dart_pg's armor decoder leaves CR characters in CRLF-delimited lines.
+  // Normalize the textual envelope only, never the signed manifest bytes.
+  static String _normalizeArmorLineEndings(String armored) =>
+      armored.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
 
   static String _armorSignature(Uint8List signature) {
     final encoded = base64.encode(signature);

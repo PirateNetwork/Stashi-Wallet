@@ -26,9 +26,17 @@ uFxcQka1uM0Nh2r8ez4BAP8+/Bu5ZPHFByj6KgcCqtxH7PABAEi+sWoF5iicoToF
 const _signatureBase64 =
     'iJEEABYKADkWIQTGF4xLrtC5G9r/vIdOkor/uS8mIgUCapH9CxsUgAAAAAAEAA5tYW51MiwyLjUrMS4xMSwyLDEACgkQTpKK/7kvJiKJJAEAukxL7ghZFZpAOPEfaF+Gcr+wUpBDxrQRhhucigvjBRABAKvvb30Q8xSRM57VcVGLCTtWemo4UI3GUOcMIuzJHGQM';
 
-Uint8List _bundle({String manifest = _manifest, String tag = _tag}) {
+Uint8List _bundle({
+  String manifest = _manifest,
+  String tag = _tag,
+  bool armored = false,
+}) {
   final manifestBytes = utf8.encode(manifest);
-  final signature = base64.decode(_signatureBase64);
+  final signature = armored
+      ? utf8.encode(
+          '-----BEGIN PGP SIGNATURE-----\r\n\r\n$_signatureBase64\r\n-----END PGP SIGNATURE-----\r\n',
+        )
+      : base64.decode(_signatureBase64);
   final archive = Archive()
     ..addFile(
       ArchiveFile('sha256sum-$tag.txt', manifestBytes.length, manifestBytes),
@@ -63,10 +71,12 @@ Uint8List _nestedBundle() {
 ReleaseVerificationService _fixtureService({
   String manifest = _manifest,
   String expectedSigningKeyId = _fixtureSigningKeyId,
+  String publicKey = _fixturePublicKey,
+  bool armored = false,
 }) {
   return ReleaseVerificationService(
-    downloadBytes: (_) async => _bundle(manifest: manifest),
-    loadAsset: (_) async => _fixturePublicKey,
+    downloadBytes: (_) async => _bundle(manifest: manifest, armored: armored),
+    loadAsset: (_) async => publicKey,
     loadLocalArtifacts: () async => const [
       LocalReleaseArtifact(
         path: '/download/fixture.bin',
@@ -79,6 +89,29 @@ ReleaseVerificationService _fixtureService({
 }
 
 void main() {
+  test(
+    'accepts CRLF armored signatures without changing signed content',
+    () async {
+      final result = await _fixtureService(armored: true).verify(_tag);
+      expect(result.status, ReleaseVerificationStatus.match);
+      final changed = await _fixtureService(
+        armored: true,
+        manifest: _manifest.replaceAll('\n', '\r\n'),
+      ).verify(_tag);
+      expect(changed.reason, ReleaseVerificationReason.signatureInvalid);
+    },
+  );
+
+  test(
+    'accepts a public key packaged with Windows CRLF line endings',
+    () async {
+      final result = await _fixtureService(
+        publicKey: _fixturePublicKey.replaceAll('\n', '\r\n'),
+      ).verify(_tag);
+      expect(result.status, ReleaseVerificationStatus.match);
+    },
+  );
+
   test('accepts a valid detached signature from the pinned signer', () async {
     final result = await _fixtureService().verify(_tag);
 
