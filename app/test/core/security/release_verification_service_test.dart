@@ -154,6 +154,10 @@ void main() {
 
     expect(result.status, ReleaseVerificationStatus.mismatch);
     expect(result.reason, ReleaseVerificationReason.signatureInvalid);
+    expect(result.localArtifactPath, '/download/fixture.bin');
+    expect(result.localArtifactName, _fixtureName);
+    expect(result.localHash, _fixtureHash);
+    expect(result.expectedHash, isNull);
   });
 
   test('rejects a valid signature made by a different signer', () async {

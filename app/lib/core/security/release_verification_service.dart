@@ -131,6 +131,10 @@ final class ReleaseVerificationService {
     } catch (_) {
       artifacts = const [];
     }
+    // Local evidence does not depend on whether the remote signature is valid.
+    // Keep it available when verification fails so the installed bytes can be
+    // identified without treating an unauthenticated manifest as authoritative.
+    final localArtifact = artifacts.isEmpty ? null : artifacts.first;
 
     Uint8List? bundleBytes;
     Object? downloadError;
@@ -152,7 +156,6 @@ final class ReleaseVerificationService {
     if (bundleBytes == null) {
       final unavailable = _isReleaseUnavailable(downloadError);
       final unsupportedNetwork = _isUnsupportedNetworkMode(downloadError);
-      final localArtifact = artifacts.isEmpty ? null : artifacts.first;
       return ReleaseVerificationResult(
         status: unavailable
             ? ReleaseVerificationStatus.noRelease
@@ -184,6 +187,7 @@ final class ReleaseVerificationService {
           releaseUrl: releaseUrl,
           signatureAssetName: signatureAssetName,
           checksumAssetName: checksumName,
+          localArtifact: localArtifact,
         );
       }
 
@@ -217,6 +221,7 @@ final class ReleaseVerificationService {
               releaseUrl: releaseUrl,
               signatureAssetName: signatureAssetName,
               checksumAssetName: payloadName,
+              localArtifact: localArtifact,
             );
           }
           trustedChecksums = _parseChecksums(payloadBytes);
@@ -267,6 +272,9 @@ final class ReleaseVerificationService {
         releaseTag: tag,
         releaseUrl: releaseUrl,
         signatureAssetName: signatureAssetName,
+        localArtifactPath: localArtifact?.path,
+        localArtifactName: localArtifact?.name,
+        localHash: localArtifact?.sha256,
       );
     } catch (_) {
       return ReleaseVerificationResult(
@@ -275,6 +283,9 @@ final class ReleaseVerificationService {
         releaseTag: tag,
         releaseUrl: releaseUrl,
         signatureAssetName: signatureAssetName,
+        localArtifactPath: localArtifact?.path,
+        localArtifactName: localArtifact?.name,
+        localHash: localArtifact?.sha256,
       );
     }
   }
@@ -352,6 +363,7 @@ final class ReleaseVerificationService {
     required String releaseUrl,
     required String signatureAssetName,
     required String checksumAssetName,
+    required LocalReleaseArtifact? localArtifact,
   }) {
     return ReleaseVerificationResult(
       status: ReleaseVerificationStatus.mismatch,
@@ -360,6 +372,9 @@ final class ReleaseVerificationService {
       releaseUrl: releaseUrl,
       signatureAssetName: signatureAssetName,
       checksumAssetName: checksumAssetName,
+      localArtifactPath: localArtifact?.path,
+      localArtifactName: localArtifact?.name,
+      localHash: localArtifact?.sha256,
     );
   }
 

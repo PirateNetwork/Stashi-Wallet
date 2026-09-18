@@ -172,4 +172,34 @@ void main() {
     expect(find.text('signatures-v1.2.1.zip'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'keeps signature failures unverified with a copyable local hash',
+    (tester) async {
+      await _pumpScreen(
+        tester,
+        const Size(1280, 1200),
+        result: ReleaseVerificationResult(
+          status: ReleaseVerificationStatus.mismatch,
+          reason: ReleaseVerificationReason.signatureInvalid,
+          releaseTag: _verifiedResult.releaseTag,
+          releaseUrl: _verifiedResult.releaseUrl,
+          signatureAssetName: _verifiedResult.signatureAssetName,
+          checksumAssetName: _verifiedResult.checksumAssetName,
+          localArtifactPath: _verifiedResult.localArtifactPath,
+          localArtifactName: _verifiedResult.localArtifactName,
+          localHash: _verifiedResult.localHash,
+        ),
+      );
+
+      expect(find.text('Mismatch'), findsOneWidget);
+      expect(find.text('Copy Local Hash'), findsOneWidget);
+      expect(find.text('Open Official Releases'), findsOneWidget);
+      await tester.tap(find.text('Technical details'));
+      await tester.pumpAndSettle();
+      expect(find.text('Local SHA256'), findsOneWidget);
+      expect(find.text('Expected SHA256'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }
