@@ -118,11 +118,12 @@ void main() {
     return store;
   }
 
-  for (final id in ['default']) {
+  for (final id in ['default', 'pirate-gold']) {
     for (final mode in [AppThemeMode.dark, AppThemeMode.light]) {
       testWidgets('$id ${mode.name} phone layout', (tester) async {
         await pump(tester, const Size(390, 844), id, mode);
         expect(find.text('Default'), findsOneWidget);
+        expect(find.text('Pirate Gold'), findsOneWidget);
         expect(find.text('Test Teal'), findsNothing);
         expect(tester.takeException(), isNull);
         await capture(tester, 'themes-$id-${mode.name}-phone');

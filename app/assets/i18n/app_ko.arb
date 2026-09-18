@@ -1,4 +1,6 @@
 {
+  "Pirate Gold": "Pirate Gold",
+  "Warm gold and dark treasure-inspired tones": "보물에서 영감을 받은 따뜻한 금빛과 어두운 색조",
   "@@locale": "ko",
   "I2P is still starting. Keep the app open and try the connection test again in a minute.": "I2P가 아직 시작 중입니다. 앱을 열어 둔 채 1분 후 연결 테스트를 다시 시도하세요.",
   "The connection test timed out. The selected network may still be starting; try again shortly.": "연결 테스트 시간이 초과되었습니다. 선택한 네트워크가 아직 시작 중일 수 있으니 잠시 후 다시 시도하세요.",
