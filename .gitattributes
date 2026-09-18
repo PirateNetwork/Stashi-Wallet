@@ -128,6 +128,8 @@ COPYING* text eol=lf
 *.proto text eol=lf
 
 # Crypto/Keys (should never be committed, but just in case)
+# Public OpenPGP armor must have consistent line endings in packaged assets.
+*.asc text eol=lf
 *.pem binary
 *.key binary
 *.p12 binary
