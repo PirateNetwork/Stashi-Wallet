@@ -1326,6 +1326,8 @@ struct EndpointPoolState {
     probe_latencies: HashMap<usize, Duration>,
     channels: HashMap<usize, Channel>,
     last_tip_refresh: Option<Instant>,
+    // Smoothed encoded block bytes/second, scoped to this transport/session.
+    delivery_rates: HashMap<String, u64>,
 }
 
 struct EndpointProbe {
@@ -2268,7 +2270,9 @@ impl LightClient {
         }
         let candidates = {
             let state = self.endpoint_pool.read().await;
-            eligible_candidate_order(&state, minimum_tip)
+            let mut candidates = eligible_candidate_order(&state, minimum_tip);
+            self.rank_block_sources(&state, &mut candidates);
+            candidates
         };
         if !candidates.is_empty() || !self.has_failover_endpoints() {
             return candidates;
@@ -2280,7 +2284,9 @@ impl LightClient {
         // block behind the chain.
         let _ = self.canonical_pool_tip(true).await;
         let state = self.endpoint_pool.read().await;
-        eligible_candidate_order(&state, minimum_tip)
+        let mut candidates = eligible_candidate_order(&state, minimum_tip);
+        self.rank_block_sources(&state, &mut candidates);
+        candidates
     }
 
     async fn historical_stripe_plan(
@@ -2327,6 +2333,7 @@ impl LightClient {
                 .copied()
                 .unwrap_or(Duration::MAX)
         });
+        self.rank_block_sources(&state, &mut candidate_indices);
         candidate_indices.truncate(max_sources);
         if candidate_indices.len() < 2 {
             return None;
@@ -2349,6 +2356,35 @@ impl LightClient {
             candidate_indices,
             end_exclusive: stable_end_exclusive,
         })
+    }
+
+    fn rank_block_sources(&self, state: &EndpointPoolState, candidates: &mut [usize]) {
+        candidates.sort_by_key(|index| {
+            let rate = self
+                .endpoint_candidate(*index)
+                .and_then(|candidate| state.delivery_rates.get(&candidate.endpoint).copied())
+                .unwrap_or(0);
+            (
+                state.failures.get(index).copied().unwrap_or(0),
+                std::cmp::Reverse(rate),
+            )
+        });
+    }
+
+    async fn record_block_delivery(&self, bytes: u64, elapsed: Duration) {
+        if bytes == 0 {
+            return;
+        }
+        let rate = (u128::from(bytes) * 1_000_000_000 / elapsed.as_nanos().max(1))
+            .min(u128::from(u64::MAX)) as u64;
+        let mut state = self.endpoint_pool.write().await;
+        let previous = state
+            .delivery_rates
+            .entry(self.endpoint().to_string())
+            .or_insert(rate);
+        // Smooth actual network delivery, excluding downstream scanning and
+        // bounded-channel backpressure. Never benchmark using wallet data.
+        *previous = ((u128::from(*previous) * 3 + u128::from(rate)) / 4) as u64;
     }
 
     async fn record_candidate_success(&self, index: usize) {
@@ -3478,6 +3514,7 @@ impl LightClient {
         });
         request.set_timeout(request_timeout);
 
+        let open_started = Instant::now();
         let response = tokio::time::timeout(open_timeout, client.get_block_range(request))
             .await
             .map_err(|_| {
@@ -3490,12 +3527,15 @@ impl LightClient {
             })??;
         let mut stream = response.into_inner();
         let mut received = 0u64;
+        let mut delivery_elapsed = open_started.elapsed();
+        let mut delivery_bytes = 0u64;
         loop {
             let idle_timeout = if received == 0 {
                 first_msg_timeout
             } else {
                 next_msg_timeout
             };
+            let receive_started = Instant::now();
             let message = tokio::time::timeout(idle_timeout, stream.message())
                 .await
                 .map_err(|_| {
@@ -3506,16 +3546,26 @@ impl LightClient {
                         idle_timeout
                     ))
                 })??;
+            delivery_elapsed += receive_started.elapsed();
             let Some(proto_block) = message else {
                 break;
             };
             let encoded_bytes = proto_block.encoded_len() as u64;
+            delivery_bytes = delivery_bytes.saturating_add(encoded_bytes);
             assembler.set_next_chunk_max_blocks(segment_block_target.load(Ordering::Acquire));
             if let Some(chunk) = assembler.push(CompactBlock::from(proto_block), encoded_bytes)? {
                 send_ordered_chunk(sender, chunk, self.endpoint().to_string()).await?;
             }
             received = received.saturating_add(1);
+            if received.is_multiple_of(32) {
+                self.record_block_delivery(delivery_bytes, delivery_elapsed)
+                    .await;
+                delivery_bytes = 0;
+                delivery_elapsed = Duration::ZERO;
+            }
         }
+        self.record_block_delivery(delivery_bytes, delivery_elapsed)
+            .await;
 
         if assembler.next_height() >= end_exclusive {
             Ok(())
@@ -4502,6 +4552,27 @@ mod tests {
         assert_eq!(state.active_index, 1);
         assert!(state.failures.is_empty());
         assert!(eligible_candidate_order(&state, 1000).is_empty());
+    }
+
+    #[tokio::test]
+    async fn block_delivery_outweighs_probe_latency_but_not_failures_or_height() {
+        let client = auto_pool_client(TransportMode::Direct);
+        seed_endpoint_pool(&client, &[1000, 1000, 999], &[]).await;
+        let slow = client.candidate_client(0).unwrap();
+        let fast = client.candidate_client(1).unwrap();
+        slow.record_block_delivery(1024, Duration::from_secs(1))
+            .await;
+        fast.record_block_delivery(1024 * 1024, Duration::from_secs(1))
+            .await;
+        assert_eq!(client.candidate_order(1000).await, vec![1, 0]);
+        client.record_candidate_failure(1).await;
+        assert_eq!(client.candidate_order(1000).await, vec![0, 1]);
+        client.record_candidate_success(1).await;
+        assert_eq!(client.candidate_order(1000).await, vec![1, 0]);
+        // A single good sample cannot erase sustained slow delivery.
+        slow.record_block_delivery(2048, Duration::from_secs(1))
+            .await;
+        assert_eq!(client.candidate_order(1000).await, vec![1, 0]);
     }
 
     #[tokio::test]
