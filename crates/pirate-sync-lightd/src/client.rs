@@ -1480,7 +1480,7 @@ fn highest_tip_endpoint(
 }
 
 fn eligible_candidate_order(state: &EndpointPoolState, minimum_tip: u64) -> Vec<usize> {
-    let has_validated_pool = state.probed && !state.healthy_indices.is_empty();
+    let has_validated_pool = state.probed;
     let mut candidates = if has_validated_pool {
         state.healthy_indices.clone()
     } else {
@@ -1700,6 +1700,15 @@ impl LightClient {
     }
 
     async fn connected_candidate_client(&self, index: usize) -> Option<Self> {
+        // A stripe worker is already bound to one validated endpoint. Its
+        // shared pool indices belong to the parent, not its local index zero.
+        if !self.has_failover_endpoints() {
+            return if index == 0 && self.channel.lock().await.is_some() {
+                Some(self.clone())
+            } else {
+                None
+            };
+        }
         let candidate = self.endpoint_candidate(index)?;
         let pooled_channel = Arc::clone(&self.endpoint_pool)
             .read_owned()
@@ -1709,7 +1718,9 @@ impl LightClient {
             .cloned();
         let channel = match pooled_channel {
             Some(channel) => channel,
-            None if index == 0 => Arc::clone(&self.channel).lock_owned().await.clone()?,
+            None if index == 0 && !self.endpoint_pool_is_probed().await => {
+                Arc::clone(&self.channel).lock_owned().await.clone()?
+            }
             None => return None,
         };
         let mut config = self.config.clone();
@@ -2251,6 +2262,9 @@ impl LightClient {
     }
 
     async fn candidate_order(&self, minimum_tip: u64) -> Vec<usize> {
+        if !self.has_failover_endpoints() {
+            return vec![0];
+        }
         let candidates = {
             let state = self.endpoint_pool.read().await;
             eligible_candidate_order(&state, minimum_tip)
@@ -2273,7 +2287,8 @@ impl LightClient {
         start: u64,
         end_exclusive: u64,
     ) -> Option<HistoricalStripePlan> {
-        if self.config.transport == TransportMode::I2p
+        if !self.has_failover_endpoints()
+            || self.config.transport == TransportMode::I2p
             || end_exclusive.saturating_sub(start) < HISTORICAL_STRIPE_MIN_BLOCKS
         {
             return None;
@@ -2336,12 +2351,18 @@ impl LightClient {
     }
 
     async fn record_candidate_success(&self, index: usize) {
+        if !self.has_failover_endpoints() {
+            return;
+        }
         let mut state = self.endpoint_pool.write().await;
         state.active_index = index;
         state.failures.remove(&index);
     }
 
     async fn record_candidate_failure(&self, index: usize) {
+        if !self.has_failover_endpoints() {
+            return;
+        }
         let mut state = self.endpoint_pool.write().await;
         let failures = state.failures.entry(index).or_insert(0);
         *failures = failures.saturating_add(1);
@@ -4429,6 +4450,55 @@ mod tests {
             .map(|index| (index, Duration::from_millis((index + 1) as u64)))
             .collect();
         state.failures = failures.iter().copied().collect();
+    }
+
+    #[tokio::test]
+    async fn historical_worker_keeps_its_endpoint_when_parent_pool_changes() {
+        let parent = auto_pool_client(TransportMode::Direct);
+        seed_endpoint_pool(&parent, &[1000, 1000], &[]).await;
+        {
+            let mut state = parent.endpoint_pool.write().await;
+            state.active_index = 1;
+            state.channels.insert(
+                1,
+                Endpoint::from_static("http://127.0.0.1:2").connect_lazy(),
+            );
+        }
+        let worker = parent.connected_candidate_client(1).await.unwrap();
+        assert_eq!(
+            worker.endpoint(),
+            parent.endpoint_candidate(1).unwrap().endpoint
+        );
+        assert_eq!(worker.candidate_order(1000).await, vec![0]);
+        assert!(worker.historical_stripe_plan(1, 1000).await.is_none());
+        let bound = worker.connected_candidate_client(0).await.unwrap();
+        assert!(Arc::ptr_eq(&bound.channel, &worker.channel));
+        // Revalidation can temporarily leave the parent with no healthy members.
+        {
+            let mut state = parent.endpoint_pool.write().await;
+            state.channels.clear();
+            state.healthy_indices.clear();
+        }
+        assert_eq!(worker.candidate_order(1000).await, vec![0]);
+        assert!(worker.historical_stripe_plan(1, 1_000_000).await.is_none());
+        let connection = worker.connected_candidate_client(0).await.unwrap();
+        assert_eq!(connection.endpoint(), worker.endpoint());
+        assert!(Arc::ptr_eq(&connection.channel, &worker.channel));
+        worker.record_candidate_success(0).await;
+        worker.record_candidate_failure(0).await;
+        let state = parent.endpoint_pool.read().await;
+        assert_eq!(state.active_index, 1);
+        assert!(state.failures.is_empty());
+        assert!(eligible_candidate_order(&state, 1000).is_empty());
+    }
+
+    #[tokio::test]
+    async fn validated_empty_pool_cannot_reuse_generic_active_channel() {
+        let client = auto_pool_client(TransportMode::Direct);
+        seed_endpoint_pool(&client, &[], &[]).await;
+        *client.channel.lock().await =
+            Some(Endpoint::from_static("http://127.0.0.1:2").connect_lazy());
+        assert!(client.connected_candidate_client(0).await.is_none());
     }
 
     #[tokio::test]
