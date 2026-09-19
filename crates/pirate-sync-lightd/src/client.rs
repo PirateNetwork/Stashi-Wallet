@@ -1819,7 +1819,11 @@ impl LightClient {
     }
 
     async fn start_endpoint_pool_probe(&self) -> bool {
-        if !self.has_failover_endpoints() || self.endpoint_pool_is_probed().await {
+        self.start_endpoint_pool_probe_inner(false).await
+    }
+
+    async fn start_endpoint_pool_probe_inner(&self, refresh: bool) -> bool {
+        if !self.has_failover_endpoints() || (!refresh && self.endpoint_pool_is_probed().await) {
             return false;
         }
         if self
@@ -1832,7 +1836,7 @@ impl LightClient {
 
         // The pool may have completed between the first check and acquiring
         // ownership of the single-flight probe.
-        if self.endpoint_pool_is_probed().await {
+        if !refresh && self.endpoint_pool_is_probed().await {
             self.endpoint_pool_probe_inflight
                 .store(false, Ordering::Release);
             self.endpoint_pool_probe_notify.notify_waiters();
@@ -1881,9 +1885,7 @@ impl LightClient {
 
         loop {
             let notified = self.endpoint_pool_probe_notify.notified();
-            if self.endpoint_pool_is_probed().await
-                || !self.endpoint_pool_probe_inflight.load(Ordering::Acquire)
-            {
+            if !self.endpoint_pool_probe_inflight.load(Ordering::Acquire) {
                 return;
             }
             let remaining = deadline.saturating_duration_since(Instant::now());
@@ -2122,7 +2124,6 @@ impl LightClient {
         state.probed = true;
         state.active_index = active_index.unwrap_or(0);
         state.healthy_indices = healthy_indices;
-        state.failures.clear();
         state.tips = tips;
         state.probe_latencies = probe_latencies;
         state.last_tip_refresh = Some(Instant::now());
@@ -3004,10 +3005,12 @@ impl LightClient {
         let mut last_error = None;
 
         while assembler.next_height() < end_exclusive && round < max_rounds {
-            let round_start = assembler.next_height();
+            if sender.is_closed() {
+                return Err(Error::Cancelled);
+            }
             let candidates = self.candidate_order(end_exclusive.saturating_sub(1)).await;
             if candidates.is_empty() {
-                return Err(Error::Connection(format!(
+                last_error = Some(Error::Connection(format!(
                     "no healthy lightwalletd endpoint reaches height {}",
                     end_exclusive.saturating_sub(1)
                 )));
@@ -3019,6 +3022,7 @@ impl LightClient {
                         "lightwalletd endpoint {} has no validated channel",
                         index
                     )));
+                    self.record_candidate_failure(index).await;
                     continue;
                 };
                 let endpoint = candidate.endpoint().to_string();
@@ -3041,7 +3045,12 @@ impl LightClient {
                             return Ok(());
                         }
                     }
-                    Err(error) if Self::is_non_retryable_error(&error) => return Err(error),
+                    Err(error)
+                        if matches!(error, Error::Cancelled)
+                            || Self::is_non_retryable_error(&error) =>
+                    {
+                        return Err(error)
+                    }
                     Err(error) => {
                         if let Some(chunk) = assembler.take_partial() {
                             send_ordered_chunk(sender, chunk, endpoint).await?;
@@ -3052,20 +3061,23 @@ impl LightClient {
                 }
             }
 
-            if assembler.next_height() == round_start
-                && self.has_failover_endpoints()
-                && !self.endpoint_pool_is_probed().await
-            {
-                self.start_endpoint_pool_probe().await;
-                self.wait_for_endpoint_pool_probe().await;
-                if self.endpoint_pool_is_probed().await {
-                    continue;
+            // A completed probe is only a snapshot, not a permanent guarantee
+            // that its channels are usable. Rebuild the pool after all candidates
+            // fail, without dropping the assembler's validated resume position.
+            round = round.saturating_add(1);
+            if self.has_failover_endpoints() && round < max_rounds {
+                self.start_endpoint_pool_probe_inner(true).await;
+                tokio::select! {
+                    _ = self.wait_for_endpoint_pool_probe() => {},
+                    _ = sender.closed() => return Err(Error::Cancelled),
                 }
             }
 
-            round = round.saturating_add(1);
             if assembler.next_height() < end_exclusive && round < max_rounds {
-                tokio::time::sleep(jitter_duration(backoff)).await;
+                tokio::select! {
+                    _ = tokio::time::sleep(jitter_duration(backoff)) => {},
+                    _ = sender.closed() => return Err(Error::Cancelled),
+                }
                 backoff = std::cmp::min(
                     Duration::from_millis(
                         (backoff.as_millis() as f64 * self.config.retry.backoff_multiplier) as u64,
@@ -4499,6 +4511,74 @@ mod tests {
         *client.channel.lock().await =
             Some(Endpoint::from_static("http://127.0.0.1:2").connect_lazy());
         assert!(client.connected_candidate_client(0).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn cancelled_download_does_not_reconnect_or_advance_resume_height() {
+        let client = auto_pool_client(TransportMode::Tor);
+        let (sender, receiver) = mpsc::channel(1);
+        drop(receiver);
+        let mut assembler = OrderedBlockAssembler::with_limits(100, 200, 4096, 10).unwrap();
+        let result = client
+            .stream_remaining_with_failover(200, None, &AtomicU64::new(10), &sender, &mut assembler)
+            .await;
+        assert!(matches!(result, Err(Error::Cancelled)));
+        assert_eq!(assembler.next_height(), 100);
+        assert!(!client.endpoint_pool_probe_inflight.load(Ordering::Acquire));
+    }
+
+    #[tokio::test]
+    async fn recovery_waits_for_refresh_even_when_pool_was_previously_probed() {
+        let client = auto_pool_client(TransportMode::Direct);
+        seed_endpoint_pool(&client, &[], &[]).await;
+        client
+            .endpoint_pool_probe_inflight
+            .store(true, Ordering::Release);
+        assert!(tokio::time::timeout(
+            Duration::from_millis(20),
+            client.wait_for_endpoint_pool_probe()
+        )
+        .await
+        .is_err());
+        client
+            .endpoint_pool_probe_inflight
+            .store(false, Ordering::Release);
+        client.wait_for_endpoint_pool_probe().await;
+    }
+
+    #[tokio::test]
+    async fn recovery_reprobes_a_previously_empty_pool_concurrently() {
+        let _guard = TRANSPORT_STATE_TEST_LOCK.lock().await;
+        clear_desired_transport_config();
+        let primary = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let alternate = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let client = LightClient::with_config(
+            LightClientConfig::direct(&format!("http://{}", primary.local_addr().unwrap()))
+                .with_failover_endpoint(LightClientEndpoint::new(format!(
+                    "http://{}",
+                    alternate.local_addr().unwrap()
+                ))),
+        );
+        GLOBAL_TRANSPORT
+            .clone()
+            .get_or_init(build_transport_config(&client.config).unwrap())
+            .await
+            .unwrap();
+        seed_endpoint_pool(&client, &[], &[]).await;
+        assert!(!client.start_endpoint_pool_probe().await);
+        assert!(client.start_endpoint_pool_probe_inner(true).await);
+        assert!(!client.start_endpoint_pool_probe_inner(true).await);
+        let connections = tokio::time::timeout(Duration::from_secs(5), async {
+            let (first, _) = primary.accept().await.unwrap();
+            let (second, _) = alternate.accept().await.unwrap();
+            (first, second)
+        })
+        .await
+        .expect("recovery must retry both endpoints concurrently");
+        drop(connections);
+        client.wait_for_endpoint_pool_probe().await;
+        assert!(client.endpoint_pool.read().await.healthy_indices.is_empty());
+        shutdown_transport().await;
     }
 
     #[tokio::test]

@@ -4720,9 +4720,11 @@ impl SyncEngine {
                             network_max_batch_blocks,
                             current_target_bytes
                         );
+                        // Stop producers using the old channels before rebuilding
+                        // the shared pool. Resume from current_height, never the tip.
+                        Self::abort_prefetch_queue(&mut prefetch_queue);
                         self.client.disconnect().await;
                         let _ = self.client.connect().await;
-                        Self::abort_prefetch_queue(&mut prefetch_queue);
                         tokio::select! {
                             _ = tokio::time::sleep(Duration::from_secs(2)) => {},
                             _ = self.cancel.cancelled() => return Err(Error::Cancelled),
