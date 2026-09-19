@@ -86,17 +86,6 @@ import LocalAuthentication
         completionHandler(.noData)
     }
     
-    // Handle entering background
-    override func applicationDidEnterBackground(_ application: UIApplication) {
-        if #available(iOS 13.0, *) {
-            // Schedule background tasks when app enters background
-            BackgroundSyncManager.shared.scheduleCompactSync()
-            BackgroundSyncManager.shared.scheduleDeepSync()
-            
-            print("[AppDelegate] Scheduled background sync tasks")
-        }
-    }
-
     override func applicationWillResignActive(_ application: UIApplication) {
         if screenShieldEnabled {
             setScreenShieldVisible(true)

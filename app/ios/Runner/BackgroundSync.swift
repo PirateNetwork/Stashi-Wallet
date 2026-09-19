@@ -22,6 +22,9 @@ import Flutter
 class BackgroundSyncManager: NSObject {
     
     static let shared = BackgroundSyncManager()
+
+    // iOS background execution is disabled. Foreground wallet sync is independent.
+    static let isEnabled = false
     
     // MARK: - Task Identifiers (must match Info.plist BGTaskSchedulerPermittedIdentifiers)
     
@@ -150,6 +153,10 @@ class BackgroundSyncManager: NSObject {
      * Call this in AppDelegate.didFinishLaunchingWithOptions BEFORE app finishes launching
      */
     func registerBackgroundTasks() {
+        guard Self.isEnabled else {
+            cancelAllTasks()
+            return
+        }
         // Register compact sync (BGAppRefreshTask - quick, frequent)
         let compactRegistered = BGTaskScheduler.shared.register(
             forTaskWithIdentifier: BackgroundSyncManager.compactTaskIdentifier,
@@ -181,6 +188,7 @@ class BackgroundSyncManager: NSObject {
         maxDurationSecs: Int? = nil,
         maxBlocks: Int? = nil
     ) {
+        guard Self.isEnabled else { return }
         if let intervalMinutes = intervalMinutes, intervalMinutes > 0 {
             defaults.set(TimeInterval(intervalMinutes * 60), forKey: compactIntervalSecondsKey)
         }
@@ -220,6 +228,7 @@ class BackgroundSyncManager: NSObject {
         maxBlocks: Int? = nil,
         requiresCharging: Bool? = nil
     ) {
+        guard Self.isEnabled else { return }
         if let intervalHours = intervalHours, intervalHours > 0 {
             defaults.set(TimeInterval(intervalHours * 3600), forKey: deepIntervalSecondsKey)
         }
@@ -275,6 +284,10 @@ class BackgroundSyncManager: NSObject {
      * Quick sync with ~30 second time limit
      */
     private func handleCompactSync(task: BGAppRefreshTask) {
+        guard Self.isEnabled else {
+            task.setTaskCompleted(success: false)
+            return
+        }
         print("[BackgroundSync] Starting compact sync...")
 
         if defaults.bool(forKey: syncPausedKey) {
@@ -353,6 +366,10 @@ class BackgroundSyncManager: NSObject {
      * Thorough sync with several minutes allowed
      */
     private func handleDeepSync(task: BGProcessingTask) {
+        guard Self.isEnabled else {
+            task.setTaskCompleted(success: false)
+            return
+        }
         print("[BackgroundSync] Starting deep sync...")
 
         if defaults.bool(forKey: syncPausedKey) {
@@ -586,6 +603,7 @@ class BackgroundSyncManager: NSObject {
         maxDurationSecs: Int? = nil,
         maxBlocks: Int? = nil
     ) async {
+        guard Self.isEnabled else { return }
         guard !defaults.bool(forKey: syncPausedKey) else {
             print("[BackgroundSync] Immediate sync skipped because background sync is paused")
             return
@@ -815,6 +833,7 @@ class BackgroundSyncManager: NSObject {
      * Request notification permissions
      */
     func requestNotificationPermissions() async -> Bool {
+        guard Self.isEnabled else { return false }
         do {
             let options: UNAuthorizationOptions = [.alert, .sound, .badge]
             let granted = try await UNUserNotificationCenter.current()
@@ -1005,6 +1024,11 @@ class Socks5ConnectionError: NetworkTunnelError {
 extension AppDelegate {
     
     func setupBackgroundSync() {
+        guard BackgroundSyncManager.isEnabled else {
+            // Remove requests persisted by an earlier installed version.
+            BackgroundSyncManager.shared.cancelAllTasks()
+            return
+        }
         // Register background tasks (MUST be done before app finishes launching)
         BackgroundSyncManager.shared.registerBackgroundTasks()
 

@@ -69,19 +69,6 @@
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	
-	<!-- Background Modes -->
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>processing</string>
-	</array>
-	
-	<!-- Background Task Identifiers -->
-	<key>BGTaskSchedulerPermittedIdentifiers</key>
-	<array>
-		<string>com.pirate.wallet.sync.compact</string>
-		<string>com.pirate.wallet.sync.deep</string>
-	</array>
-	
 	<!-- Privacy Descriptions -->
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Stashi Wallet needs network access to sync your blockchain data securely via Tor.</string>
