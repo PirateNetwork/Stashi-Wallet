@@ -292,6 +292,57 @@ lightwalletd reads from exhausting Core's native-operation timeout and blocking
 subsequent balance/status requests. The bound covers remote enrichment, not
 synchronous local database loading or transaction decoding.
 
+## Opt-in partial transaction history
+
+The typed JSON method `qortal_list_transactions_partial` accepts `wallet_id`
+and optional `limit` and returns an object with a `transactions` array. It
+uses the same local loading, expiry filtering, and shared recovery deadline as
+`list`, but retains rows whose outgoing totals cannot be established. Existing
+`list` and `qortal_list_transactions` responses remain strict: older consumers
+must not silently interpret an unknown total as zero or sum an incomplete
+recipient list. Consumers must explicitly adopt the new method before showing
+partial history. No Core or GUI consumer is changed by this native API
+addition.
+
+Each row contains `txid`, `block_height`, `datetime`, `unconfirmed`,
+`has_outgoing`, the four existing incoming/outgoing metadata arrays, and:
+
+- `outgoing_value`: established non-internal outgoing total, or null.
+  Incoming-only rows use zero. It excludes the transaction fee.
+- `outgoing_value_estimate`: a separate default-fee estimate for confirmed,
+  locally attributed rows with no stored fee; otherwise null. Never use it as
+  an established total. Custom fees and dust added to fees can change the
+  result.
+- `fee`: a stored fee or one established from raw transaction value balances,
+  or null; `fee_estimate` separately reports the conventional default for
+  outgoing rows without a stored fee.
+- `metadata_complete`: whether outgoing value accounting is complete. It does
+  not promise every recipient address or memo is known; an established
+  remainder can still use `[UNKNOWN]`. Incoming metadata keeps the existing
+  database scope classification and is not certified by this flag.
+- `metadata_error`: a txid-scoped diagnostic for incomplete outgoing
+  accounting, or null. Incomplete rows do not prevent other rows from being
+  returned.
+
+The four optional aggregate amount/fee fields encode arrrtoshis as decimal
+strings or null. Metadata entries retain their existing numeric value
+encoding. Consumers must not sum incomplete outgoing metadata as the
+transaction total, charge a fee per recipient, or substitute an estimate for a
+null amount without labeling it estimated. Pending intent totals do not
+establish external payments: requested recipients can include internal
+addresses.
+
+Raw recovery verifies the requested transaction id. A nonempty recovered list
+alone does not prove complete coverage: missing keys, failed recovery, or
+dummy outputs may leave it incomplete. Full coverage takes precedence over
+local accounting only when confirmed local output scopes are known; decrypted
+addresses alone cannot repair missing change attribution. Pending or scope-
+uncertain rows retain null totals even with full raw coverage. Individually
+recovered recipients are retained and a contradicted local total is discarded.
+Checked summation rejects overflow as an incomplete row. Scope checks for the
+Qortal local fallback include dangling address links without changing the
+GUI's existing transfer-splitting rules.
+
 ## Padded outputs and fee recovery
 
 Sapling and Ironwood builders can pad transactions with zero-valued outputs
@@ -301,13 +352,23 @@ real recipient is missing. It also does not prove the converse: a nonempty
 recovery can still omit a positive-valued output. Neither case is inferred
 from decryption failure alone.
 
-For Sapling/Ironwood transactions with no transparent inputs or outputs and
-no unsupported pool components, the parsed transaction's public value balances
+For Sapling/Ironwood transactions with no transparent inputs or outputs and no
+unsupported pool components, the parsed transaction's public value balances
 establish the fee. The transaction id is checked before using those balances;
 negative or overflowing fees are rejected. For confirmed, locally attributed
 history without a send intent, that fee can complete the spent-input-minus-
 internal-receipt accounting even when padding does not decrypt. An unrecovered
 positive remainder remains an unknown-recipient item, not discarded padding.
 This also handles custom fees and dust added to a fee without assuming the
-default fee is exact. A raw fee alone proves neither input ownership nor change
-scope; the local accounting prerequisites still apply.
+default fee is exact. A raw fee alone proves neither input ownership nor
+change scope; the local accounting prerequisites still apply.
+
+Pending or scope-uncertain rows without independent total evidence stay in
+partial history with a null outgoing total, available recipient metadata, and
+an unconfirmed flag. This avoids hiding the history while also avoiding a
+fabricated amount. Strict legacy `list` can still reject these rows; consumers
+requiring partial availability must use `qortal_list_transactions_partial`
+through the existing JNI `invokeJson` entry point. No new command-table alias
+is required. Clients should render unknown amounts as unavailable, and label
+any separately supplied estimate. This API change alone does not update a
+consumer that continues to call strict `list`.

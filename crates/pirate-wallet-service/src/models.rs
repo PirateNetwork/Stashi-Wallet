@@ -600,6 +600,46 @@ pub struct QortalTransaction {
     pub unconfirmed: Option<bool>,
 }
 
+/// Opt-in history response that retains rows whose outgoing metadata is incomplete.
+/// Legacy `list` deliberately does not return this schema.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct QortalPartialHistory {
+    pub transactions: Vec<QortalPartialTransaction>,
+}
+
+/// Partial-history consumers must distinguish null totals from zero and must
+/// never present the explicitly estimated fields as verified amounts.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct QortalPartialTransaction {
+    pub txid: TxId,
+    pub block_height: u32,
+    pub datetime: i64,
+    pub unconfirmed: bool,
+    pub has_outgoing: bool,
+    /// Established non-internal outgoing total, or null when unknown.
+    #[serde(with = "amount_json::opt_u64")]
+    pub outgoing_value: Option<u64>,
+    /// Default-fee estimate for attributed confirmed history only.
+    #[serde(with = "amount_json::opt_u64")]
+    pub outgoing_value_estimate: Option<u64>,
+    /// Persisted or raw-transaction fee, or null. Incoming does not imply zero.
+    #[serde(with = "amount_json::opt_u64")]
+    pub fee: Option<u64>,
+    /// Conventional fee assumption; custom fees and dust additions can differ.
+    #[serde(with = "amount_json::opt_u64")]
+    pub fee_estimate: Option<u64>,
+    pub incoming_metadata: Vec<QortalTxMetadata>,
+    pub incoming_metadata_change: Vec<QortalTxMetadata>,
+    /// Known recovered recipients or locally established unknown-recipient values.
+    /// This vector is not a total when metadata_complete is false.
+    pub outgoing_metadata: Vec<QortalTxMetadata>,
+    pub outgoing_metadata_change: Vec<QortalTxMetadata>,
+    /// Whether outgoing metadata accounts for an established outgoing total.
+    pub metadata_complete: bool,
+    /// Transaction-scoped diagnostic, without exposing native/backend error text.
+    pub metadata_error: Option<String>,
+}
+
 /// Qortal-compatible synchronization progress.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct QortalSyncStatus {

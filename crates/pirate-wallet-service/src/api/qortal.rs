@@ -1,5 +1,8 @@
 use super::*;
-use crate::models::{QortalSyncStatus, QortalTransaction, QortalTxMetadata};
+use crate::models::{
+    QortalPartialHistory, QortalPartialTransaction, QortalSyncStatus, QortalTransaction,
+    QortalTxMetadata,
+};
 use pirate_storage_sqlite::AddressScope;
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -427,6 +430,16 @@ pub async fn qortal_list_transactions(
     legacy_history(load_and_enrich_qortal_transactions(wallet_id, limit).await?)
 }
 
+/// Explicit opt-in: retain incomplete rows and separate unknown totals from estimates.
+pub async fn qortal_list_transactions_partial(
+    wallet_id: WalletId,
+    limit: Option<u32>,
+) -> Result<QortalPartialHistory> {
+    Ok(partial_history(
+        load_and_enrich_qortal_transactions(wallet_id, limit).await?,
+    ))
+}
+
 async fn load_and_enrich_qortal_transactions(
     wallet_id: WalletId,
     limit: Option<u32>,
@@ -480,12 +493,49 @@ async fn load_and_enrich_qortal_transactions(
 
 fn legacy_history(rows: Vec<LocalQortalTransaction>) -> Result<Vec<QortalTransaction>> {
     if let Some(row) = rows.iter().find(|row| !row.metadata_complete) {
-        return Err(anyhow!(
-            "Qortal transaction metadata unavailable for {}",
-            row.transaction.txid
-        ));
+        return Err(anyhow!("Qortal transaction metadata unavailable for {}: use the opt-in partial history API to inspect incomplete rows", row.transaction.txid));
     }
     Ok(rows.into_iter().map(|row| row.transaction).collect())
+}
+
+fn partial_history(rows: Vec<LocalQortalTransaction>) -> QortalPartialHistory {
+    QortalPartialHistory {
+        transactions: rows
+            .into_iter()
+            .map(|row| {
+                let outgoing_value = if !row.should_recover_outgoing {
+                    Some(0)
+                } else if row.metadata_complete {
+                    row.fallback_outgoing_value
+                } else {
+                    None
+                };
+                let tx = row.transaction;
+                QortalPartialTransaction {
+                    txid: tx.txid,
+                    block_height: tx.block_height,
+                    datetime: tx.datetime,
+                    unconfirmed: tx.unconfirmed.unwrap_or(false),
+                    has_outgoing: row.should_recover_outgoing,
+                    outgoing_value,
+                    outgoing_value_estimate: if outgoing_value.is_none() {
+                        row.outgoing_value_estimate
+                    } else {
+                        None
+                    },
+                    fee: row.stored_fee,
+                    fee_estimate: (row.should_recover_outgoing && row.stored_fee.is_none())
+                        .then_some(pirate_core::fees::DEFAULT_FEE),
+                    incoming_metadata: tx.incoming_metadata,
+                    incoming_metadata_change: tx.incoming_metadata_change,
+                    outgoing_metadata: tx.outgoing_metadata,
+                    outgoing_metadata_change: tx.outgoing_metadata_change,
+                    metadata_complete: row.metadata_complete,
+                    metadata_error: row.metadata_error,
+                }
+            })
+            .collect(),
+    }
 }
 
 // One deadline covers connection and every transaction, not one timeout per row.
@@ -958,6 +1008,124 @@ mod tests {
         assert!(rows[0].transaction.outgoing_metadata.is_empty());
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn partial_history_keeps_unknown_and_known_rows_without_promoting_estimates() {
+        let mut restored = outgoing_row();
+        restored.transaction.txid = "11".repeat(32);
+        restored.fallback_outgoing_value = None;
+        restored.outgoing_value_estimate = Some(90);
+        restored.stored_fee = None;
+        let mut pending = outgoing_row();
+        pending.transaction.txid = "22".repeat(32);
+        pending.transaction.unconfirmed = Some(true);
+        pending.fallback_outgoing_value = None;
+        let mut rows = vec![restored, pending, outgoing_row()];
+        let start = tokio::time::Instant::now();
+        enrich_qortal_transactions(
+            &mut rows,
+            &HashMap::new(),
+            start + Duration::from_secs(5),
+            |_| std::future::pending::<Result<RecoveredRecipients>>(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(tokio::time::Instant::now() - start, Duration::from_secs(5));
+        let json = serde_json::to_value(partial_history(rows)).unwrap();
+        let rows = json["transactions"].as_array().unwrap();
+        assert_eq!(rows.len(), 3);
+        assert!(rows[0]["outgoing_value"].is_null());
+        assert_eq!(rows[0]["outgoing_value_estimate"], "90");
+        assert!(rows[0]["fee"].is_null());
+        assert_eq!(
+            rows[0]["fee_estimate"],
+            pirate_core::fees::DEFAULT_FEE.to_string()
+        );
+        assert_eq!(rows[0]["outgoing_metadata"], serde_json::json!([]));
+        assert!(rows[1]["outgoing_value"].is_null());
+        assert!(rows[1]["outgoing_value_estimate"].is_null());
+        assert_eq!(rows[2]["outgoing_value"], "100");
+        assert!(rows[2]["metadata_complete"].as_bool().unwrap());
+        assert!(rows[2]["metadata_error"].is_null());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn recovered_coverage_controls_whether_local_disagreement_can_be_resolved() {
+        for complete in [false, true] {
+            for internal in [false, true] {
+                let mut row = outgoing_row();
+                row.fallback_outgoing_value = if internal { None } else { Some(100) };
+                let mut rows = vec![row];
+                let scopes = if internal {
+                    HashMap::from([("recipient".to_string(), AddressScope::Internal)])
+                } else {
+                    HashMap::new()
+                };
+                enrich_qortal_transactions(
+                    &mut rows,
+                    &scopes,
+                    tokio::time::Instant::now() + Duration::from_secs(5),
+                    |_| async {
+                        Ok(RecoveredRecipients {
+                            fee: None,
+                            complete,
+                            recipients: vec![TransactionRecipient {
+                                address: "recipient".into(),
+                                pool: "sapling".into(),
+                                amount: 101,
+                                output_index: 0,
+                                memo: None,
+                                payment_disclosure: None,
+                            }],
+                        })
+                    },
+                )
+                .await
+                .unwrap();
+                let history = partial_history(rows);
+                let row = &history.transactions[0];
+                assert_eq!(row.metadata_complete, complete);
+                assert_eq!(
+                    row.outgoing_value,
+                    complete.then_some(if internal { 0 } else { 101 })
+                );
+                assert_eq!(row.metadata_error.is_none(), complete);
+            }
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn complete_recovery_cannot_resolve_missing_local_change_scope() {
+        let mut row = outgoing_row();
+        row.fallback_outgoing_value = None;
+        row.outgoing_scope_known = false;
+        let mut rows = vec![row];
+        enrich_qortal_transactions(
+            &mut rows,
+            &HashMap::new(),
+            tokio::time::Instant::now() + Duration::from_secs(5),
+            |_| async {
+                Ok(RecoveredRecipients {
+                    fee: None,
+                    complete: true,
+                    recipients: vec![TransactionRecipient {
+                        address: "unattributed-change".into(),
+                        pool: "sapling".into(),
+                        amount: 101,
+                        output_index: 0,
+                        memo: None,
+                        payment_disclosure: None,
+                    }],
+                })
+            },
+        )
+        .await
+        .unwrap();
+        let history = partial_history(rows);
+        assert_eq!(history.transactions[0].outgoing_value, None);
+        assert!(!history.transactions[0].metadata_complete);
+        assert_eq!(history.transactions[0].outgoing_metadata[0].value, 101);
+    }
+
     #[test]
     fn raw_recovery_verifies_identity_and_requires_all_outputs() {
         let ovk = SaplingOutgoingViewingKey([77; 32]);
@@ -1120,6 +1288,42 @@ mod tests {
         .is_err());
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn padded_pending_send_remains_visible_with_unknown_total() {
+        use payment_disclosure::persistence_tests::encrypted_sapling_history_fixture;
+        let ovk = SaplingOutgoingViewingKey([77; 32]);
+        let (txid, raw) = encrypted_sapling_history_fixture(ovk, false, false, 10, Some((None, 0)));
+        let mut row = outgoing_row();
+        row.transaction.txid = txid.clone();
+        row.transaction.unconfirmed = Some(true);
+        row.transaction.block_height = 0;
+        row.fallback_outgoing_value = None;
+        row.outgoing_scope_known = false;
+        let mut rows = vec![row];
+        enrich_qortal_transactions(
+            &mut rows,
+            &HashMap::new(),
+            tokio::time::Instant::now() + Duration::from_secs(5),
+            |_| async {
+                recover_qortal_recipients_from_raw(
+                    &raw,
+                    &txid,
+                    Some(1_000_000),
+                    &[ovk],
+                    &[],
+                    NetworkType::Mainnet,
+                )
+            },
+        )
+        .await
+        .unwrap();
+        let response = partial_history(rows);
+        assert_eq!(response.transactions.len(), 1);
+        assert!(response.transactions[0].unconfirmed);
+        assert_eq!(response.transactions[0].outgoing_value, None);
+        assert_eq!(response.transactions[0].outgoing_metadata[0].value, 100);
+    }
+
     #[test]
     fn ironwood_builder_padding_is_not_claimed_as_complete_recovery() {
         use orchard::{
@@ -1183,7 +1387,7 @@ mod tests {
             Some(transparent),
             None,
             None,
-            Some(signed),
+            Some(signed.clone()),
         )
         .freeze()
         .unwrap();
@@ -1202,6 +1406,65 @@ mod tests {
         assert_eq!(recovery.recipients[0].amount, 40_000);
         assert!(!recovery.complete);
         assert_eq!(recovery.fee, None);
+        // A cross-pool fixture exercises a negative Ironwood value balance
+        // offset by Sapling, with no transparent prevouts needed for the fee.
+        let (_, sapling_raw) =
+            payment_disclosure::persistence_tests::encrypted_sapling_history_fixture(
+                SaplingOutgoingViewingKey([77; 32]),
+                false,
+                false,
+                40_010,
+                None,
+            );
+        let sapling_tx = read_pirate_transaction(&sapling_raw).unwrap();
+        let shielded = TransactionData::<Authorized>::from_parts_v6(
+            BranchId::Nu6_3,
+            0,
+            BlockHeight::from_u32(5_000_000),
+            None,
+            sapling_tx.sapling_bundle().cloned(),
+            None,
+            Some(signed),
+        )
+        .freeze()
+        .unwrap();
+        let mut raw = Vec::new();
+        shielded.write(&mut raw).unwrap();
+        let recovery = recover_qortal_recipients_from_raw(
+            &raw,
+            &shielded.txid().to_string(),
+            Some(1_000_000),
+            &[SaplingOutgoingViewingKey([77; 32])],
+            &[orchard::keys::OutgoingViewingKey::from([77; 32])],
+            NetworkType::Mainnet,
+        )
+        .unwrap();
+        assert_eq!(recovery.fee, Some(10));
+        assert_eq!(
+            recovery
+                .recipients
+                .iter()
+                .map(|recipient| recipient.amount)
+                .sum::<u64>(),
+            40_100
+        );
+        assert!(!recovery.complete);
+    }
+
+    #[test]
+    fn partial_history_requires_explicit_request_method() {
+        let request: crate::service::WalletServiceRequest =
+            serde_json::from_value(serde_json::json!({
+                "method": "qortal_list_transactions_partial", "wallet_id": "test", "limit": 10
+            }))
+            .unwrap();
+        assert!(matches!(
+            request,
+            crate::service::WalletServiceRequest::QortalListTransactionsPartial {
+                limit: Some(10),
+                ..
+            }
+        ));
     }
 
     #[test]
