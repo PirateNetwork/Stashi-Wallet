@@ -9342,6 +9342,30 @@ mod tests {
     }
 
     #[test]
+    fn birthday_lowering_preserves_a_newer_correction_and_key_material() {
+        let db = test_db();
+        let repo = Repository::new(&db);
+        let account_id = repo
+            .insert_account(&Account {
+                id: None,
+                name: "Concurrent birthday correction".into(),
+                created_at: 1,
+            })
+            .unwrap();
+        let key_id = insert_spendable_account_key(&repo, account_id, 500);
+        let original = repo.get_account_key_by_id(key_id).unwrap().unwrap();
+        // A caller decided to lower 500 to 200, but recovery persisted 100
+        // before that caller wrote. Applying the stale decision must keep 100.
+        repo.lower_account_key_birthday(key_id, 100).unwrap();
+        repo.lower_account_key_birthday(key_id, 200).unwrap();
+        let updated = repo.get_account_key_by_id(key_id).unwrap().unwrap();
+        assert_eq!(updated.birthday_height, 100);
+        assert_eq!(updated.sapling_extsk, original.sapling_extsk);
+        assert_eq!(updated.sapling_dfvk, original.sapling_dfvk);
+        assert_eq!(updated.key_type, original.key_type);
+    }
+
+    #[test]
     fn birthday_recovery_restores_validation_of_older_notes_in_both_pools() {
         for pool in [NoteType::Sapling, NoteType::Ironwood] {
             let db = test_db();

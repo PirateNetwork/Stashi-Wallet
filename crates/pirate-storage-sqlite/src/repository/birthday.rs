@@ -1,6 +1,16 @@
 use super::*;
 
 impl Repository<'_> {
+    /// Retain earlier history even when the caller read the key before another
+    /// connection lowered its birthday. No encrypted key material is rewritten.
+    pub fn lower_account_key_birthday(&self, key_id: i64, birthday_height: u32) -> Result<()> {
+        self.db.conn().execute(
+            "UPDATE account_keys SET birthday_height = MIN(birthday_height, ?1) WHERE id = ?2",
+            params![i64::from(birthday_height), key_id],
+        )?;
+        Ok(())
+    }
+
     /// Repair birthdays overwritten by older clients after an earlier rescan.
     ///
     /// A confirmed note establishes that its key's history starts no later than

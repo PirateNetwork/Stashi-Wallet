@@ -1070,12 +1070,8 @@ fn ensure_primary_account_key_at_birthday(
         .find(|key| key.key_type == KeyType::ImportView && key.key_scope == KeyScope::Account)
     {
         if let Some(id) = existing.id {
-            let reconciled_birthday = existing.birthday_height.min(i64::from(birthday_height));
-            if existing.birthday_height != reconciled_birthday {
-                let mut updated = existing.clone();
-                updated.birthday_height = reconciled_birthday;
-                let encrypted = repo.encrypt_account_key_fields(&updated)?;
-                repo.upsert_account_key(&encrypted)?;
+            if existing.birthday_height > i64::from(birthday_height) {
+                repo.lower_account_key_birthday(id, birthday_height)?;
             }
             let _ = repo.backfill_address_key_id(secret.account_id, id);
             let _ = repo.backfill_note_key_id(id);
