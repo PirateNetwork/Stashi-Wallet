@@ -409,7 +409,11 @@ pub(super) fn open_wallet_db_with_passphrase(
         &key_id,
     )?;
 
-    Repository::new(&db).normalize_wallet_secrets_storage()?;
+    let repo = Repository::new(&db);
+    repo.normalize_wallet_secrets_storage()?;
+    if let Some(secret) = repo.get_wallet_secret(wallet_id)? {
+        repo.ensure_note_birthday_recovery_migration(secret.account_id)?;
+    }
 
     Ok((db, key, master_key))
 }

@@ -1949,7 +1949,7 @@ impl SyncEngine {
             }
         }
 
-        let mut account_keys = repo.get_account_keys(secret.account_id)?;
+        let account_keys = repo.get_account_keys(secret.account_id)?;
         if account_keys.is_empty() {
             let sapling_dfvk_bytes = if !secret.extsk.is_empty() {
                 let extsk = ExtendedSpendingKey::from_bytes(&secret.extsk)
@@ -1997,8 +1997,12 @@ impl SyncEngine {
             };
             let encrypted_key = repo.encrypt_account_key_fields(&fallback_key)?;
             let _ = repo.upsert_account_key(&encrypted_key)?;
-            account_keys = repo.get_account_keys(secret.account_id)?;
         }
+
+        repo.ensure_note_birthday_recovery_migration(secret.account_id)?;
+        // Recovery can lower birthdays; take the key snapshot again before
+        // constructing trial-decryption groups from it.
+        let account_keys = repo.get_account_keys(secret.account_id)?;
 
         // Wallet metadata describes the original key. Imported keys can require
         // older history, including after an interrupted rescan or app restart.

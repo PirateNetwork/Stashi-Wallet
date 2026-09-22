@@ -52,6 +52,70 @@ fn record_verified_tip(wallet_id: &str, tip_height: u64) {
 }
 
 #[test]
+fn opening_a_legacy_wallet_gates_notes_hidden_by_a_later_birthday() {
+    let _guard = GLOBAL_WALLET_STATE_TEST_MUTEX.lock().unwrap();
+    reset_global_wallet_state_for_tests();
+    let temp_dir = tempdir().unwrap();
+    configure_wallet_storage(
+        temp_dir.path().to_string_lossy().to_string(),
+        "test-passphrase-123".into(),
+    )
+    .unwrap();
+    let wallet_id = create_wallet("Birthday recovery".into(), None, Some(3_000_000), None).unwrap();
+    mark_previously_validated(&wallet_id, 4_100_000);
+    {
+        let (db, repo) = open_wallet_db_for(&wallet_id).unwrap();
+        let secret = repo.get_wallet_secret(&wallet_id).unwrap().unwrap();
+        let key_id = repo.get_account_keys(secret.account_id).unwrap()[0].id;
+        repo.insert_note(&pirate_storage_sqlite::models::NoteRecord {
+            id: None,
+            account_id: secret.account_id,
+            key_id,
+            note_type: pirate_storage_sqlite::models::NoteType::Sapling,
+            value: 100_000,
+            nullifier: vec![0x41; 32],
+            commitment: vec![0x42; 32],
+            spent: false,
+            height: 2_000_000,
+            txid: vec![0x43; 32],
+            output_index: 0,
+            address_id: None,
+            spent_txid: None,
+            diversifier: None,
+            note: None,
+            position: None,
+            memo: None,
+        })
+        .unwrap();
+        // Reproduce an old installation that has not applied this recovery.
+        db.conn()
+            .execute(
+                "DELETE FROM migration_state WHERE key = ?1",
+                [format!("note_birthday_recovery_v1:{}", secret.account_id)],
+            )
+            .unwrap();
+    }
+    encrypted_db::invalidate_wallet_db_cache_for(&wallet_id);
+    let status = get_spendability_status(wallet_id.clone()).unwrap();
+    assert!(!status.spendable);
+    assert!(status.repair_queued);
+    assert!(!status.rescan_required);
+    assert_eq!(
+        status.reason_code,
+        SPENDABILITY_REASON_ERR_WITNESS_REPAIR_QUEUED
+    );
+    assert_eq!(status.validated_anchor_height, 4_100_000);
+    // Recovery survives reopening; it does not depend on UI cache refreshes.
+    encrypted_db::invalidate_wallet_db_cache_for(&wallet_id);
+    assert!(
+        get_spendability_status(wallet_id.clone())
+            .unwrap()
+            .repair_queued
+    );
+    reset_global_wallet_state_for_tests();
+}
+
+#[test]
 fn ordinary_import_durably_requires_replay_before_background_sync() {
     let _guard = GLOBAL_WALLET_STATE_TEST_MUTEX.lock().unwrap();
     reset_global_wallet_state_for_tests();

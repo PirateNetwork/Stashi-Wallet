@@ -1,6 +1,7 @@
 //! Data access layer
 
 mod address;
+mod birthday;
 mod payment_disclosure;
 
 use crate::address_book::ColorTag;
@@ -9341,6 +9342,248 @@ mod tests {
     }
 
     #[test]
+    fn birthday_recovery_restores_validation_of_older_notes_in_both_pools() {
+        for pool in [NoteType::Sapling, NoteType::Ironwood] {
+            let db = test_db();
+            let repo = Repository::new(&db);
+            let account_id = repo
+                .insert_account(&Account {
+                    id: None,
+                    name: "Birthday recovery".into(),
+                    created_at: 1,
+                })
+                .unwrap();
+            let owner = insert_spendable_account_key(&repo, account_id, 500);
+            let unrelated = insert_spendable_account_key(&repo, account_id, 800);
+            let note = NoteRecord {
+                id: None,
+                account_id,
+                key_id: Some(owner),
+                note_type: pool,
+                value: 100_000,
+                nullifier: vec![0x31; 32],
+                commitment: vec![0x32; 32],
+                spent: false,
+                height: 100,
+                txid: vec![0x33; 32],
+                output_index: 0,
+                address_id: None,
+                spent_txid: None,
+                diversifier: None,
+                note: None,
+                position: None,
+                memo: None,
+            };
+            repo.insert_note(&note).unwrap();
+            let mut pending = note.clone();
+            pending.height = 0;
+            pending.txid = vec![0x34; 32];
+            pending.nullifier = vec![0x35; 32];
+            repo.insert_note(&pending).unwrap();
+            let storage = crate::SpendabilityStateStorage::new(&db);
+            storage.mark_validated(600, 590).unwrap();
+            assert_eq!(
+                repo.check_witnesses(account_id, 590, 500)
+                    .unwrap()
+                    .considered_notes,
+                0
+            );
+
+            repo.ensure_note_birthday_recovery_migration(account_id)
+                .unwrap();
+            assert_eq!(
+                repo.get_account_key_by_id(owner)
+                    .unwrap()
+                    .unwrap()
+                    .birthday_height,
+                100
+            );
+            assert_eq!(
+                repo.get_account_key_by_id(unrelated)
+                    .unwrap()
+                    .unwrap()
+                    .birthday_height,
+                800
+            );
+            let state = storage.load_state().unwrap();
+            assert!(!state.spendable);
+            assert!(!state.rescan_required);
+            assert!(state.repair_queued);
+            assert_eq!(state.repair_from_height, 100);
+            assert_eq!(state.validated_anchor_height, 590);
+            let check = repo.check_witnesses(account_id, 590, 100).unwrap();
+            assert_eq!(check.considered_notes, 1);
+            assert_eq!(check.sapling_missing + check.orchard_missing, 1);
+            assert!(!check.repair_ranges.is_empty());
+            let notes = repo.get_unspent_notes(account_id).unwrap();
+            assert_eq!(notes.len(), 2);
+            assert!(notes.iter().all(|n| !n.spent && n.key_id == Some(owner)));
+            assert!(notes.iter().any(|n| n.nullifier == note.nullifier));
+
+            repo.ensure_note_birthday_recovery_migration(account_id)
+                .unwrap();
+            assert_eq!(storage.load_state().unwrap().updated_at, state.updated_at);
+        }
+    }
+
+    #[test]
+    fn birthday_recovery_defers_unkeyed_wallets_and_preserves_rescan_obligations() {
+        let db = test_db();
+        let repo = Repository::new(&db);
+        let account_id = repo
+            .insert_account(&Account {
+                id: None,
+                name: "Legacy recovery".into(),
+                created_at: 1,
+            })
+            .unwrap();
+        // Legacy rows without a key association still establish history; spent
+        // rows matter too, but recovery must never turn them back into funds.
+        insert_received_note(
+            &repo,
+            account_id,
+            vec![0x41; 32],
+            NoteType::Sapling,
+            0,
+            100_000,
+            100,
+            None,
+            None,
+            true,
+            0x41,
+        );
+        repo.ensure_note_birthday_recovery_migration(account_id)
+            .unwrap();
+        let first = insert_spendable_account_key(&repo, account_id, 500);
+        let second = insert_spendable_account_key(&repo, account_id, 800);
+        let storage = crate::SpendabilityStateStorage::new(&db);
+        let mut original = storage.load_state().unwrap();
+        original.rescan_required = true;
+        original.required_rescan_from_height = 50;
+        original.key_import_generation = 7;
+        original.repair_from_height = 25;
+        original.sync_interrupted = true;
+        storage.save_state(&original).unwrap();
+
+        repo.ensure_note_birthday_recovery_migration(account_id)
+            .unwrap();
+        for key in [first, second] {
+            assert_eq!(
+                repo.get_account_key_by_id(key)
+                    .unwrap()
+                    .unwrap()
+                    .birthday_height,
+                100
+            );
+        }
+        let recovered = storage.load_state().unwrap();
+        assert!(recovered.rescan_required && recovered.repair_queued && recovered.sync_interrupted);
+        assert_eq!(recovered.required_rescan_from_height, 50);
+        assert_eq!(recovered.key_import_generation, 7);
+        assert_eq!(recovered.repair_from_height, 25);
+        assert_eq!(recovered.reason_code, original.reason_code);
+        assert!(repo.get_unspent_notes(account_id).unwrap().is_empty());
+        assert!(repo.get_account_notes(account_id).unwrap()[0].spent);
+    }
+
+    #[test]
+    fn birthday_recovery_rolls_back_when_validation_cannot_be_gated() {
+        let db = test_db();
+        let repo = Repository::new(&db);
+        let account_id = repo
+            .insert_account(&Account {
+                id: None,
+                name: "Atomic recovery".into(),
+                created_at: 1,
+            })
+            .unwrap();
+        let key_id = insert_spendable_account_key(&repo, account_id, 500);
+        insert_received_note(
+            &repo,
+            account_id,
+            vec![0x51; 32],
+            NoteType::Sapling,
+            0,
+            100_000,
+            100,
+            None,
+            None,
+            false,
+            0x51,
+        );
+        db.conn()
+            .execute_batch(
+                "CREATE TRIGGER reject_birthday_gate BEFORE UPDATE ON spendability_state
+            BEGIN SELECT RAISE(ABORT, 'injected gate failure'); END;",
+            )
+            .unwrap();
+        assert!(repo
+            .ensure_note_birthday_recovery_migration(account_id)
+            .is_err());
+        assert_eq!(
+            repo.get_account_key_by_id(key_id)
+                .unwrap()
+                .unwrap()
+                .birthday_height,
+            500
+        );
+        db.conn()
+            .execute_batch("DROP TRIGGER reject_birthday_gate;")
+            .unwrap();
+        repo.ensure_note_birthday_recovery_migration(account_id)
+            .unwrap();
+        assert_eq!(
+            repo.get_wallet_birthday_height(account_id).unwrap(),
+            Some(100)
+        );
+        assert!(
+            crate::SpendabilityStateStorage::new(&db)
+                .load_state()
+                .unwrap()
+                .repair_queued
+        );
+    }
+
+    #[test]
+    fn birthday_recovery_revalidates_notes_hidden_by_an_ignored_zero_birthday() {
+        let db = test_db();
+        let repo = Repository::new(&db);
+        let account_id = repo
+            .insert_account(&Account {
+                id: None,
+                name: "Unknown birthday".into(),
+                created_at: 1,
+            })
+            .unwrap();
+        let unknown_birthday_key = insert_spendable_account_key(&repo, account_id, 0);
+        insert_spendable_account_key(&repo, account_id, 500);
+        insert_received_note(
+            &repo,
+            account_id,
+            vec![0x61; 32],
+            NoteType::Sapling,
+            0,
+            100_000,
+            100,
+            None,
+            None,
+            false,
+            0x61,
+        );
+        repo.backfill_note_key_id(unknown_birthday_key).unwrap();
+        let storage = crate::SpendabilityStateStorage::new(&db);
+        storage.mark_validated(600, 590).unwrap();
+        repo.ensure_note_birthday_recovery_migration(account_id)
+            .unwrap();
+        assert_eq!(
+            repo.get_wallet_birthday_height(account_id).unwrap(),
+            Some(1)
+        );
+        assert!(!storage.load_state().unwrap().spendable);
+        assert!(storage.load_state().unwrap().repair_queued);
+    }
+
+    #[test]
     fn test_anchor_filtered_notes_respect_wallet_birthday_floor() {
         let db = test_db();
         let repo = Repository::new(&db);
@@ -9414,6 +9657,28 @@ mod tests {
             vec![9_000],
             "notes below wallet birthday must not be spendable"
         );
+
+        let storage = crate::SpendabilityStateStorage::new(&db);
+        storage.mark_validated(210, 200).unwrap();
+        repo.ensure_note_birthday_recovery_migration(account_id)
+            .unwrap();
+        assert!(storage.load_state().unwrap().repair_queued);
+        let check = repo.check_witnesses(account_id, 200, 100).unwrap();
+        assert_eq!(check.considered_notes, 2);
+        assert!(
+            check.repair_ranges.is_empty(),
+            "valid existing witnesses need no replay"
+        );
+        let selectable = repo
+            .get_unspent_selectable_notes_at_anchor_filtered(account_id, 200, 10, None, None)
+            .unwrap();
+        assert_eq!(selectable.iter().map(|n| n.value).sum::<u64>(), 16_000);
+        // Only the normal validator releases the latch, not birthday recovery.
+        assert!(!storage.load_state().unwrap().spendable);
+        storage.mark_validated(210, 200).unwrap();
+        repo.ensure_note_birthday_recovery_migration(account_id)
+            .unwrap();
+        assert!(storage.load_state().unwrap().spendable);
     }
 
     #[test]
