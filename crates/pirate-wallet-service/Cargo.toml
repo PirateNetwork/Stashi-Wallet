@@ -43,6 +43,7 @@ zcash_transparent = { workspace = true }
 sapling = { workspace = true }
 
 [dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
 incrementalmerkletree = { workspace = true }
 shardtree = { workspace = true }
 tempfile = { workspace = true }

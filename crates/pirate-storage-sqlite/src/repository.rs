@@ -4531,6 +4531,7 @@ impl<'a> Repository<'a> {
             memo: Option<Vec<u8>>,
             saw_internal: bool,
             saw_unknown_scope: bool,
+            qortal_unknown_scope: bool,
         }
 
         impl TxAggregate {
@@ -4547,6 +4548,7 @@ impl<'a> Repository<'a> {
                     memo: None,
                     saw_internal: false,
                     saw_unknown_scope: false,
+                    qortal_unknown_scope: false,
                 }
             }
         }
@@ -4644,6 +4646,9 @@ impl<'a> Repository<'a> {
 
                 if address_id.is_none() {
                     entry.saw_unknown_scope = true;
+                }
+                if address_id.and_then(|id| address_scopes.get(&id)).is_none() {
+                    entry.qortal_unknown_scope = true;
                 }
                 if address_scope == crate::models::AddressScope::Internal {
                     entry.saw_internal = true;
@@ -4808,6 +4813,56 @@ impl<'a> Repository<'a> {
                 .saturating_sub(fee_i64);
             let outgoing_amount = entry.intent_amount.unwrap_or(chain_outgoing_amount);
             let has_outgoing = entry.sent > 0 || entry.intent_amount.is_some();
+            // The display amount mixes intent totals (fee excluded) with net
+            // wallet changes (fee included). Keep the separate accounting value
+            // while the source information is still available. Unconfirmed
+            // change, unknown address scope, and inferred fees are insufficient
+            // to manufacture an exact outgoing metadata value.
+            let outgoing_value = if entry.height > 0
+                && entry.sent > 0
+                && !entry.qortal_unknown_scope
+                && stored_fee > 0
+            {
+                entry
+                    .sent
+                    .checked_sub(entry.received_internal)
+                    .and_then(|value| value.checked_sub(i64::try_from(stored_fee).ok()?))
+                    .and_then(|value| u64::try_from(value).ok())
+                    .filter(|value| {
+                        entry
+                            .intent_amount
+                            .is_none_or(|intent| *value <= intent as u64)
+                    })
+            } else {
+                None
+            };
+            // A restored wallet usually has no compact-block fee. Expose the
+            // conventional fee only as an estimate, never as an exact amount.
+            let outgoing_before_fee = if entry.height > 0
+                && entry.sent > 0
+                && !entry.qortal_unknown_scope
+                && entry.intent_amount.is_none()
+            {
+                entry
+                    .sent
+                    .checked_sub(entry.received_internal)
+                    .and_then(|value| u64::try_from(value).ok())
+            } else {
+                None
+            };
+            let outgoing_value_estimate = if entry.height > 0
+                && entry.sent > 0
+                && !entry.qortal_unknown_scope
+                && stored_fee == 0
+            {
+                entry
+                    .sent
+                    .checked_sub(entry.received_internal)
+                    .and_then(|value| value.checked_sub(DEFAULT_FEE as i64))
+                    .and_then(|value| u64::try_from(value).ok())
+            } else {
+                None
+            };
             let expired = entry.height <= 0
                 && entry
                     .intent_expiry_height
@@ -4859,6 +4914,12 @@ impl<'a> Repository<'a> {
                     height: entry.height,
                     timestamp,
                     amount: -outgoing_amount,
+                    has_outgoing,
+                    outgoing_value,
+                    outgoing_value_estimate,
+                    outgoing_before_fee,
+                    outgoing_scope_known: entry.height > 0 && !entry.qortal_unknown_scope,
+                    stored_fee: (stored_fee > 0).then_some(stored_fee),
                     fee,
                     memo: memo.clone(),
                     expired,
@@ -4869,6 +4930,12 @@ impl<'a> Repository<'a> {
                     height: entry.height,
                     timestamp,
                     amount: entry.received_external,
+                    has_outgoing: false,
+                    outgoing_value: None,
+                    outgoing_value_estimate: None,
+                    outgoing_before_fee: None,
+                    outgoing_scope_known: false,
+                    stored_fee: None,
                     fee: 0,
                     memo,
                     expired: false,
@@ -4881,6 +4948,12 @@ impl<'a> Repository<'a> {
                     height: entry.height,
                     timestamp,
                     amount: -transfer_amount,
+                    has_outgoing,
+                    outgoing_value,
+                    outgoing_value_estimate,
+                    outgoing_before_fee,
+                    outgoing_scope_known: entry.height > 0 && !entry.qortal_unknown_scope,
+                    stored_fee: (stored_fee > 0).then_some(stored_fee),
                     fee,
                     memo: memo.clone(),
                     expired,
@@ -4891,6 +4964,12 @@ impl<'a> Repository<'a> {
                     height: entry.height,
                     timestamp,
                     amount: transfer_amount,
+                    has_outgoing: false,
+                    outgoing_value: None,
+                    outgoing_value_estimate: None,
+                    outgoing_before_fee: None,
+                    outgoing_scope_known: false,
+                    stored_fee: None,
                     fee: 0,
                     memo,
                     expired: false,
@@ -4902,6 +4981,12 @@ impl<'a> Repository<'a> {
                     height: entry.height,
                     timestamp,
                     amount: -outgoing_amount,
+                    has_outgoing,
+                    outgoing_value,
+                    outgoing_value_estimate,
+                    outgoing_before_fee,
+                    outgoing_scope_known: entry.height > 0 && !entry.qortal_unknown_scope,
+                    stored_fee: (stored_fee > 0).then_some(stored_fee),
                     fee,
                     memo,
                     expired,
@@ -4913,6 +4998,12 @@ impl<'a> Repository<'a> {
                     height: entry.height,
                     timestamp,
                     amount: net_amount,
+                    has_outgoing,
+                    outgoing_value,
+                    outgoing_value_estimate,
+                    outgoing_before_fee,
+                    outgoing_scope_known: entry.height > 0 && !entry.qortal_unknown_scope,
+                    stored_fee: (stored_fee > 0).then_some(stored_fee),
                     fee,
                     memo,
                     expired: false,
@@ -8074,6 +8165,315 @@ mod tests {
         assert_eq!(intents.len(), 1);
         assert_eq!(intents[0].txid, txid);
         assert_eq!(intents[0].amount, 250_000_000);
+    }
+
+    #[test]
+    fn qortal_fallback_requires_confirmed_attributed_outgoing_accounting() {
+        let db = test_db();
+        let repo = Repository::new(&db);
+        // scope: 0 = known, 1 = missing, 2 = dangling address link.
+        // net-zero is a synthetic sign-detection fixture, not a claim that
+        // these inputs/outputs form a conserved single-wallet transaction.
+        let cases = [
+            (
+                "intent",
+                250_010_000,
+                0,
+                0,
+                Some(250_000_000),
+                true,
+                0,
+                10_000,
+                Some(250_000_000),
+            ),
+            (
+                "historical",
+                250_000_000,
+                0,
+                0,
+                None,
+                true,
+                0,
+                10_000,
+                Some(249_990_000),
+            ),
+            (
+                "change",
+                500_000_000,
+                249_990_000,
+                0,
+                Some(250_000_000),
+                true,
+                0,
+                10_000,
+                Some(250_000_000),
+            ),
+            (
+                "self",
+                250_010_000,
+                0,
+                250_000_000,
+                None,
+                true,
+                0,
+                10_000,
+                Some(250_000_000),
+            ),
+            (
+                "internal",
+                250_010_000,
+                250_000_000,
+                0,
+                Some(250_000_000),
+                true,
+                0,
+                10_000,
+                Some(0),
+            ),
+            (
+                "split",
+                500_000_000,
+                249_990_000,
+                100_000_000,
+                Some(250_000_000),
+                true,
+                0,
+                10_000,
+                Some(250_000_000),
+            ),
+            (
+                "pending",
+                500_000_000,
+                0,
+                0,
+                Some(250_000_000),
+                false,
+                0,
+                10_000,
+                None,
+            ),
+            (
+                "unknown",
+                500_000_000,
+                249_990_000,
+                0,
+                Some(250_000_000),
+                true,
+                1,
+                10_000,
+                None,
+            ),
+            (
+                "dangling",
+                500_000_000,
+                249_990_000,
+                0,
+                Some(250_000_000),
+                true,
+                2,
+                10_000,
+                None,
+            ),
+            ("fee-only", 10_000, 0, 0, None, true, 0, 10_000, Some(0)),
+            ("underflow", 5_000, 0, 0, None, true, 0, 10_000, None),
+            ("inferred-fee", 250_000_000, 0, 0, None, true, 0, 0, None),
+            (
+                "custom-fee",
+                250_000_000,
+                0,
+                0,
+                None,
+                true,
+                0,
+                20_000,
+                Some(249_980_000),
+            ),
+            (
+                "dust-fee",
+                250_000_000,
+                0,
+                0,
+                None,
+                true,
+                0,
+                10_001,
+                Some(249_989_999),
+            ),
+            (
+                "pending-internal",
+                250_010_000,
+                250_000_000,
+                0,
+                Some(250_000_000),
+                false,
+                0,
+                10_000,
+                None,
+            ),
+            (
+                "reversed-intent",
+                250_010_000,
+                0,
+                0,
+                Some(250_000_000),
+                true,
+                0,
+                10_000,
+                Some(250_000_000),
+            ),
+            (
+                "net-zero",
+                250_010_000,
+                0,
+                250_010_000,
+                None,
+                true,
+                0,
+                10_000,
+                Some(250_000_000),
+            ),
+        ];
+        for (name, input, internal, external, intent, confirmed, scope, fee, expected) in cases {
+            let account_id = repo
+                .insert_account(&Account {
+                    id: None,
+                    name: name.into(),
+                    created_at: 1,
+                })
+                .unwrap();
+            let mut spend_txid: Vec<u8> = (0..32).collect();
+            spend_txid[0] = account_id as u8;
+            let txid = txid_hex_from_bytes(&spend_txid);
+            insert_received_note(
+                &repo,
+                account_id,
+                vec![128 + account_id as u8; 32],
+                NoteType::Ironwood,
+                0,
+                input,
+                100,
+                None,
+                None,
+                false,
+                0x31,
+            );
+            assert!(repo
+                .mark_note_spent_by_nullifier_with_txid(account_id, &[0x31; 32], &spend_txid)
+                .unwrap());
+            for (index, value, address_scope) in [
+                (0, internal, AddressScope::Internal),
+                (1, external, AddressScope::External),
+            ] {
+                if value == 0 {
+                    continue;
+                }
+                let address = Address {
+                    id: None,
+                    key_id: None,
+                    account_id,
+                    diversifier_index: index,
+                    diversifier_index_88: None,
+                    address: format!("pirate1-{name}-{index}"),
+                    address_type: AddressType::Ironwood,
+                    label: None,
+                    created_at: 1,
+                    color_tag: ColorTag::None,
+                    address_scope,
+                };
+                repo.upsert_address(&address).unwrap();
+                let id = repo
+                    .get_address_by_string(account_id, &address.address)
+                    .unwrap()
+                    .unwrap()
+                    .id;
+                let id = match scope {
+                    1 => None,
+                    2 => Some(i64::MAX),
+                    _ => id,
+                };
+                insert_received_note(
+                    &repo,
+                    account_id,
+                    spend_txid.clone(),
+                    NoteType::Ironwood,
+                    i64::from(index),
+                    value,
+                    if confirmed { 101 } else { 0 },
+                    id,
+                    None,
+                    false,
+                    0x40 + index as u8,
+                );
+            }
+            if let Some(amount) = intent {
+                let intent_txid = if name == "reversed-intent" {
+                    reverse_txid_hex(&txid).unwrap()
+                } else {
+                    txid.clone()
+                };
+                repo.upsert_outgoing_transaction_intent(
+                    account_id,
+                    &intent_txid,
+                    amount,
+                    fee,
+                    2_100,
+                    0,
+                )
+                .unwrap();
+            }
+            repo.upsert_transaction(
+                &txid,
+                if confirmed { 101 } else { 0 },
+                2_100,
+                i64::try_from(fee).unwrap(),
+            )
+            .unwrap();
+            let rows = repo
+                .get_transactions_with_options(account_id, None, 101, 1, false)
+                .unwrap();
+            let row = rows.iter().find(|row| row.txid == txid).unwrap();
+            assert!(row.has_outgoing, "{name}");
+            assert_eq!(row.outgoing_value, expected, "{name}");
+            assert_eq!(
+                row.outgoing_before_fee,
+                if confirmed && scope == 0 && intent.is_none() {
+                    u64::try_from(input - internal).ok()
+                } else {
+                    None
+                },
+                "{name}"
+            );
+            assert_eq!(row.outgoing_scope_known, confirmed && scope == 0, "{name}");
+            assert_eq!(row.stored_fee, (fee > 0).then_some(fee), "{name}");
+            assert_eq!(
+                row.outgoing_value_estimate,
+                if name == "inferred-fee" {
+                    Some(249_990_000)
+                } else {
+                    None
+                },
+                "{name}"
+            );
+            assert_eq!(
+                rows.iter().filter(|row| row.txid == txid).count(),
+                1,
+                "{name}"
+            );
+            let incoming = rows.iter().find(|row| row.txid != txid).unwrap();
+            assert!(!incoming.has_outgoing, "{name}");
+            assert_eq!(incoming.outgoing_value, None, "{name}");
+            if name == "net-zero" {
+                assert_eq!(row.amount, 0);
+            }
+            if name == "split" {
+                let split = repo
+                    .get_transactions_with_options(account_id, None, 101, 1, true)
+                    .unwrap();
+                let split: Vec<_> = split.iter().filter(|row| row.txid == txid).collect();
+                assert_eq!(split.len(), 2);
+                assert_eq!(split.iter().filter(|row| row.has_outgoing).count(), 1);
+            }
+        }
     }
 
     #[test]

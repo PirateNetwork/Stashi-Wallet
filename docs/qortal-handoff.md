@@ -136,10 +136,34 @@ still sees the wallet as behind. The JNI adapter uses direct transport to match
 the legacy embedded wallet's network behavior.
 
 `list` constructs incoming metadata from the encrypted note database and
-recovers outgoing Sapling and Ironwood recipients from the raw transaction. If a
-historical raw transaction is temporarily unavailable, the response emits one
-`[UNKNOWN]` recipient with the correct external value so Qortal does not turn an
-outgoing transaction into a zero-value transaction.
+recovers outgoing Sapling and Ironwood recipients from the raw transaction. If
+a historical raw transaction is temporarily unavailable, the response emits
+one `[UNKNOWN]` recipient only when confirmed local accounting establishes its
+non-internal outgoing value: spent inputs minus internal received outputs and
+a stored fee or a fee established from the raw transaction. When local
+accounting is available, a partially recovered recipient list is completed
+with an unknown-recipient remainder. Decrypted recipients take precedence over
+local accounting when recovery covers every shielded output and there are no
+transparent outputs and confirmed local output scopes are known. Otherwise, a
+recovered subtotal exceeding local accounting leaves the total unknown rather
+than rejecting the recovered recipients. The display amount is not used for
+this calculation because stored intents exclude fees while historical net
+amounts include them.
+
+Unconfirmed change, missing address scope (including dangling address links),
+inferred fees, or invalid arithmetic leave that value unknown. If remote
+recovery also fails, `list` returns a metadata-unavailable error naming the
+txid rather than fabricating an amount. This error affects the history
+request; it does not require stopping the wallet. A known zero outgoing value
+is represented by a zero-valued metadata item so legacy consumers can still
+account for the fee. Outgoing detection uses spent notes or stored intent, not
+the net amount sign, so self-transfers are eligible for recovery too. Expired
+unmined intents are omitted because the legacy schema has no failed-send
+state. Only the locally scanned height proves expiry; an advertised server
+target does not. The history limit applies after this filtering. Consumers
+should use the top-level `fee` once per transaction, not infer one fee per
+recipient metadata item; a single transaction can have several recipients or a
+recovered/unknown remainder.
 
 P2SH redemption verifies that the input is P2SH, the redeem script hashes to
 that address, and funding output zero pays the same address. It rejects a
@@ -251,3 +275,39 @@ This operation is the native prerequisite for importing external Pirate wallet
 exports into Qortal's encrypted SQLite wallet. File parsing and user-facing
 format selection remain Qortal-side follow-up work. Viewing-key recovery is not
 covered by this request.
+
+## Transaction history recovery deadline
+
+Qortal transaction history loads stored rows first. Recipient/memo recovery is
+optional and has one five-second deadline covering connection and all outgoing
+transactions together, with one network attempt per candidate transaction hash
+(the compatibility lookup can try both byte orders). If that budget
+expires, the request retains completed metadata and uses locally validated
+`[UNKNOWN]` outgoing values where available. If any unresolved outgoing value
+cannot be established locally, the whole history request returns a bounded
+metadata-unavailable error instead of a partial or misleading transaction list.
+Completed rows are returned only when the whole history request succeeds.
+The recovery future is cancelled directly, not detached. This keeps optional
+lightwalletd reads from exhausting Core's native-operation timeout and blocking
+subsequent balance/status requests. The bound covers remote enrichment, not
+synchronous local database loading or transaction decoding.
+
+## Padded outputs and fee recovery
+
+Sapling and Ironwood builders can pad transactions with zero-valued outputs
+that do not decrypt with the wallet's outgoing viewing keys. Therefore a
+recovered-recipient count below the raw output count does not prove that a
+real recipient is missing. It also does not prove the converse: a nonempty
+recovery can still omit a positive-valued output. Neither case is inferred
+from decryption failure alone.
+
+For Sapling/Ironwood transactions with no transparent inputs or outputs and
+no unsupported pool components, the parsed transaction's public value balances
+establish the fee. The transaction id is checked before using those balances;
+negative or overflowing fees are rejected. For confirmed, locally attributed
+history without a send intent, that fee can complete the spent-input-minus-
+internal-receipt accounting even when padding does not decrypt. An unrecovered
+positive remainder remains an unknown-recipient item, not discarded padding.
+This also handles custom fees and dust added to a fee without assuming the
+default fee is exact. A raw fee alone proves neither input ownership nor change
+scope; the local accounting prerequisites still apply.
