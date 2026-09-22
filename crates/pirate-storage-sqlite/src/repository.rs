@@ -2285,15 +2285,19 @@ impl<'a> Repository<'a> {
                     .ok_or_else(|| Error::Storage("Stored seed key has no id".to_string()))?;
                 let viewing_material_changed = canonical.sapling_dfvk != canonical_sapling_dfvk
                     || canonical.orchard_fvk != canonical_ironwood_fvk;
+                // An earlier rescan can discover history before the original
+                // wallet metadata birthday. Ordinary key/address reads must
+                // never move that established scan floor forward again.
+                let reconciled_birthday = canonical.birthday_height.min(birthday_height);
                 let metadata_changed = canonical.key_type != KeyType::Seed
-                    || canonical.birthday_height != birthday_height
+                    || canonical.birthday_height != reconciled_birthday
                     || !canonical.spendable
                     || canonical.encrypted_mnemonic != secret.encrypted_mnemonic;
                 if viewing_material_changed || metadata_changed {
                     canonical.key_type = KeyType::Seed;
                     canonical.key_scope = KeyScope::Account;
                     canonical.label = Some("Seed".to_string());
-                    canonical.birthday_height = birthday_height;
+                    canonical.birthday_height = reconciled_birthday;
                     canonical.spendable = true;
                     canonical.sapling_dfvk = canonical_sapling_dfvk.clone();
                     canonical.orchard_fvk = canonical_ironwood_fvk.clone();
@@ -3803,7 +3807,8 @@ impl<'a> Repository<'a> {
     /// gates and repair ranges.
     pub fn get_wallet_birthday_height(&self, account_id: i64) -> Result<Option<u64>> {
         let birthday_i64: Option<i64> = self.db.conn().query_row(
-            "SELECT MIN(birthday_height) FROM account_keys WHERE account_id = ?1 AND birthday_height > 0",
+            "SELECT MIN(CASE WHEN birthday_height > 0 THEN birthday_height ELSE 1 END)
+             FROM account_keys WHERE account_id = ?1",
             params![account_id],
             |row| row.get(0),
         )?;
@@ -9718,7 +9723,45 @@ mod tests {
             repaired.orchard_fvk,
             Some(ironwood_extsk.to_extended_fvk().to_bytes())
         );
-        assert_eq!(repaired.birthday_height, 20);
+        assert_eq!(repaired.birthday_height, 10);
+        repo.clear_seed_key_scan_replay_required().unwrap();
+
+        // An earlier rescan lowers the established floor. A later ordinary
+        // read with the original wallet metadata must not raise it again.
+        assert!(
+            !repo
+                .reconcile_primary_seed_account_key(&secret, 5)
+                .unwrap()
+                .1
+        );
+        assert!(
+            !repo
+                .reconcile_primary_seed_account_key(&secret, 20)
+                .unwrap()
+                .1
+        );
+        assert_eq!(
+            repo.get_wallet_birthday_height(account_id).unwrap(),
+            Some(5)
+        );
+        assert_eq!(repo.get_account_keys(account_id).unwrap().len(), 1);
+
+        // Zero means no historical bound, not permission to adopt a later one.
+        repo.reconcile_primary_seed_account_key(&secret, 0).unwrap();
+        repo.reconcile_primary_seed_account_key(&secret, 20)
+            .unwrap();
+        assert_eq!(
+            repo.get_account_key_by_id(key_id)
+                .unwrap()
+                .unwrap()
+                .birthday_height,
+            0
+        );
+        insert_spendable_account_key(&repo, account_id, 100);
+        assert_eq!(
+            repo.get_wallet_birthday_height(account_id).unwrap(),
+            Some(1)
+        );
     }
 
     #[test]

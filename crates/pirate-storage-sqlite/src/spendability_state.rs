@@ -86,9 +86,9 @@ impl<'a> SpendabilityStateStorage<'a> {
     fn birthday_height_for_account(&self, account_id: i64) -> Result<u64> {
         let birthday_i64: Option<i64> = self.db.conn().query_row(
             r#"
-            SELECT MIN(birthday_height)
+            SELECT MIN(CASE WHEN birthday_height > 0 THEN birthday_height ELSE 1 END)
             FROM account_keys
-            WHERE account_id = ?1 AND birthday_height > 0
+            WHERE account_id = ?1
             "#,
             params![account_id],
             |row| row.get(0),
@@ -785,6 +785,21 @@ mod tests {
         let key = EncryptionKey::from_passphrase("test", &salt).unwrap();
         let master_key = MasterKey::generate(EncryptionAlgorithm::ChaCha20Poly1305);
         Database::open(file.path(), &key, master_key).unwrap()
+    }
+
+    #[test]
+    fn unknown_key_birthday_keeps_the_full_history_floor() {
+        let db = test_db();
+        db.conn().execute_batch(
+            "INSERT INTO account_keys (account_id, key_type, key_scope, birthday_height, created_at, spendable)
+             VALUES (1, 'seed', 'account', 0, 1, 1), (1, 'import_spend', 'account', 500, 1, 1);",
+        ).unwrap();
+        assert_eq!(
+            SpendabilityStateStorage::new(&db)
+                .birthday_height_for_account(1)
+                .unwrap(),
+            1
+        );
     }
 
     #[test]
