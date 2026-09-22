@@ -886,6 +886,12 @@ fn build_tx_internal(
     }
 
     if required_total > available_balance {
+        pirate_core::debug_log::append_line_fmt(format_args!(
+            r#"{{"id":"log_build_tx_rejected","timestamp":{},"message":"Transaction preparation rejected","data":{{"reason_code":"INSUFFICIENT_SELECTABLE_FUNDS","selectable_notes":{},"anchor_height":{}}}}}"#,
+            chrono::Utc::now().timestamp_millis(),
+            selectable_notes.len(),
+            anchor_height,
+        ));
         return Err(anyhow!(
             "Insufficient funds: need {} arrrtoshis, have {} arrrtoshis",
             required_total,

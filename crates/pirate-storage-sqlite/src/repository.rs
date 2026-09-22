@@ -3696,6 +3696,27 @@ impl<'a> Repository<'a> {
             return Ok(notes);
         }
 
+        // Record why otherwise selectable notes are outside the history window.
+        // Counts/heights are enough for diagnosis; no note identifiers are logged.
+        let before_birthday = notes
+            .iter()
+            .filter(|note| note.height < wallet_birthday)
+            .count();
+        let after_anchor = notes
+            .iter()
+            .filter(|note| note.height > anchor_height)
+            .count();
+        if before_birthday > 0 || after_anchor > 0 {
+            pirate_core::debug_log::append_line_fmt(format_args!(
+                r#"{{"id":"log_note_height_filter","timestamp":{},"message":"Notes outside spend history window","data":{{"wallet_birthday":{},"anchor_height":{},"candidate_count":{},"before_birthday":{},"after_anchor":{}}}}}"#,
+                chrono::Utc::now().timestamp_millis(),
+                wallet_birthday,
+                anchor_height,
+                notes.len(),
+                before_birthday,
+                after_anchor,
+            ));
+        }
         // Keep only notes at/below anchor and at/above wallet birthday.
         notes.retain(|note| note.height <= anchor_height && note.height >= wallet_birthday);
         if notes.is_empty() {
