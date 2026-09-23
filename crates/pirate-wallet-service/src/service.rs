@@ -176,6 +176,10 @@ pub enum WalletServiceRequest {
         wallet_id: WalletId,
         limit: Option<u32>,
     },
+    QortalListTransactionsPartial {
+        wallet_id: WalletId,
+        limit: Option<u32>,
+    },
     QortalSend {
         wallet_id: WalletId,
         request: QortalSendRequest,
@@ -718,6 +722,9 @@ impl WalletService {
             }
             WalletServiceRequest::QortalListTransactions { wallet_id, limit } => {
                 serialize(ffi::qortal_list_transactions(wallet_id, limit).await?)
+            }
+            WalletServiceRequest::QortalListTransactionsPartial { wallet_id, limit } => {
+                serialize(ffi::qortal_list_transactions_partial(wallet_id, limit).await?)
             }
             WalletServiceRequest::QortalSend { wallet_id, request } => {
                 serialize(ffi::qortal_send(wallet_id, request).await?)
