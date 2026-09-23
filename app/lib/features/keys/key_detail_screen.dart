@@ -42,6 +42,7 @@ class _KeyDetailScreenState extends ConsumerState<KeyDetailScreen> {
   Timer? _balanceRefreshTimer;
   bool _refreshingBalances = false;
   bool _isGenerating = false;
+  bool _isRemoving = false;
   String? _error;
 
   @override
@@ -79,7 +80,11 @@ class _KeyDetailScreenState extends ConsumerState<KeyDetailScreen> {
 
   Future<void> _refreshBalances() async {
     final walletId = _walletId;
-    if (walletId == null || _isDecoy || _refreshingBalances || _isGenerating) {
+    if (walletId == null ||
+        _isDecoy ||
+        _refreshingBalances ||
+        _isGenerating ||
+        _isRemoving) {
       return;
     }
     final previousLoad = _loadFuture;
@@ -183,7 +188,7 @@ class _KeyDetailScreenState extends ConsumerState<KeyDetailScreen> {
     }
   }
 
-  Future<bool> _authorizeKeyExport() async {
+  Future<bool> _authorizeSensitiveKeyAction(String reason) async {
     if (ref.read(decoyModeProvider)) {
       return true;
     }
@@ -198,7 +203,7 @@ class _KeyDetailScreenState extends ConsumerState<KeyDetailScreen> {
     if (biometricsEnabled && biometricAvailable) {
       try {
         final authenticated = await BiometricAuth.authenticate(
-          reason: 'Verify identity to export keys'.tr,
+          reason: reason,
           biometricOnly: true,
         );
         if (authenticated) return true;
@@ -211,120 +216,12 @@ class _KeyDetailScreenState extends ConsumerState<KeyDetailScreen> {
   }
 
   Future<bool> _verifyPassphraseDialog() async {
-    final controller = TextEditingController();
-    bool isVerifying = false;
-    String? error;
     final result = await showDialog<bool>(
       context: context,
       barrierDismissible: true,
       barrierColor: AppColors.backgroundOverlay,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            Future<void> handleVerify() async {
-              final passphrase = controller.text.trim();
-              if (passphrase.isEmpty) {
-                setDialogState(() => error = 'Enter your passphrase'.tr);
-                return;
-              }
-              setDialogState(() {
-                isVerifying = true;
-                error = null;
-              });
-              try {
-                final ok = await FfiBridge.verifyAppPassphrase(passphrase);
-                if (!context.mounted) return;
-                if (ok) {
-                  controller.clear();
-                  Navigator.of(context).pop(true);
-                } else {
-                  setDialogState(() {
-                    error = 'Passphrase is incorrect'.tr;
-                    isVerifying = false;
-                  });
-                }
-              } catch (_) {
-                if (!context.mounted) return;
-                setDialogState(() {
-                  error = 'Unable to verify passphrase'.tr;
-                  isVerifying = false;
-                });
-              }
-            }
-
-            return Dialog(
-              backgroundColor: AppColors.backgroundElevated,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(PSpacing.radiusXL),
-              ),
-              child: Container(
-                constraints: BoxConstraints(
-                  maxWidth: 500,
-                  maxHeight: MediaQuery.of(context).size.height * 0.84,
-                ),
-                padding: EdgeInsets.all(PSpacing.dialogPadding),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Verify passphrase'.tr,
-                      style: PTypography.heading4(color: AppColors.textPrimary),
-                    ),
-                    SizedBox(height: PSpacing.md),
-                    Flexible(
-                      child: SingleChildScrollView(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            PInput(
-                              controller: controller,
-                              label: 'Passphrase'.tr,
-                              hint: 'Enter your wallet passphrase'.tr,
-                              obscureText: true,
-                            ),
-                            if (error != null) ...[
-                              SizedBox(height: PSpacing.sm),
-                              Text(
-                                error!,
-                                style: PTypography.bodySmall(
-                                  color: AppColors.error,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ),
-                    SizedBox(height: PSpacing.lg),
-                    Wrap(
-                      alignment: WrapAlignment.end,
-                      spacing: PSpacing.sm,
-                      runSpacing: PSpacing.sm,
-                      children: [
-                        PButton(
-                          onPressed: () => Navigator.of(context).pop(false),
-                          variant: PButtonVariant.soft,
-                          child: Text('Cancel'.tr),
-                        ),
-                        PButton(
-                          onPressed: isVerifying ? null : handleVerify,
-                          variant: PButtonVariant.primary,
-                          child: Text(
-                            isVerifying ? 'Verifying...'.tr : 'Verify'.tr,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
+      builder: (_) => const _PassphraseVerificationDialog(),
     );
-    controller.dispose();
     return result ?? false;
   }
 
@@ -332,7 +229,9 @@ class _KeyDetailScreenState extends ConsumerState<KeyDetailScreen> {
     final walletId = _walletId;
     if (walletId == null) return;
     setState(() => _error = null);
-    final authorized = await _authorizeKeyExport();
+    final authorized = await _authorizeSensitiveKeyAction(
+      'Verify identity to export keys'.tr,
+    );
     if (!authorized) return;
     try {
       final isDecoy = ref.read(decoyModeProvider);
@@ -397,6 +296,94 @@ class _KeyDetailScreenState extends ConsumerState<KeyDetailScreen> {
       setState(
         () => _error = 'Failed to export keys: {error}'.trArgs({'error': e}),
       );
+    }
+  }
+
+  Future<void> _removeImportedKey(KeyGroupInfo key) async {
+    final walletId = _walletId;
+    if (walletId == null ||
+        _isDecoy ||
+        _isRemoving ||
+        key.keyType != KeyTypeInfo.importedSpending) {
+      return;
+    }
+
+    final label = key.label?.trim();
+    final name = label == null || label.isEmpty
+        ? 'Imported spending key'.tr
+        : label;
+    final confirmed = await PDialog.show<bool>(
+      context: context,
+      title: 'Remove imported key?'.tr,
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Remove “{name}” from this wallet? Its private key and tracked addresses will be removed.'
+                .trArgs({'name': name}),
+          ),
+          SizedBox(height: PSpacing.md),
+          Text(
+            'Your recovery phrase cannot restore this key. Save the private key first.'
+                .tr,
+          ),
+          SizedBox(height: PSpacing.md),
+          Text(
+            'Future payments to its old addresses will be missed until you reimport and rescan. Removal requires a fully synced wallet and no unspent funds for this key.'
+                .tr,
+          ),
+        ],
+      ),
+      actions: [
+        PDialogAction(label: 'Cancel'.tr, variant: PButtonVariant.outline),
+        PDialogAction<bool>(
+          label: 'Continue'.tr,
+          variant: PButtonVariant.danger,
+          result: true,
+        ),
+      ],
+    );
+    if (!mounted || confirmed != true) return;
+
+    final authorized = await _authorizeSensitiveKeyAction(
+      'Verify identity to remove an imported key'.tr,
+    );
+    if (!mounted ||
+        !authorized ||
+        _walletId != walletId ||
+        widget.keyId != key.id ||
+        _isDecoy) {
+      return;
+    }
+
+    setState(() {
+      _isRemoving = true;
+      _error = null;
+    });
+    try {
+      await FfiBridge.removeImportedSpendingKey(
+        walletId: walletId,
+        keyId: key.id,
+      );
+      if (!mounted || _walletId != walletId || widget.keyId != key.id) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Imported key removed from this wallet.'.tr),
+          backgroundColor: AppColors.success,
+        ),
+      );
+      context.go('/settings/keys');
+    } catch (e) {
+      if (mounted && _walletId == walletId && widget.keyId == key.id) {
+        setState(
+          () => _error = 'Could not remove imported key: {error}'.trArgs({
+            'error': e,
+          }),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isRemoving = false);
     }
   }
 
@@ -569,6 +556,19 @@ class _KeyDetailScreenState extends ConsumerState<KeyDetailScreen> {
                               }, childCount: data.addresses.length),
                             ),
                     ),
+                    if (!_isDecoy &&
+                        key.keyType == KeyTypeInfo.importedSpending)
+                      SliverPadding(
+                        padding: EdgeInsets.fromLTRB(
+                          PSpacing.lg,
+                          0,
+                          PSpacing.lg,
+                          PSpacing.xl,
+                        ),
+                        sliver: SliverToBoxAdapter(
+                          child: _buildRemovalCard(key),
+                        ),
+                      ),
                   ],
                 );
               },
@@ -618,6 +618,33 @@ class _KeyDetailScreenState extends ConsumerState<KeyDetailScreen> {
     ];
 
     return _buildActionGrid(context, actions);
+  }
+
+  Widget _buildRemovalCard(KeyGroupInfo key) {
+    return PCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Remove imported key'.tr, style: PTypography.heading4()),
+          SizedBox(height: PSpacing.xs),
+          Text(
+            'Only remove this key after saving its private key and moving any funds out.'
+                .tr,
+            style: PTypography.bodySmall(color: AppColors.textSecondary),
+          ),
+          SizedBox(height: PSpacing.md),
+          PButton(
+            onPressed: _isRemoving || _isGenerating
+                ? null
+                : () => _removeImportedKey(key),
+            loading: _isRemoving,
+            variant: PButtonVariant.danger,
+            icon: const Icon(Icons.delete_outline),
+            child: Text('Remove imported key'.tr),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildActionGrid(BuildContext context, List<_ActionItem> actions) {
@@ -720,6 +747,129 @@ class _KeyDetailScreenState extends ConsumerState<KeyDetailScreen> {
       address.address,
       dataType: ClipboardDataType.address,
       successMessage: 'Address copied. Clears in 60 seconds.'.tr,
+    );
+  }
+}
+
+class _PassphraseVerificationDialog extends StatefulWidget {
+  const _PassphraseVerificationDialog();
+
+  @override
+  State<_PassphraseVerificationDialog> createState() =>
+      _PassphraseVerificationDialogState();
+}
+
+class _PassphraseVerificationDialogState
+    extends State<_PassphraseVerificationDialog> {
+  final _controller = TextEditingController();
+  bool _isVerifying = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _verify() async {
+    final passphrase = _controller.text.trim();
+    if (passphrase.isEmpty) {
+      setState(() => _error = 'Enter your passphrase'.tr);
+      return;
+    }
+    setState(() {
+      _isVerifying = true;
+      _error = null;
+    });
+    try {
+      final ok = await FfiBridge.verifyAppPassphrase(passphrase);
+      if (!mounted) return;
+      if (ok) {
+        _controller.clear();
+        Navigator.of(context).pop(true);
+      } else {
+        setState(() {
+          _error = 'Passphrase is incorrect'.tr;
+          _isVerifying = false;
+        });
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Unable to verify passphrase'.tr;
+        _isVerifying = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: AppColors.backgroundElevated,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(PSpacing.radiusXL),
+      ),
+      child: Container(
+        constraints: BoxConstraints(
+          maxWidth: 500,
+          maxHeight: MediaQuery.of(context).size.height * 0.84,
+        ),
+        padding: EdgeInsets.all(PSpacing.dialogPadding),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Verify passphrase'.tr,
+              style: PTypography.heading4(color: AppColors.textPrimary),
+            ),
+            SizedBox(height: PSpacing.md),
+            Flexible(
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    PInput(
+                      controller: _controller,
+                      label: 'Passphrase'.tr,
+                      hint: 'Enter your wallet passphrase'.tr,
+                      obscureText: true,
+                      sensitive: true,
+                      autocorrect: false,
+                      enableSuggestions: false,
+                    ),
+                    if (_error != null) ...[
+                      SizedBox(height: PSpacing.sm),
+                      Text(
+                        _error!,
+                        style: PTypography.bodySmall(color: AppColors.error),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            SizedBox(height: PSpacing.lg),
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: PSpacing.sm,
+              runSpacing: PSpacing.sm,
+              children: [
+                PButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  variant: PButtonVariant.soft,
+                  child: Text('Cancel'.tr),
+                ),
+                PButton(
+                  onPressed: _isVerifying ? null : _verify,
+                  variant: PButtonVariant.primary,
+                  child: Text(_isVerifying ? 'Verifying...'.tr : 'Verify'.tr),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
