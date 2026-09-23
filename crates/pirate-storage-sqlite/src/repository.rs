@@ -3046,11 +3046,185 @@ impl<'a> Repository<'a> {
         }))
     }
 
-    /// Delete an account key by id.
-    pub fn delete_account_key(&self, key_id: i64) -> Result<()> {
-        self.db
-            .conn()
-            .execute("DELETE FROM account_keys WHERE id = ?1", [key_id])?;
+    /// Forget a separately imported spending key and its key-owned wallet data.
+    ///
+    /// The caller must first stop sync so its in-memory key inventory cannot
+    /// reinsert notes while this transaction is running. Chain trees and shared
+    /// transaction metadata belong to the wallet, not to one imported key.
+    pub fn remove_imported_spending_key(&self, account_id: i64, key_id: i64) -> Result<()> {
+        let tx = self.db.conn().unchecked_transaction()?;
+
+        let key = self
+            .get_account_key_by_id(key_id)?
+            .ok_or_else(|| Error::NotFound(format!("Imported key {key_id}")))?;
+        if key.account_id != account_id
+            || key.key_type != KeyType::ImportSpend
+            || key.key_scope != KeyScope::Account
+            || (key.sapling_extsk.is_none() && key.orchard_extsk.is_none())
+            || self
+                .get_seed_derived_account_keys(account_id)?
+                .iter()
+                .any(|metadata| metadata.key_id == key_id)
+        {
+            return Err(Error::Validation(
+                "Only a separately imported spending key can be removed".to_string(),
+            ));
+        }
+        let account_keys = self.get_account_keys(account_id)?;
+        if account_keys.iter().any(|other| {
+            other.id != Some(key_id)
+                && (key
+                    .sapling_extsk
+                    .as_ref()
+                    .is_some_and(|spending| other.sapling_extsk.as_ref() == Some(spending))
+                    || key
+                        .orchard_extsk
+                        .as_ref()
+                        .is_some_and(|spending| other.orchard_extsk.as_ref() == Some(spending)))
+        }) {
+            return Err(Error::Validation(
+                "Another key group contains the same spending key".to_string(),
+            ));
+        }
+        let active_key_ids: HashSet<i64> = account_keys.iter().filter_map(|key| key.id).collect();
+
+        let sync = crate::SyncStateStorage::new(&self.db).load_sync_state()?;
+        let spendability = crate::SpendabilityStateStorage::new(&self.db).load_state()?;
+        if sync.local_height == 0
+            || sync.target_height == 0
+            || sync.local_height < sync.target_height
+            || sync.local_height < spendability.target_height
+            || spendability.anchor_height == 0
+            || spendability.validated_anchor_height < spendability.anchor_height
+            || spendability.rescan_required
+            || spendability.required_rescan_from_height != 0
+            || spendability.repair_queued
+            || spendability.sync_interrupted
+            || crate::ScanQueueStorage::new(&self.db)
+                .next_found_note_range()?
+                .is_some()
+        {
+            return Err(Error::Validation(
+                "Finish syncing and any required rescan before removing an imported key"
+                    .to_string(),
+            ));
+        }
+
+        // Outgoing intents are account scoped. While one can still confirm, its
+        // change may belong to this key even if all input notes are marked spent.
+        let mut expired_unconfirmed_txids = HashSet::new();
+        for intent in self.get_outgoing_transaction_intents(account_id)? {
+            if self.outgoing_transaction_is_confirmed(&intent.txid)? {
+                continue;
+            }
+            if intent.expiry_height == 0 || sync.local_height <= u64::from(intent.expiry_height) {
+                return Err(Error::Validation(
+                    "Wait for pending transactions to confirm or expire before removing a key"
+                        .to_string(),
+                ));
+            }
+            expired_unconfirmed_txids.insert(intent.txid.clone());
+            if let Some(reversed) = reverse_txid_hex(&intent.txid) {
+                expired_unconfirmed_txids.insert(reversed);
+            }
+        }
+
+        let address_owner_by_id: HashMap<i64, Option<i64>> = self
+            .get_all_addresses(account_id)?
+            .into_iter()
+            .filter_map(|address| address.id.map(|id| (id, address.key_id)))
+            .collect();
+        let target_address_ids: HashSet<i64> = address_owner_by_id
+            .iter()
+            .filter_map(|(id, owner)| (*owner == Some(key_id)).then_some(*id))
+            .collect();
+
+        let mut note_ids = Vec::new();
+        for note in self.get_account_notes(account_id)? {
+            let key_matches = note.key_id == Some(key_id);
+            let address_matches = note
+                .address_id
+                .is_some_and(|id| target_address_ids.contains(&id));
+            let belongs_to_key = key_matches || address_matches;
+            let known_other_owner = note
+                .key_id
+                .filter(|id| *id != key_id && active_key_ids.contains(id))
+                .or_else(|| {
+                    note.address_id
+                        .and_then(|id| address_owner_by_id.get(&id))
+                        .and_then(|owner| *owner)
+                        .filter(|id| *id != key_id && active_key_ids.contains(id))
+                })
+                .is_some();
+            if !note.spent && (belongs_to_key || !known_other_owner) {
+                return Err(Error::Validation(
+                    "This key may still control funds; move them and finish syncing before removal"
+                        .to_string(),
+                ));
+            }
+            if !belongs_to_key {
+                continue;
+            }
+            if note.spent && note.spent_txid.is_none() {
+                return Err(Error::Validation(
+                    "A spent note is missing its spending transaction; rescan before removing this key"
+                        .to_string(),
+                ));
+            }
+            if note
+                .spent_txid
+                .as_ref()
+                .is_some_and(|txid| expired_unconfirmed_txids.contains(&hex::encode(txid)))
+            {
+                return Err(Error::Validation(
+                    "Wait for an expired transaction to release its input notes before removing a key"
+                        .to_string(),
+                ));
+            }
+            if (address_matches && note.key_id.is_some_and(|id| id != key_id))
+                || (key_matches
+                    && note.address_id.is_some_and(|id| {
+                        address_owner_by_id
+                            .get(&id)
+                            .is_some_and(|owner| owner.is_some_and(|owner| owner != key_id))
+                    }))
+            {
+                return Err(Error::Validation(
+                    "A note has conflicting key and address ownership".to_string(),
+                ));
+            }
+            note_ids.push(
+                note.id.ok_or_else(|| {
+                    Error::Storage("Stored note has no row identifier".to_string())
+                })?,
+            );
+        }
+
+        for note_id in note_ids {
+            tx.execute("DELETE FROM notes WHERE id = ?1", [note_id])?;
+        }
+        // This connection does not enable SQLite foreign-key enforcement, so
+        // the schema's ON DELETE CASCADE does not clean these rows for us.
+        for address_id in target_address_ids {
+            tx.execute(
+                "DELETE FROM address_display_preferences WHERE address_id = ?1",
+                [address_id],
+            )?;
+        }
+        tx.execute(
+            "DELETE FROM addresses WHERE account_id = ?1 AND key_id = ?2",
+            params![account_id, key_id],
+        )?;
+        let deleted = tx.execute(
+            "DELETE FROM account_keys WHERE id = ?1 AND account_id = ?2 AND key_type = 'import_spend'",
+            params![key_id, account_id],
+        )?;
+        if deleted != 1 {
+            return Err(Error::Storage(
+                "Imported key changed during removal".to_string(),
+            ));
+        }
+        tx.commit()?;
         Ok(())
     }
 
@@ -6651,6 +6825,251 @@ mod tests {
             color_tag: ColorTag::None,
             address_scope: AddressScope::External,
         }
+    }
+
+    fn mark_key_removal_ready(db: &Database) {
+        db.conn()
+            .execute_batch(
+                "UPDATE sync_state SET local_height = 300, target_height = 300 WHERE id = 1;
+                 UPDATE spendability_state SET spendable = 1, rescan_required = 0,
+                   required_rescan_from_height = 0, target_height = 300,
+                   anchor_height = 290, validated_anchor_height = 290,
+                   repair_queued = 0, sync_interrupted = 0, reason_code = 'OK'
+                 WHERE id = 1;",
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn removing_imported_key_cleans_its_spent_notes_and_addresses_only() {
+        let db = test_db();
+        let repo = Repository::new(&db);
+        let account_id = repo
+            .insert_account(&Account {
+                id: None,
+                name: "Removal".into(),
+                created_at: 1,
+            })
+            .unwrap();
+        let seed_id = insert_spendable_account_key(&repo, account_id, 1);
+        let imported = verified_ironwood_import(account_id, 0x32, 1);
+        let imported_id = repo
+            .upsert_account_key(&repo.encrypt_account_key_fields(&imported).unwrap())
+            .unwrap();
+        let mut address = verified_ironwood_address(account_id, "ironwood-removal-test");
+        address.key_id = Some(imported_id);
+        repo.upsert_address(&address).unwrap();
+        let address_id = repo
+            .get_address_by_string(account_id, &address.address)
+            .unwrap()
+            .unwrap()
+            .id
+            .unwrap();
+        repo.set_address_pinned(account_id, address_id, true)
+            .unwrap();
+        assert_eq!(
+            db.conn()
+                .query_row("PRAGMA foreign_keys", [], |row| row.get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+        insert_received_note(
+            &repo,
+            account_id,
+            vec![0x51; 32],
+            NoteType::Ironwood,
+            0,
+            12,
+            100,
+            Some(address_id),
+            None,
+            true,
+            0x61,
+        );
+        let mut note = repo.get_account_notes(account_id).unwrap().remove(0);
+        note.key_id = Some(imported_id);
+        repo.update_note_by_id(&note).unwrap();
+
+        // A second key and its transaction metadata must survive removal.
+        repo.upsert_transaction(&hex::encode([0x88; 32]), 200, 1, 0)
+            .unwrap();
+        mark_key_removal_ready(&db);
+        repo.remove_imported_spending_key(account_id, imported_id)
+            .unwrap();
+        assert!(repo.get_account_key_by_id(imported_id).unwrap().is_none());
+        assert!(repo.get_account_key_by_id(seed_id).unwrap().is_some());
+        assert!(repo
+            .get_addresses_by_key(account_id, imported_id)
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            db.conn()
+                .query_row(
+                    "SELECT COUNT(*) FROM address_display_preferences WHERE address_id = ?1",
+                    [address_id],
+                    |row| row.get::<_, i64>(0)
+                )
+                .unwrap(),
+            0
+        );
+        assert!(repo.get_account_notes(account_id).unwrap().is_empty());
+        assert_eq!(
+            repo.get_transaction_heights(&[hex::encode([0x88; 32])])
+                .unwrap()
+                .values()
+                .next()
+                .copied(),
+            Some(200)
+        );
+    }
+
+    #[test]
+    fn removing_imported_key_rejects_unspent_and_unattributed_notes() {
+        let db = test_db();
+        let repo = Repository::new(&db);
+        let account_id = repo
+            .insert_account(&Account {
+                id: None,
+                name: "Removal".into(),
+                created_at: 1,
+            })
+            .unwrap();
+        let imported = verified_sapling_import(account_id, 0x32, 1);
+        let imported_id = repo
+            .upsert_account_key(&repo.encrypt_account_key_fields(&imported).unwrap())
+            .unwrap();
+        mark_key_removal_ready(&db);
+
+        // A legacy note without a key or address cannot be proven unrelated.
+        insert_received_note(
+            &repo,
+            account_id,
+            vec![0x52; 32],
+            NoteType::Sapling,
+            0,
+            12,
+            100,
+            None,
+            None,
+            false,
+            0x62,
+        );
+        assert!(repo
+            .remove_imported_spending_key(account_id, imported_id)
+            .is_err());
+        let mut note = repo.get_account_notes(account_id).unwrap().remove(0);
+        note.key_id = Some(imported_id);
+        repo.update_note_by_id(&note).unwrap();
+        assert!(repo
+            .remove_imported_spending_key(account_id, imported_id)
+            .is_err());
+        assert!(repo.get_account_key_by_id(imported_id).unwrap().is_some());
+    }
+
+    #[test]
+    fn removing_imported_key_requires_sync_and_rejects_seed_keys() {
+        let db = test_db();
+        let repo = Repository::new(&db);
+        let account_id = repo
+            .insert_account(&Account {
+                id: None,
+                name: "Removal".into(),
+                created_at: 1,
+            })
+            .unwrap();
+        let seed_id = insert_spendable_account_key(&repo, account_id, 1);
+        let imported = verified_sapling_import(account_id, 0x32, 1);
+        let imported_id = repo
+            .upsert_account_key(&repo.encrypt_account_key_fields(&imported).unwrap())
+            .unwrap();
+        assert!(repo
+            .remove_imported_spending_key(account_id, imported_id)
+            .is_err());
+        mark_key_removal_ready(&db);
+        assert!(repo
+            .remove_imported_spending_key(account_id, seed_id)
+            .is_err());
+        assert!(repo
+            .remove_imported_spending_key(account_id + 1, imported_id)
+            .is_err());
+        // Restored ZIP-32 accounts may be stored as import_spend, but their
+        // provenance says they belong to the recovery phrase.
+        repo.upsert_seed_derived_account_key(imported_id, account_id, 1, false)
+            .unwrap();
+        assert!(repo
+            .remove_imported_spending_key(account_id, imported_id)
+            .is_err());
+        assert!(repo.get_account_key_by_id(imported_id).unwrap().is_some());
+    }
+
+    #[test]
+    fn removing_imported_key_rejects_pending_outgoing_transaction() {
+        let db = test_db();
+        let repo = Repository::new(&db);
+        let account_id = repo
+            .insert_account(&Account {
+                id: None,
+                name: "Removal".into(),
+                created_at: 1,
+            })
+            .unwrap();
+        let imported = verified_sapling_import(account_id, 0x32, 1);
+        let imported_id = repo
+            .upsert_account_key(&repo.encrypt_account_key_fields(&imported).unwrap())
+            .unwrap();
+        mark_key_removal_ready(&db);
+        repo.upsert_outgoing_transaction_intent(
+            account_id,
+            &hex::encode([0x99; 32]),
+            10,
+            1,
+            1,
+            320,
+        )
+        .unwrap();
+        assert!(repo
+            .remove_imported_spending_key(account_id, imported_id)
+            .is_err());
+        assert!(repo.get_account_key_by_id(imported_id).unwrap().is_some());
+    }
+
+    #[test]
+    fn removing_imported_key_rejects_unresolved_spent_note() {
+        let db = test_db();
+        let repo = Repository::new(&db);
+        let account_id = repo
+            .insert_account(&Account {
+                id: None,
+                name: "Removal".into(),
+                created_at: 1,
+            })
+            .unwrap();
+        let imported = verified_sapling_import(account_id, 0x32, 1);
+        let imported_id = repo
+            .upsert_account_key(&repo.encrypt_account_key_fields(&imported).unwrap())
+            .unwrap();
+        insert_received_note(
+            &repo,
+            account_id,
+            vec![0x53; 32],
+            NoteType::Sapling,
+            0,
+            12,
+            100,
+            None,
+            None,
+            true,
+            0x63,
+        );
+        let mut note = repo.get_account_notes(account_id).unwrap().remove(0);
+        note.key_id = Some(imported_id);
+        note.spent_txid = None;
+        repo.update_note_by_id(&note).unwrap();
+        mark_key_removal_ready(&db);
+        assert!(repo
+            .remove_imported_spending_key(account_id, imported_id)
+            .is_err());
+        assert!(repo.get_account_key_by_id(imported_id).unwrap().is_some());
     }
 
     #[test]
