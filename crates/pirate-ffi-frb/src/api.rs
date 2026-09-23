@@ -749,6 +749,11 @@ pub fn import_spending_key(
     service::import_spending_key(wallet_id, sapling_key, ironwood_key, label, birthday_height)
 }
 
+/// Remove a separately imported spending key after validating sync and zero funds.
+pub fn remove_imported_spending_key(wallet_id: WalletId, key_id: i64) -> Result<()> {
+    service::remove_imported_spending_key(wallet_id, key_id)
+}
+
 /// Export mnemonic seed through the raw advanced path.
 ///
 /// This path is intended for advanced callers that implement their own local

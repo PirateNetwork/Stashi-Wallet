@@ -73,7 +73,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => -1724411936;
+  int get rustContentHash => -1968604573;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -489,6 +489,11 @@ abstract class RustLibApi extends BaseApi {
   Future<String> crateApiNextReceiveAddress({required String walletId});
 
   Future<BigInt> crateApiParseAmount({required String arrr});
+
+  Future<void> crateApiRemoveImportedSpendingKey({
+    required String walletId,
+    required PlatformInt64 keyId,
+  });
 
   Future<void> crateApiRenameWallet({
     required String walletId,
@@ -3745,6 +3750,39 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiParseAmountConstMeta =>
       const TaskConstMeta(debugName: "parse_amount", argNames: ["arrr"]);
+
+  @override
+  Future<void> crateApiRemoveImportedSpendingKey({
+    required String walletId,
+    required PlatformInt64 keyId,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          var arg0 = cst_encode_String(walletId);
+          var arg1 = cst_encode_i_64(keyId);
+          return wire.wire__crate__api__remove_imported_spending_key(
+            port_,
+            arg0,
+            arg1,
+          );
+        },
+        codec: DcoCodec(
+          decodeSuccessData: dco_decode_unit,
+          decodeErrorData: dco_decode_AnyhowException,
+        ),
+        constMeta: kCrateApiRemoveImportedSpendingKeyConstMeta,
+        argValues: [walletId, keyId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiRemoveImportedSpendingKeyConstMeta =>
+      const TaskConstMeta(
+        debugName: "remove_imported_spending_key",
+        argNames: ["walletId", "keyId"],
+      );
 
   @override
   Future<void> crateApiRenameWallet({

@@ -595,6 +595,16 @@ class FfiBridge {
     throw UnimplementedError('FRB bindings not available');
   }
 
+  static Future<void> removeImportedSpendingKey({
+    required WalletId walletId,
+    required int keyId,
+  }) async {
+    if (kUseFrbBindings) {
+      return api.removeImportedSpendingKey(walletId: walletId, keyId: keyId);
+    }
+    throw UnimplementedError('FRB bindings not available');
+  }
+
   static Future<KeyExportInfo> exportKeyGroupKeys({
     required WalletId walletId,
     required int keyId,

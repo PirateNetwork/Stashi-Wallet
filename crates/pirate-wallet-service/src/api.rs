@@ -1558,6 +1558,17 @@ pub async fn import_spending_key_async(
     .await
 }
 
+/// Remove a separately imported spending key and its key-owned wallet data.
+/// Refuses removal until sync is validated and that key has no unspent funds.
+pub fn remove_imported_spending_key(wallet_id: WalletId, key_id: i64) -> Result<()> {
+    run_on_runtime_blocking(move || key_management::remove_imported_spending_key(wallet_id, key_id))
+}
+
+/// Async-host variant of imported spending-key removal.
+pub async fn remove_imported_spending_key_async(wallet_id: WalletId, key_id: i64) -> Result<()> {
+    key_management::remove_imported_spending_key(wallet_id, key_id).await
+}
+
 /// Import one spending key only after proving a caller-supplied address.
 pub async fn import_spending_key_verified(
     wallet_id: WalletId,

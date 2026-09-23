@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueNom,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1724411936;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1968604573;
 
 // Section: executor
 
@@ -2723,6 +2723,32 @@ fn wire__crate__api__parse_amount_impl(
                 transform_result_dco::<_, _, flutter_rust_bridge::for_generated::anyhow::Error>(
                     (move || {
                         let output_ok = crate::api::parse_amount(api_arrr)?;
+                        std::result::Result::Ok(output_ok)
+                    })(),
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__remove_imported_spending_key_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    wallet_id: impl CstDecode<String>,
+    key_id: impl CstDecode<i64>,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::DcoCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "remove_imported_spending_key",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let api_wallet_id = wallet_id.cst_decode();
+            let api_key_id = key_id.cst_decode();
+            move |context| {
+                transform_result_dco::<_, _, flutter_rust_bridge::for_generated::anyhow::Error>(
+                    (move || {
+                        let output_ok =
+                            crate::api::remove_imported_spending_key(api_wallet_id, api_key_id)?;
                         std::result::Result::Ok(output_ok)
                     })(),
                 )
@@ -9431,6 +9457,15 @@ mod io {
     }
 
     #[unsafe(no_mangle)]
+    pub extern "C" fn frbgen_pirate_wallet_wire__crate__api__remove_imported_spending_key(
+        port_: i64,
+        wallet_id: *mut wire_cst_list_prim_u_8_strict,
+        key_id: i64,
+    ) {
+        wire__crate__api__remove_imported_spending_key_impl(port_, wallet_id, key_id)
+    }
+
+    #[unsafe(no_mangle)]
     pub extern "C" fn frbgen_pirate_wallet_wire__crate__api__rename_wallet(
         port_: i64,
         wallet_id: *mut wire_cst_list_prim_u_8_strict,
@@ -12819,6 +12854,15 @@ mod web {
         arrr: String,
     ) {
         wire__crate__api__parse_amount_impl(port_, arrr)
+    }
+
+    #[wasm_bindgen]
+    pub fn wire__crate__api__remove_imported_spending_key(
+        port_: flutter_rust_bridge::for_generated::MessagePort,
+        wallet_id: String,
+        key_id: flutter_rust_bridge::for_generated::wasm_bindgen::JsValue,
+    ) {
+        wire__crate__api__remove_imported_spending_key_impl(port_, wallet_id, key_id)
     }
 
     #[wasm_bindgen]

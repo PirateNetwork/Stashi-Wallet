@@ -140,6 +140,10 @@ pub enum WalletServiceRequest {
         label: Option<String>,
         birthday_height: u32,
     },
+    RemoveImportedSpendingKey {
+        wallet_id: WalletId,
+        key_id: i64,
+    },
     ImportSpendingKeyVerified {
         wallet_id: WalletId,
         pool: VerifiedSpendingKeyPool,
@@ -675,6 +679,10 @@ impl WalletService {
                 )
                 .await?,
             ),
+            WalletServiceRequest::RemoveImportedSpendingKey { wallet_id, key_id } => {
+                ffi::remove_imported_spending_key_async(wallet_id, key_id).await?;
+                Ok(ack())
+            }
             WalletServiceRequest::ImportSpendingKeyVerified {
                 wallet_id,
                 pool,

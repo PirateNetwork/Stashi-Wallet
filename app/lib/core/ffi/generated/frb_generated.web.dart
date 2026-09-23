@@ -2683,6 +2683,16 @@ class RustLibWire implements BaseWire {
   void wire__crate__api__parse_amount(NativePortType port_, String arrr) =>
       wasmModule.wire__crate__api__parse_amount(port_, arrr);
 
+  void wire__crate__api__remove_imported_spending_key(
+    NativePortType port_,
+    String wallet_id,
+    JSAny key_id,
+  ) => wasmModule.wire__crate__api__remove_imported_spending_key(
+    port_,
+    wallet_id,
+    key_id,
+  );
+
   void wire__crate__api__rename_wallet(
     NativePortType port_,
     String wallet_id,
@@ -3621,6 +3631,12 @@ extension type RustLibWasmModule._(JSObject _) implements JSObject {
   external void wire__crate__api__parse_amount(
     NativePortType port_,
     String arrr,
+  );
+
+  external void wire__crate__api__remove_imported_spending_key(
+    NativePortType port_,
+    String wallet_id,
+    JSAny key_id,
   );
 
   external void wire__crate__api__rename_wallet(

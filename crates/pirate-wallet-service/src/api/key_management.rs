@@ -526,6 +526,25 @@ pub(super) async fn import_spending_key(
     Ok(key_id)
 }
 
+pub(super) async fn remove_imported_spending_key(wallet_id: WalletId, key_id: i64) -> Result<()> {
+    ensure_not_decoy("Remove imported spending key")?;
+    require_wallet_signing_session(&wallet_id)?;
+
+    // SyncEngine retains the key inventory it loaded at startup. Keep it
+    // stopped until the storage transaction has committed.
+    let _sync_operation_guard = sync_control::acquire_exclusive_key_import(&wallet_id).await?;
+    let (_db, repo) = open_wallet_db_for(&wallet_id)?;
+    let secret = repo
+        .get_wallet_secret(&wallet_id)?
+        .ok_or_else(|| anyhow!("Wallet secret not found for {}", wallet_id))?;
+    repo.remove_imported_spending_key(secret.account_id, key_id)
+        .map_err(|error| anyhow!(error.to_string()))?;
+
+    tx_flow::clear_pending_changes(&wallet_id);
+    sync_control::clear_wallet_data_caches(&wallet_id);
+    Ok(())
+}
+
 struct VerifiedSpendingKeyMaterial {
     canonical_address: String,
     diversifier_index_88: [u8; 11],

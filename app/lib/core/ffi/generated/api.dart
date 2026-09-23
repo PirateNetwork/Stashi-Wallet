@@ -454,6 +454,15 @@ Future<PlatformInt64> importSpendingKey({
   birthdayHeight: birthdayHeight,
 );
 
+/// Remove a separately imported spending key after validating sync and zero funds.
+Future<void> removeImportedSpendingKey({
+  required String walletId,
+  required PlatformInt64 keyId,
+}) => RustLib.instance.api.crateApiRemoveImportedSpendingKey(
+  walletId: walletId,
+  keyId: keyId,
+);
+
 /// Export mnemonic seed through the raw advanced path.
 ///
 /// This path is intended for advanced callers that implement their own local

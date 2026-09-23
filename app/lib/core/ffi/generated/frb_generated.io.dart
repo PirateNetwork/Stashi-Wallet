@@ -5208,6 +5208,34 @@ class RustLibWire implements BaseWire {
             void Function(int, ffi.Pointer<wire_cst_list_prim_u_8_strict>)
           >();
 
+  void wire__crate__api__remove_imported_spending_key(
+    int port_,
+    ffi.Pointer<wire_cst_list_prim_u_8_strict> wallet_id,
+    int key_id,
+  ) {
+    return _wire__crate__api__remove_imported_spending_key(
+      port_,
+      wallet_id,
+      key_id,
+    );
+  }
+
+  late final _wire__crate__api__remove_imported_spending_keyPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Void Function(
+            ffi.Int64,
+            ffi.Pointer<wire_cst_list_prim_u_8_strict>,
+            ffi.Int64,
+          )
+        >
+      >('frbgen_pirate_wallet_wire__crate__api__remove_imported_spending_key');
+  late final _wire__crate__api__remove_imported_spending_key =
+      _wire__crate__api__remove_imported_spending_keyPtr
+          .asFunction<
+            void Function(int, ffi.Pointer<wire_cst_list_prim_u_8_strict>, int)
+          >();
+
   void wire__crate__api__rename_wallet(
     int port_,
     ffi.Pointer<wire_cst_list_prim_u_8_strict> wallet_id,

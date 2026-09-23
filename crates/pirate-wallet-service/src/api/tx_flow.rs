@@ -580,7 +580,6 @@ pub(super) fn add_pending_change(wallet_id: &WalletId, txid: &str, change_amount
     });
 }
 
-#[cfg(test)]
 pub(super) fn clear_pending_changes(wallet_id: &WalletId) {
     PENDING_CHANGES.write().remove(wallet_id);
 }
