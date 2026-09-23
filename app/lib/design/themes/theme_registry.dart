@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/i18n/arb_text_localizer.dart';
 import 'default_palette.dart';
+import 'pirate_gold_palette.dart';
 import 'wallet_palette.dart';
 
 /// A bundled, reviewed theme. IDs are persisted; never rename an existing ID.
@@ -39,7 +40,18 @@ class WalletThemes {
     dark: defaultDarkPalette,
   );
 
-  static final List<WalletTheme> all = List.unmodifiable([defaultTheme]);
+  static final pirateGoldTheme = WalletTheme(
+    id: 'pirate-gold',
+    nameBuilder: () => 'Pirate Gold'.tr,
+    descriptionBuilder: () => 'Warm gold and dark treasure-inspired tones'.tr,
+    light: pirateGoldLightPalette,
+    dark: pirateGoldDarkPalette,
+  );
+
+  static final List<WalletTheme> all = List.unmodifiable([
+    defaultTheme,
+    pirateGoldTheme,
+  ]);
 
   /// Removed or unknown saved themes fall back to the original appearance.
   static WalletTheme resolve(String? id, {Iterable<WalletTheme>? themes}) =>

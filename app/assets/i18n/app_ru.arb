@@ -1,4 +1,6 @@
 {
+  "Pirate Gold": "Pirate Gold",
+  "Warm gold and dark treasure-inspired tones": "Тёплые золотые и тёмные тона, вдохновлённые сокровищами",
   "@@locale": "ru",
   "I2P is still starting. Keep the app open and try the connection test again in a minute.": "I2P всё ещё запускается. Оставьте приложение открытым и повторите проверку соединения через минуту.",
   "The connection test timed out. The selected network may still be starting; try again shortly.": "Время проверки соединения истекло. Выбранная сеть, возможно, ещё запускается; повторите попытку чуть позже.",
