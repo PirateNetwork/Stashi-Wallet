@@ -1579,5 +1579,14 @@
   "This is your current receive address.": "Это ваш текущий адрес для получения платежей.",
   "You can still receive payments here. Your current receive address stays the same.": "Вы по-прежнему можете получать платежи на этот адрес. Ваш текущий адрес для получения платежей не изменится.",
   "The server is temporarily unavailable. Try again shortly or choose another server.": "Сервер временно недоступен. Повторите попытку через некоторое время или выберите другой сервер.",
-  "Endpoint": "Точка подключения"
+  "Endpoint": "Точка подключения",
+  "Could not remove imported key: {error}": "Не удалось удалить импортированный ключ: {error}",
+  "Imported key removed from this wallet.": "Импортированный ключ удалён из этого кошелька.",
+  "Only remove this key after saving its private key and moving any funds out.": "Удаляйте этот ключ только после сохранения его закрытого ключа и вывода всех средств.",
+  "Remove imported key": "Удалить импортированный ключ",
+  "Remove imported key?": "Удалить импортированный ключ?",
+  "Remove “{name}” from this wallet? Its private key and tracked addresses will be removed.": "Удалить «{name}» из этого кошелька? Его закрытый ключ и отслеживаемые адреса будут удалены.",
+  "Your recovery phrase cannot restore this key. Save the private key first.": "Фраза восстановления не позволяет восстановить этот ключ. Сначала сохраните закрытый ключ.",
+  "Future payments to its old addresses will be missed until you reimport and rescan. Removal requires a fully synced wallet and no unspent funds for this key.": "Будущие платежи на его старые адреса не будут обнаружены, пока вы не импортируете ключ повторно и не выполните повторное сканирование. Для удаления кошелёк должен быть полностью синхронизирован, а за этим ключом не должно числиться неизрасходованных средств.",
+  "Verify identity to remove an imported key": "Подтвердите личность, чтобы удалить импортированный ключ"
 }

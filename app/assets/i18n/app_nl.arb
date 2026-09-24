@@ -1579,5 +1579,14 @@
   "This is your current receive address.": "Dit is uw huidige ontvangstadres.",
   "You can still receive payments here. Your current receive address stays the same.": "U kunt hier nog steeds betalingen ontvangen. Uw huidige ontvangstadres blijft ongewijzigd.",
   "The server is temporarily unavailable. Try again shortly or choose another server.": "De server is tijdelijk niet beschikbaar. Probeer het over enkele ogenblikken opnieuw of kies een andere server.",
-  "Endpoint": "Eindpunt"
+  "Endpoint": "Eindpunt",
+  "Could not remove imported key: {error}": "Geïmporteerde sleutel kon niet worden verwijderd: {error}",
+  "Imported key removed from this wallet.": "De geïmporteerde sleutel is uit deze wallet verwijderd.",
+  "Only remove this key after saving its private key and moving any funds out.": "Verwijder deze sleutel pas nadat je de privésleutel hebt opgeslagen en alle tegoeden hebt overgemaakt.",
+  "Remove imported key": "Geïmporteerde sleutel verwijderen",
+  "Remove imported key?": "Geïmporteerde sleutel verwijderen?",
+  "Remove “{name}” from this wallet? Its private key and tracked addresses will be removed.": "‘{name}’ uit deze wallet verwijderen? De privésleutel en bijgehouden adressen worden verwijderd.",
+  "Your recovery phrase cannot restore this key. Save the private key first.": "Je herstelzin kan deze sleutel niet herstellen. Sla eerst de privésleutel op.",
+  "Future payments to its old addresses will be missed until you reimport and rescan. Removal requires a fully synced wallet and no unspent funds for this key.": "Toekomstige betalingen aan de oude adressen worden niet opgemerkt totdat je de sleutel opnieuw importeert en de keten opnieuw scant. Verwijderen kan alleen als de wallet volledig gesynchroniseerd is en deze sleutel geen nog niet uitgegeven tegoeden heeft.",
+  "Verify identity to remove an imported key": "Verifieer je identiteit om een geïmporteerde sleutel te verwijderen"
 }

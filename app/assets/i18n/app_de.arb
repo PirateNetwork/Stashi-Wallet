@@ -1579,5 +1579,14 @@
   "This is your current receive address.": "Dies ist Ihre aktuelle Empfangsadresse.",
   "You can still receive payments here. Your current receive address stays the same.": "Sie können hier weiterhin Zahlungen empfangen. Ihre aktuelle Empfangsadresse bleibt unverändert.",
   "The server is temporarily unavailable. Try again shortly or choose another server.": "Der Server ist vorübergehend nicht verfügbar. Versuchen Sie es in Kürze erneut oder wählen Sie einen anderen Server.",
-  "Endpoint": "Endpunkt"
+  "Endpoint": "Endpunkt",
+  "Could not remove imported key: {error}": "Importierter Schlüssel konnte nicht entfernt werden: {error}",
+  "Imported key removed from this wallet.": "Der importierte Schlüssel wurde aus dieser Wallet entfernt.",
+  "Only remove this key after saving its private key and moving any funds out.": "Entfernen Sie diesen Schlüssel erst, nachdem Sie seinen privaten Schlüssel gesichert und vorhandene Guthaben übertragen haben.",
+  "Remove imported key": "Importierten Schlüssel entfernen",
+  "Remove imported key?": "Importierten Schlüssel entfernen?",
+  "Remove “{name}” from this wallet? Its private key and tracked addresses will be removed.": "„{name}“ aus dieser Wallet entfernen? Sein privater Schlüssel und die überwachten Adressen werden entfernt.",
+  "Your recovery phrase cannot restore this key. Save the private key first.": "Ihre Wiederherstellungsphrase kann diesen Schlüssel nicht wiederherstellen. Sichern Sie zuerst den privaten Schlüssel.",
+  "Future payments to its old addresses will be missed until you reimport and rescan. Removal requires a fully synced wallet and no unspent funds for this key.": "Künftige Zahlungen an seine bisherigen Adressen werden erst nach erneutem Import und Scan erkannt. Zum Entfernen muss die Wallet vollständig synchronisiert sein und für diesen Schlüssel darf kein noch nicht ausgegebenes Guthaben vorhanden sein.",
+  "Verify identity to remove an imported key": "Identität zum Entfernen eines importierten Schlüssels bestätigen"
 }

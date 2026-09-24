@@ -1579,5 +1579,14 @@
   "This is your current receive address.": "Bu, geçerli alım adresinizdir.",
   "You can still receive payments here. Your current receive address stays the same.": "Burada ödeme almaya devam edebilirsiniz. Geçerli alım adresiniz değişmez.",
   "The server is temporarily unavailable. Try again shortly or choose another server.": "Sunucu geçici olarak kullanılamıyor. Biraz sonra yeniden deneyin veya başka bir sunucu seçin.",
-  "Endpoint": "Bağlantı noktası"
+  "Endpoint": "Bağlantı noktası",
+  "Could not remove imported key: {error}": "İçe aktarılan anahtar kaldırılamadı: {error}",
+  "Imported key removed from this wallet.": "İçe aktarılan anahtar bu cüzdandan kaldırıldı.",
+  "Only remove this key after saving its private key and moving any funds out.": "Bu anahtarı yalnızca özel anahtarını kaydedip bu anahtara ait tüm varlıkları başka bir yere aktardıktan sonra kaldırın.",
+  "Remove imported key": "İçe aktarılan anahtarı kaldır",
+  "Remove imported key?": "İçe aktarılan anahtar kaldırılsın mı?",
+  "Remove “{name}” from this wallet? Its private key and tracked addresses will be removed.": "“{name}” bu cüzdandan kaldırılsın mı? Özel anahtarı ve takip edilen adresleri kaldırılacak.",
+  "Your recovery phrase cannot restore this key. Save the private key first.": "Kurtarma ifadeniz bu anahtarı geri getiremez. Önce özel anahtarı kaydedin.",
+  "Future payments to its old addresses will be missed until you reimport and rescan. Removal requires a fully synced wallet and no unspent funds for this key.": "Eski adreslerine gelecekte gönderilen ödemeler, anahtarı yeniden içe aktarıp yeniden tarama yapana kadar algılanmayacak. Kaldırma işlemi için cüzdanın tamamen eşitlenmiş olması ve bu anahtara ait harcanmamış fon bulunmaması gerekir.",
+  "Verify identity to remove an imported key": "İçe aktarılan bir anahtarı kaldırmak için kimliğinizi doğrulayın"
 }

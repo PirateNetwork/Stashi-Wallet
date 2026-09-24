@@ -1579,5 +1579,14 @@
   "This is your current receive address.": "Il s’agit de votre adresse de réception actuelle.",
   "You can still receive payments here. Your current receive address stays the same.": "Vous pouvez toujours recevoir des paiements ici. Votre adresse de réception actuelle reste inchangée.",
   "The server is temporarily unavailable. Try again shortly or choose another server.": "Le serveur est temporairement indisponible. Réessayez dans quelques instants ou choisissez un autre serveur.",
-  "Endpoint": "Point de connexion"
+  "Endpoint": "Point de connexion",
+  "Could not remove imported key: {error}": "Impossible de supprimer la clé importée : {error}",
+  "Imported key removed from this wallet.": "La clé importée a été supprimée de ce portefeuille.",
+  "Only remove this key after saving its private key and moving any funds out.": "Ne supprimez cette clé qu'après avoir sauvegardé sa clé privée et transféré tous les fonds.",
+  "Remove imported key": "Supprimer la clé importée",
+  "Remove imported key?": "Supprimer la clé importée ?",
+  "Remove “{name}” from this wallet? Its private key and tracked addresses will be removed.": "Supprimer « {name} » de ce portefeuille ? Sa clé privée et les adresses suivies seront supprimées.",
+  "Your recovery phrase cannot restore this key. Save the private key first.": "Votre phrase de récupération ne peut pas restaurer cette clé. Sauvegardez d'abord la clé privée.",
+  "Future payments to its old addresses will be missed until you reimport and rescan. Removal requires a fully synced wallet and no unspent funds for this key.": "Les paiements futurs vers ses anciennes adresses ne seront pas détectés avant de réimporter la clé et de réanalyser la chaîne. Pour la supprimer, le portefeuille doit être entièrement synchronisé et cette clé ne doit avoir aucun fonds non dépensé.",
+  "Verify identity to remove an imported key": "Vérifier l'identité pour supprimer une clé importée"
 }

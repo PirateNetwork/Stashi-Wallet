@@ -1579,5 +1579,14 @@
   "This is your current receive address.": "Esta es tu dirección de recepción actual.",
   "You can still receive payments here. Your current receive address stays the same.": "Puedes seguir recibiendo pagos aquí. Tu dirección de recepción actual no cambia.",
   "The server is temporarily unavailable. Try again shortly or choose another server.": "El servidor no está disponible temporalmente. Inténtalo de nuevo en unos momentos o elige otro servidor.",
-  "Endpoint": "Punto de conexión"
+  "Endpoint": "Punto de conexión",
+  "Could not remove imported key: {error}": "No se pudo eliminar la clave importada: {error}",
+  "Imported key removed from this wallet.": "Clave importada eliminada de esta cartera.",
+  "Only remove this key after saving its private key and moving any funds out.": "Elimina esta clave solo después de guardar su clave privada y transferir todos sus fondos.",
+  "Remove imported key": "Eliminar clave importada",
+  "Remove imported key?": "¿Eliminar clave importada?",
+  "Remove “{name}” from this wallet? Its private key and tracked addresses will be removed.": "¿Eliminar «{name}» de esta cartera? Se eliminarán su clave privada y las direcciones rastreadas.",
+  "Your recovery phrase cannot restore this key. Save the private key first.": "Tu frase de recuperación no puede restaurar esta clave. Guarda primero la clave privada.",
+  "Future payments to its old addresses will be missed until you reimport and rescan. Removal requires a fully synced wallet and no unspent funds for this key.": "No se detectarán pagos futuros a sus direcciones anteriores hasta que vuelvas a importar la clave y a escanear la cadena. Para eliminarla, la cartera debe estar completamente sincronizada y esta clave no debe tener fondos sin gastar.",
+  "Verify identity to remove an imported key": "Verificar identidad para eliminar una clave importada"
 }

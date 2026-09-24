@@ -1579,5 +1579,14 @@
   "This is your current receive address.": "هذا هو عنوان الاستلام الحالي الخاص بك.",
   "You can still receive payments here. Your current receive address stays the same.": "لا يزال بإمكانك استقبال المدفوعات هنا. سيبقى عنوان الاستلام الحالي الخاص بك كما هو.",
   "The server is temporarily unavailable. Try again shortly or choose another server.": "الخادم غير متاح مؤقتًا. حاول مجددًا بعد قليل أو اختر خادمًا آخر.",
-  "Endpoint": "نقطة الاتصال"
+  "Endpoint": "نقطة الاتصال",
+  "Could not remove imported key: {error}": "تعذّرت إزالة المفتاح المستورد: {error}",
+  "Imported key removed from this wallet.": "أُزيل المفتاح المستورد من هذه المحفظة.",
+  "Only remove this key after saving its private key and moving any funds out.": "لا تُزل هذا المفتاح إلا بعد حفظ مفتاحه الخاص ونقل أي أموال منه.",
+  "Remove imported key": "إزالة المفتاح المستورد",
+  "Remove imported key?": "هل تريد إزالة المفتاح المستورد؟",
+  "Remove “{name}” from this wallet? Its private key and tracked addresses will be removed.": "هل تريد إزالة «{name}» من هذه المحفظة؟ سيُزال مفتاحه الخاص والعناوين التي تتعقبها المحفظة.",
+  "Your recovery phrase cannot restore this key. Save the private key first.": "لا يمكن لعبارة الاسترداد استعادة هذا المفتاح. احفظ المفتاح الخاص أولًا.",
+  "Future payments to its old addresses will be missed until you reimport and rescan. Removal requires a fully synced wallet and no unspent funds for this key.": "لن تُكتشف المدفوعات المستقبلية إلى عناوينه القديمة حتى تعيد استيراده وتُجري مسحًا جديدًا. تتطلب الإزالة محفظة متزامنة بالكامل وألا تبقى أي أموال غير منفقة مرتبطة بهذا المفتاح.",
+  "Verify identity to remove an imported key": "تحقق من هويتك لإزالة مفتاح مستورد"
 }
