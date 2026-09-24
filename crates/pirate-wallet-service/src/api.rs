@@ -98,7 +98,8 @@ pub use self::payment_disclosure::{
     export_sapling_payment_disclosure, verify_payment_disclosure,
 };
 pub use self::qortal::{
-    qortal_balance, qortal_list_transactions, qortal_send, qortal_sync_status, QortalSendRequest,
+    qortal_balance, qortal_list_transactions, qortal_list_transactions_partial, qortal_send,
+    qortal_sync_status, QortalSendRequest,
 };
 pub use self::qortal_p2sh::{QortalP2shRedeemRequest, QortalP2shSendRequest};
 pub use self::seed_export::SeedExportWarnings;

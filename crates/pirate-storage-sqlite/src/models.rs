@@ -271,6 +271,22 @@ pub struct TransactionRecord {
     pub timestamp: i64,
     /// Net amount (positive for receive, negative for send)
     pub amount: i64,
+    /// Whether local spent notes or a stored send intent identify an outgoing leg.
+    pub has_outgoing: bool,
+    /// Locally established outgoing value excluding internal outputs and fee.
+    /// None means that chain confirmation, output scopes, or stored fee data
+    /// are insufficient; it must not be inferred from the display amount.
+    pub outgoing_value: Option<u64>,
+    /// Confirmed outgoing estimate using the default fee when no fee is stored.
+    /// Never a substitute for outgoing_value in an exact legacy response.
+    pub outgoing_value_estimate: Option<u64>,
+    /// Confirmed attributed spent minus internal receipts for restored history.
+    /// No intent is present; subtract a fee established from the raw transaction.
+    pub outgoing_before_fee: Option<u64>,
+    /// Confirmed local output attribution has no missing or dangling scope links.
+    pub outgoing_scope_known: bool,
+    /// A positive fee persisted with the transaction or its send intent.
+    pub stored_fee: Option<u64>,
     /// Transaction fee
     pub fee: u64,
     /// Memo (from first note with memo)

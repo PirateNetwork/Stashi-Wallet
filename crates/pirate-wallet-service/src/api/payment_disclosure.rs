@@ -698,10 +698,29 @@ async fn verify_payment_disclosure_inner(
 }
 
 #[cfg(test)]
-mod persistence_tests {
+pub(super) mod persistence_tests {
     use super::*;
 
-    fn encrypted_sapling_fixture(ovk: SaplingOutgoingViewingKey) -> (String, Vec<u8>) {
+    pub(in crate::api) fn encrypted_sapling_fixture(
+        ovk: SaplingOutgoingViewingKey,
+    ) -> (String, Vec<u8>) {
+        encrypted_sapling_fixture_with_transparent_output(ovk, false)
+    }
+
+    pub(in crate::api) fn encrypted_sapling_fixture_with_transparent_output(
+        ovk: SaplingOutgoingViewingKey,
+        transparent_output: bool,
+    ) -> (String, Vec<u8>) {
+        encrypted_sapling_history_fixture(ovk, transparent_output, false, 0, None)
+    }
+
+    pub(in crate::api) fn encrypted_sapling_history_fixture(
+        ovk: SaplingOutgoingViewingKey,
+        transparent_output: bool,
+        transparent_input: bool,
+        fee: i64,
+        extra_output: Option<(Option<SaplingOutgoingViewingKey>, u64)>,
+    ) -> (String, Vec<u8>) {
         use sapling::note_encryption::{sapling_note_encryption, SaplingDomain};
         use sapling::value::{NoteValue, ValueCommitTrapdoor, ValueCommitment};
         use zcash_primitives::transaction::{Authorized, TransactionData, TxVersion};
@@ -730,21 +749,63 @@ mod persistence_tests {
             encryption.encrypt_outgoing_plaintext(&cv, &cmu, &mut rng),
             [0u8; 192],
         );
+        let mut outputs = vec![output];
+        if let Some((extra_ovk, amount)) = extra_output {
+            let value = NoteValue::from_raw(amount);
+            let cv = ValueCommitment::derive(value, ValueCommitTrapdoor::random(&mut rng));
+            let note = address.create_note(
+                value,
+                sapling::util::generate_random_rseed(enforcement, &mut rng),
+            );
+            let cmu = note.cmu();
+            let encryption = sapling_note_encryption(extra_ovk, note, [0; 512], &mut rng);
+            outputs.push(sapling::bundle::OutputDescription::from_parts(
+                cv.clone(),
+                cmu,
+                SaplingDomain::epk_bytes(encryption.epk()),
+                encryption.encrypt_note_plaintext(),
+                encryption.encrypt_outgoing_plaintext(&cv, &cmu, &mut rng),
+                [0u8; 192],
+            ));
+        }
         // Real note encryption, with dummy proof/signature bytes: never broadcast.
         let bundle = sapling::Bundle::from_parts(
             vec![],
-            vec![output],
-            ZatBalance::from_i64(0).unwrap(),
+            outputs,
+            ZatBalance::from_i64(fee).unwrap(),
             sapling::bundle::Authorized {
                 binding_sig: [0u8; 64].into(),
             },
         );
+        let transparent =
+            (transparent_output || transparent_input).then(|| zcash_transparent::bundle::Bundle {
+                vin: if transparent_input {
+                    vec![zcash_transparent::bundle::TxIn::from_parts(
+                        zcash_transparent::bundle::OutPoint::new([1; 32], 0),
+                        zcash_transparent::address::Script::default(),
+                        u32::MAX,
+                    )]
+                } else {
+                    vec![]
+                },
+                vout: if transparent_output {
+                    vec![zcash_transparent::bundle::TxOut::new(
+                        zcash_protocol::value::Zatoshis::from_u64(1).unwrap(),
+                        zcash_transparent::address::TransparentAddress::ScriptHash([9; 20])
+                            .script()
+                            .into(),
+                    )]
+                } else {
+                    vec![]
+                },
+                authorization: zcash_transparent::bundle::Authorized,
+            });
         let tx = TransactionData::<Authorized>::from_parts(
             TxVersion::V4,
             BranchId::Sapling,
             0,
             BlockHeight::from_u32(1_000_020),
-            None,
+            transparent,
             None,
             bundle,
             None,
