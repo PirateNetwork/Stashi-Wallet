@@ -9,7 +9,9 @@ use crate::frontier_witness::{
     construct_anchor_witnesses_from_db_state, resolve_orchard_anchor_from_db_state,
 };
 use crate::{models::*, spending_protection, Database, Error, MasterKey, Result};
-use pirate_core::keys::{ExtendedSpendingKey, IronwoodExtendedSpendingKey};
+use pirate_core::keys::{
+    ExtendedSpendingKey, IronwoodExtendedFullViewingKey, IronwoodExtendedSpendingKey,
+};
 use pirate_core::DEFAULT_FEE;
 use pirate_params::consensus::ConsensusParams;
 use rusqlite::params_from_iter;
@@ -31,6 +33,40 @@ const TRANSACTION_QUERY_CHUNK_SIZE: usize = 900;
 const SEED_KEY_SCAN_REPLAY_MARKER: &str = "seed_key_scan_replay_required";
 const LEGACY_SAPLING_ACCOUNT_DISCOVERY_MARKER: &str = "legacy_sapling_account_discovery_complete";
 
+// Older Stashi exports contain a child-derived parent tag. That ancestry label
+// does not change the key's authority; keep existing records when only it differs.
+fn ironwood_spending_material_matches(left: Option<&[u8]>, right: Option<&[u8]>) -> bool {
+    match (left, right) {
+        (None, None) => true,
+        (Some(left), Some(right)) => {
+            match (
+                IronwoodExtendedSpendingKey::from_bytes(left),
+                IronwoodExtendedSpendingKey::from_bytes(right),
+            ) {
+                (Ok(left), Ok(right)) => left.same_key_material(&right),
+                _ => false,
+            }
+        }
+        _ => false,
+    }
+}
+
+fn ironwood_viewing_material_matches(left: Option<&[u8]>, right: Option<&[u8]>) -> bool {
+    match (left, right) {
+        (None, None) => true,
+        (Some(left), Some(right)) => {
+            match (
+                IronwoodExtendedFullViewingKey::from_bytes(left),
+                IronwoodExtendedFullViewingKey::from_bytes(right),
+            ) {
+                (Ok(left), Ok(right)) => left.same_key_material(&right),
+                _ => false,
+            }
+        }
+        _ => false,
+    }
+}
+
 fn refresh_account_key_viewing_material(key: &mut AccountKey) -> Result<bool> {
     let mut changed = false;
 
@@ -49,7 +85,8 @@ fn refresh_account_key_viewing_material(key: &mut AccountKey) -> Result<bool> {
             Error::Validation(format!("Invalid Ironwood spending key: {error}"))
         })?;
         let canonical_fvk = Some(extsk.to_extended_fvk().to_bytes());
-        if key.orchard_fvk != canonical_fvk {
+        if !ironwood_viewing_material_matches(key.orchard_fvk.as_deref(), canonical_fvk.as_deref())
+        {
             key.orchard_fvk = canonical_fvk;
             changed = true;
         }
@@ -2273,7 +2310,10 @@ impl<'a> Repository<'a> {
             let canonical_index = keys.iter().position(|key| {
                 key.key_scope == KeyScope::Account
                     && key.sapling_extsk.as_deref() == Some(secret.extsk.as_slice())
-                    && key.orchard_extsk.as_deref() == secret.orchard_extsk.as_deref()
+                    && ironwood_spending_material_matches(
+                        key.orchard_extsk.as_deref(),
+                        secret.orchard_extsk.as_deref(),
+                    )
             });
 
             let mut updates = Vec::new();
@@ -2284,8 +2324,12 @@ impl<'a> Repository<'a> {
                 let id = canonical
                     .id
                     .ok_or_else(|| Error::Storage("Stored seed key has no id".to_string()))?;
-                let viewing_material_changed = canonical.sapling_dfvk != canonical_sapling_dfvk
-                    || canonical.orchard_fvk != canonical_ironwood_fvk;
+                let ironwood_viewing_changed = !ironwood_viewing_material_matches(
+                    canonical.orchard_fvk.as_deref(),
+                    canonical_ironwood_fvk.as_deref(),
+                );
+                let viewing_material_changed =
+                    canonical.sapling_dfvk != canonical_sapling_dfvk || ironwood_viewing_changed;
                 // An earlier rescan can discover history before the original
                 // wallet metadata birthday. Ordinary key/address reads must
                 // never move that established scan floor forward again.
@@ -2301,7 +2345,9 @@ impl<'a> Repository<'a> {
                     canonical.birthday_height = reconciled_birthday;
                     canonical.spendable = true;
                     canonical.sapling_dfvk = canonical_sapling_dfvk.clone();
-                    canonical.orchard_fvk = canonical_ironwood_fvk.clone();
+                    if ironwood_viewing_changed {
+                        canonical.orchard_fvk = canonical_ironwood_fvk.clone();
+                    }
                     canonical.encrypted_mnemonic = secret.encrypted_mnemonic.clone();
                     updates.push(canonical);
                 }
@@ -2553,7 +2599,10 @@ impl<'a> Repository<'a> {
                 .into_iter()
                 .find(|existing| {
                     existing.sapling_extsk == key.sapling_extsk
-                        && existing.orchard_extsk == key.orchard_extsk
+                        && ironwood_spending_material_matches(
+                            existing.orchard_extsk.as_deref(),
+                            key.orchard_extsk.as_deref(),
+                        )
                 })
         {
             imported.id = existing.id;
@@ -2562,6 +2611,13 @@ impl<'a> Repository<'a> {
             imported.encrypted_mnemonic = existing.encrypted_mnemonic;
             imported.created_at = existing.created_at;
             imported.label = existing.label.or(imported.label);
+            imported.orchard_extsk = existing.orchard_extsk;
+            if ironwood_viewing_material_matches(
+                existing.orchard_fvk.as_deref(),
+                imported.orchard_fvk.as_deref(),
+            ) {
+                imported.orchard_fvk = existing.orchard_fvk;
+            }
             if existing.birthday_height > 0 {
                 imported.birthday_height = imported.birthday_height.min(existing.birthday_height);
             }
@@ -2656,7 +2712,10 @@ impl<'a> Repository<'a> {
                 if sapling_only {
                     existing.sapling_extsk == key.sapling_extsk
                 } else {
-                    existing.orchard_extsk == key.orchard_extsk
+                    ironwood_spending_material_matches(
+                        existing.orchard_extsk.as_deref(),
+                        key.orchard_extsk.as_deref(),
+                    )
                 }
             });
 
@@ -2686,7 +2745,12 @@ impl<'a> Repository<'a> {
                         changed = true;
                         scan_changed = true;
                     }
-                    if ironwood_only && existing.orchard_fvk != key.orchard_fvk {
+                    if ironwood_only
+                        && !ironwood_viewing_material_matches(
+                            existing.orchard_fvk.as_deref(),
+                            key.orchard_fvk.as_deref(),
+                        )
+                    {
                         existing.orchard_fvk.clone_from(&key.orchard_fvk);
                         changed = true;
                         scan_changed = true;
@@ -3077,10 +3141,12 @@ impl<'a> Repository<'a> {
                     .sapling_extsk
                     .as_ref()
                     .is_some_and(|spending| other.sapling_extsk.as_ref() == Some(spending))
-                    || key
-                        .orchard_extsk
-                        .as_ref()
-                        .is_some_and(|spending| other.orchard_extsk.as_ref() == Some(spending)))
+                    || key.orchard_extsk.as_ref().is_some_and(|spending| {
+                        ironwood_spending_material_matches(
+                            Some(spending.as_slice()),
+                            other.orchard_extsk.as_deref(),
+                        )
+                    }))
         }) {
             return Err(Error::Validation(
                 "Another key group contains the same spending key".to_string(),
@@ -6885,6 +6951,10 @@ mod tests {
     }
 
     fn verified_ironwood_import(account_id: i64, tag: u8, birthday_height: i64) -> AccountKey {
+        let extsk = IronwoodExtendedSpendingKey::master(&[tag; 32])
+            .unwrap()
+            .derive_account(141, 0)
+            .unwrap();
         AccountKey {
             id: None,
             account_id,
@@ -6896,10 +6966,25 @@ mod tests {
             spendable: true,
             sapling_extsk: None,
             sapling_dfvk: None,
-            orchard_extsk: Some(vec![tag; 73]),
-            orchard_fvk: Some(vec![tag.wrapping_add(1); 137]),
+            orchard_extsk: Some(extsk.to_bytes()),
+            orchard_fvk: Some(extsk.to_extended_fvk().to_bytes()),
             encrypted_mnemonic: None,
         }
+    }
+
+    fn with_historical_ironwood_parent_tag(mut key: AccountKey) -> AccountKey {
+        let mut extsk =
+            IronwoodExtendedSpendingKey::from_bytes(key.orchard_extsk.as_deref().unwrap()).unwrap();
+        // Simulate an old export whose ancestry label differs while every
+        // authority and derivation byte remains identical.
+        extsk.parent_fvk_tag = if extsk.parent_fvk_tag == [0x55; 4] {
+            [0xaa; 4]
+        } else {
+            [0x55; 4]
+        };
+        key.orchard_extsk = Some(extsk.to_bytes());
+        key.orchard_fvk = Some(extsk.to_extended_fvk().to_bytes());
+        key
     }
 
     fn verified_ironwood_address(account_id: i64, value: &str) -> Address {
@@ -6929,6 +7014,147 @@ mod tests {
                  WHERE id = 1;",
             )
             .unwrap();
+    }
+
+    #[test]
+    fn ironwood_material_matching_ignores_only_the_parent_tag() {
+        let corrected = verified_ironwood_import(1, 0x33, 1);
+        let historical = with_historical_ironwood_parent_tag(corrected.clone());
+        assert!(ironwood_spending_material_matches(
+            corrected.orchard_extsk.as_deref(),
+            historical.orchard_extsk.as_deref(),
+        ));
+        assert!(ironwood_viewing_material_matches(
+            corrected.orchard_fvk.as_deref(),
+            historical.orchard_fvk.as_deref(),
+        ));
+        let different = verified_ironwood_import(1, 0x34, 1);
+        assert!(!ironwood_spending_material_matches(
+            corrected.orchard_extsk.as_deref(),
+            different.orchard_extsk.as_deref(),
+        ));
+        assert!(!ironwood_viewing_material_matches(
+            corrected.orchard_fvk.as_deref(),
+            different.orchard_fvk.as_deref(),
+        ));
+        let mut changed_derivation = corrected.clone();
+        changed_derivation.orchard_extsk.as_mut().unwrap()[9] ^= 1;
+        changed_derivation.orchard_fvk.as_mut().unwrap()[9] ^= 1;
+        assert!(!ironwood_spending_material_matches(
+            corrected.orchard_extsk.as_deref(),
+            changed_derivation.orchard_extsk.as_deref(),
+        ));
+        assert!(!ironwood_viewing_material_matches(
+            corrected.orchard_fvk.as_deref(),
+            changed_derivation.orchard_fvk.as_deref(),
+        ));
+        assert!(!ironwood_spending_material_matches(
+            Some(&[1; 10]),
+            Some(&[1; 10])
+        ));
+        assert!(!ironwood_viewing_material_matches(
+            Some(&[1; 10]),
+            Some(&[1; 10])
+        ));
+        assert!(!ironwood_spending_material_matches(
+            None,
+            corrected.orchard_extsk.as_deref()
+        ));
+        assert!(!ironwood_viewing_material_matches(
+            None,
+            corrected.orchard_fvk.as_deref()
+        ));
+    }
+
+    #[test]
+    fn ironwood_parent_tag_change_preserves_ordinary_import_identity() {
+        let db = test_db();
+        let repo = Repository::new(&db);
+        let account_id = repo
+            .insert_account(&Account {
+                id: None,
+                name: "Ironwood ancestry import".into(),
+                created_at: 1,
+            })
+            .unwrap();
+        let corrected = verified_ironwood_import(account_id, 0x35, 500);
+        let historical = with_historical_ironwood_parent_tag(corrected.clone());
+        let first_id = repo
+            .import_spending_key_with_rescan(&historical, "ERR_RESCAN_REQUIRED")
+            .unwrap();
+        let second_id = repo
+            .import_spending_key_with_rescan(&corrected, "ERR_RESCAN_REQUIRED")
+            .unwrap();
+        assert_eq!(first_id, second_id);
+        let stored = repo.get_account_key_by_id(first_id).unwrap().unwrap();
+        assert_eq!(stored.orchard_extsk, historical.orchard_extsk);
+        assert_eq!(stored.orchard_fvk, historical.orchard_fvk);
+        assert_eq!(repo.get_account_keys(account_id).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn ironwood_parent_tag_change_keeps_verified_import_ready() {
+        let db = test_db();
+        let repo = Repository::new(&db);
+        let account_id = repo
+            .insert_account(&Account {
+                id: None,
+                name: "Ironwood ancestry verified import".into(),
+                created_at: 1,
+            })
+            .unwrap();
+        let corrected = verified_ironwood_import(account_id, 0x36, 500);
+        let historical = with_historical_ironwood_parent_tag(corrected.clone());
+        let address = verified_ironwood_address(account_id, "pirate1ancestry-import");
+        let first = repo
+            .import_verified_spending_key(&historical, &address, "ERR_RESCAN_REQUIRED")
+            .unwrap();
+        mark_key_removal_ready(&db);
+        let before = crate::SpendabilityStateStorage::new(&db)
+            .load_state()
+            .unwrap();
+        let second = repo
+            .import_verified_spending_key(&corrected, &address, "ERR_RESCAN_REQUIRED")
+            .unwrap();
+        assert_eq!(first.0, second.0);
+        assert!(second.1);
+        assert!(!second.3);
+        let stored = repo.get_account_key_by_id(first.0).unwrap().unwrap();
+        assert_eq!(stored.orchard_extsk, historical.orchard_extsk);
+        assert_eq!(stored.orchard_fvk, historical.orchard_fvk);
+        assert_eq!(repo.get_account_keys(account_id).unwrap().len(), 1);
+        let after = crate::SpendabilityStateStorage::new(&db)
+            .load_state()
+            .unwrap();
+        assert!(after.spendable);
+        assert!(!after.rescan_required);
+        assert_eq!(before.key_import_generation, after.key_import_generation);
+    }
+
+    #[test]
+    fn ironwood_parent_tag_change_cannot_bypass_duplicate_removal_guard() {
+        let db = test_db();
+        let repo = Repository::new(&db);
+        let account_id = repo
+            .insert_account(&Account {
+                id: None,
+                name: "Ironwood ancestry duplicate".into(),
+                created_at: 1,
+            })
+            .unwrap();
+        let corrected = verified_ironwood_import(account_id, 0x37, 1);
+        let historical = with_historical_ironwood_parent_tag(corrected.clone());
+        let historical_id = repo
+            .upsert_account_key(&repo.encrypt_account_key_fields(&historical).unwrap())
+            .unwrap();
+        repo.upsert_account_key(&repo.encrypt_account_key_fields(&corrected).unwrap())
+            .unwrap();
+        mark_key_removal_ready(&db);
+        let error = repo
+            .remove_imported_spending_key(account_id, historical_id)
+            .unwrap_err();
+        assert!(error.to_string().contains("same spending key"));
+        assert_eq!(repo.get_account_keys(account_id).unwrap().len(), 2);
     }
 
     #[test]
@@ -10765,6 +10991,78 @@ mod tests {
                 .unwrap(),
             120
         );
+    }
+
+    #[test]
+    fn ironwood_parent_tag_change_preserves_primary_seed_without_replay() {
+        const MNEMONIC: &str =
+            "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+        let db = test_db();
+        let repo = Repository::new(&db);
+        let account_id = repo
+            .insert_account(&Account {
+                id: None,
+                name: "Ironwood ancestry seed".into(),
+                created_at: 1,
+            })
+            .unwrap();
+        let sapling = ExtendedSpendingKey::from_mnemonic_with_account(
+            MNEMONIC,
+            pirate_params::NetworkType::Mainnet,
+            0,
+        )
+        .unwrap();
+        let seed = ExtendedSpendingKey::seed_bytes_from_mnemonic(MNEMONIC).unwrap();
+        let ironwood = IronwoodExtendedSpendingKey::master(&seed)
+            .unwrap()
+            .derive_account(141, 0)
+            .unwrap();
+        let secret = WalletSecret {
+            wallet_id: "ironwood-ancestry-seed".into(),
+            account_id,
+            extsk: sapling.to_bytes(),
+            dfvk: Some(sapling.to_extended_fvk().to_bytes()),
+            orchard_extsk: Some(ironwood.to_bytes()),
+            sapling_ivk: None,
+            orchard_ivk: None,
+            encrypted_mnemonic: Some(MNEMONIC.as_bytes().to_vec()),
+            mnemonic_language: None,
+            created_at: 1,
+        };
+        let historical = with_historical_ironwood_parent_tag(AccountKey {
+            id: None,
+            account_id,
+            key_type: KeyType::ImportSpend,
+            key_scope: KeyScope::Account,
+            label: Some("Previously imported account".into()),
+            birthday_height: 10,
+            created_at: 1,
+            spendable: true,
+            sapling_extsk: Some(secret.extsk.clone()),
+            sapling_dfvk: secret.dfvk.clone(),
+            orchard_extsk: secret.orchard_extsk.clone(),
+            orchard_fvk: Some(ironwood.to_extended_fvk().to_bytes()),
+            encrypted_mnemonic: secret.encrypted_mnemonic.clone(),
+        });
+        let historical_id = repo
+            .upsert_account_key(&repo.encrypt_account_key_fields(&historical).unwrap())
+            .unwrap();
+        let (primary_id, replay_required) = repo
+            .reconcile_primary_seed_account_key(&secret, 20)
+            .unwrap();
+        assert_eq!(primary_id, historical_id);
+        assert!(!replay_required);
+        assert!(!repo.seed_key_scan_replay_required().unwrap());
+        let stored = repo.get_account_key_by_id(primary_id).unwrap().unwrap();
+        assert_eq!(stored.key_type, KeyType::Seed);
+        assert_eq!(stored.orchard_extsk, historical.orchard_extsk);
+        assert_eq!(stored.orchard_fvk, historical.orchard_fvk);
+        assert_eq!(stored.birthday_height, 10);
+        assert_eq!(repo.get_account_keys(account_id).unwrap().len(), 1);
+
+        let mut refreshed = stored.clone();
+        assert!(!refresh_account_key_viewing_material(&mut refreshed).unwrap());
+        assert_eq!(refreshed.orchard_fvk, stored.orchard_fvk);
     }
 
     #[test]
