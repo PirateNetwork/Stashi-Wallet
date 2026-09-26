@@ -660,7 +660,7 @@ pub struct IronwoodExtendedSpendingKey {
     pub chain_code: [u8; 32],
     /// Depth in derivation tree
     pub depth: u8,
-    /// Parent FVK tag (first 4 bytes of Ironwood FVK fingerprint)
+    /// Parent FVK tag (first 4 bytes of the parent's Ironwood FVK fingerprint)
     pub parent_fvk_tag: [u8; 4],
     /// Child index
     pub child_index: u32,
@@ -764,8 +764,8 @@ impl IronwoodExtendedSpendingKey {
         let mut chain_code = [0u8; 32];
         chain_code.copy_from_slice(&i[32..64]);
 
-        let fvk: IronwoodFullViewingKey = (&sk_i).into();
-        let parent_fvk_tag = ironwood_fvk_tag(&fvk)?;
+        let parent_fvk: IronwoodFullViewingKey = (&self.inner).into();
+        let parent_fvk_tag = ironwood_fvk_tag(&parent_fvk)?;
 
         Ok(Self {
             inner: sk_i,
@@ -817,6 +817,16 @@ impl IronwoodExtendedSpendingKey {
     /// Derive the Ironwood spend-authorizing key used to sign spends.
     pub fn spend_authorizing_key(&self) -> orchard::keys::SpendAuthorizingKey {
         (&self.inner).into()
+    }
+
+    /// Compare extended key material while accepting the historical child-FVK
+    /// tag used by older Stashi exports. The ancestry tag does not affect key
+    /// derivation or spending authority; all other serialized fields must match.
+    pub fn same_key_material(&self, other: &Self) -> bool {
+        self.depth == other.depth
+            && self.child_index == other.child_index
+            && self.chain_code == other.chain_code
+            && self.inner.to_bytes() == other.inner.to_bytes()
     }
 
     /// Serialize to bytes (73 bytes: depth + parent_fvk_tag + child_index + chain_code + sk)
@@ -928,13 +938,22 @@ pub struct IronwoodExtendedFullViewingKey {
     pub chain_code: [u8; 32],
     /// Depth
     pub depth: u8,
-    /// Parent FVK tag (first 4 bytes of Ironwood FVK fingerprint)
+    /// Parent FVK tag (first 4 bytes of the parent's Ironwood FVK fingerprint)
     pub parent_fvk_tag: [u8; 4],
     /// Child index
     pub child_index: u32,
 }
 
 impl IronwoodExtendedFullViewingKey {
+    /// Compare viewing and derivation material, ignoring only the ancestry tag
+    /// that older Stashi exports incorrectly derived from the child FVK.
+    pub fn same_key_material(&self, other: &Self) -> bool {
+        self.depth == other.depth
+            && self.child_index == other.child_index
+            && self.chain_code == other.chain_code
+            && self.inner.to_bytes() == other.inner.to_bytes()
+    }
+
     /// Get default address for this viewing key
     pub fn default_address(&self) -> IronwoodPaymentAddress {
         IronwoodPaymentAddress {
