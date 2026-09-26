@@ -23,6 +23,19 @@ pub(super) fn mark_legacy_sapling_discovery_not_required(repo: &Repository<'_>) 
         .map_err(|error| anyhow!(error.to_string()))
 }
 
+fn ironwood_key_material_compatible(
+    key: &AccountKey,
+    expected: &IronwoodExtendedSpendingKey,
+) -> bool {
+    key.orchard_extsk.as_deref().is_none_or(|bytes| {
+        IronwoodExtendedSpendingKey::from_bytes(bytes)
+            .is_ok_and(|stored| stored.same_key_material(expected))
+    }) && key.orchard_fvk.as_deref().is_none_or(|bytes| {
+        IronwoodExtendedFullViewingKey::from_bytes(bytes)
+            .is_ok_and(|stored| stored.same_key_material(&expected.to_extended_fvk()))
+    })
+}
+
 /// Add the next one or five ZIP-32 accounts as durable wallet keys.
 ///
 /// Unlike restore-time lookahead candidates, these accounts are never retired
@@ -101,17 +114,7 @@ pub(super) fn add_next_seed_accounts(wallet_id: &WalletId, count: u32) -> Result
         let reusable_key = existing_account_keys
             .iter()
             .filter(|key| sapling_matches(key))
-            .find(|key| {
-                let ironwood_compatible = key
-                    .orchard_extsk
-                    .as_ref()
-                    .is_none_or(|bytes| bytes == &ironwood_extsk_bytes)
-                    && key
-                        .orchard_fvk
-                        .as_ref()
-                        .is_none_or(|bytes| bytes == &ironwood_fvk_bytes);
-                ironwood_compatible
-            });
+            .find(|key| ironwood_key_material_compatible(key, &ironwood_extsk));
         if reusable_key.is_none() && existing_account_keys.iter().any(sapling_matches) {
             return Err(anyhow!(
                 "An existing Sapling key for seed account {derivation_index} has incompatible Ironwood material"
@@ -138,8 +141,14 @@ pub(super) fn add_next_seed_accounts(wallet_id: &WalletId, count: u32) -> Result
             spendable: true,
             sapling_extsk: Some(sapling_extsk_bytes),
             sapling_dfvk: Some(sapling_dfvk_bytes),
-            orchard_extsk: Some(ironwood_extsk_bytes),
-            orchard_fvk: Some(ironwood_fvk_bytes),
+            // Retain historical serialization when the ancestry tag is the
+            // only difference; it represents the same seed account.
+            orchard_extsk: reusable_key
+                .and_then(|key| key.orchard_extsk.clone())
+                .or(Some(ironwood_extsk_bytes)),
+            orchard_fvk: reusable_key
+                .and_then(|key| key.orchard_fvk.clone())
+                .or(Some(ironwood_fvk_bytes)),
             encrypted_mnemonic: None,
         };
         accounts.push((derivation_index, repo.encrypt_account_key_fields(&key)?));
@@ -332,6 +341,53 @@ mod tests {
 
     const MNEMONIC: &str =
         "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+
+    #[test]
+    fn seed_account_reuse_accepts_historical_ironwood_tags_only() {
+        let seed = ExtendedSpendingKey::seed_bytes_from_mnemonic_in_language(
+            MNEMONIC,
+            Some(MnemonicLanguage::English),
+        )
+        .unwrap();
+        let expected = IronwoodExtendedSpendingKey::master(&seed)
+            .unwrap()
+            .derive_account(141, 1)
+            .unwrap();
+        let mut historical = expected.clone();
+        historical.parent_fvk_tag[0] ^= 0xff;
+        let mut key = AccountKey {
+            id: Some(1),
+            account_id: 1,
+            key_type: KeyType::ImportSpend,
+            key_scope: KeyScope::Account,
+            label: None,
+            birthday_height: 1,
+            created_at: 1,
+            spendable: true,
+            sapling_extsk: None,
+            sapling_dfvk: None,
+            orchard_extsk: Some(historical.to_bytes()),
+            orchard_fvk: Some(historical.to_extended_fvk().to_bytes()),
+            encrypted_mnemonic: None,
+        };
+        assert!(ironwood_key_material_compatible(&key, &expected));
+
+        let mut changed = historical.clone();
+        changed.chain_code[0] ^= 1;
+        key.orchard_extsk = Some(changed.to_bytes());
+        assert!(!ironwood_key_material_compatible(&key, &expected));
+
+        key.orchard_extsk = Some(historical.to_bytes());
+        let other = IronwoodExtendedSpendingKey::master(&seed)
+            .unwrap()
+            .derive_account(141, 2)
+            .unwrap();
+        key.orchard_fvk = Some(other.to_extended_fvk().to_bytes());
+        assert!(!ironwood_key_material_compatible(&key, &expected));
+
+        key.orchard_fvk = Some(vec![0; 10]);
+        assert!(!ironwood_key_material_compatible(&key, &expected));
+    }
 
     #[test]
     fn preparation_derives_the_legacy_gap_once_and_finalization_retires_misses() {
