@@ -6,7 +6,7 @@ plugins {
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 group = "com.pirate.wallet"
-version = "0.3.5"
+version = "0.3.6"
 
 android {
     namespace = "com.pirate.wallet.sdk"
