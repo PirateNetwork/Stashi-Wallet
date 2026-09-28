@@ -241,16 +241,9 @@ fi
 
 stage_rust_linux "$BUNDLE_DIR"
 
-if [[ "$DEB_ARCH" == amd64 ]]; then
-    log "Verifying bundled KDF artifacts..."
-    bash "$SCRIPT_DIR/verify-kdf-artifacts.sh" linux "$BUNDLE_DIR"
-else
-    # Atomic swaps are disabled today. If they are enabled, ARM64 must first
-    # get a native KDF build and this exception must be removed.
-    if find "$BUNDLE_DIR" -type f \( -name kdf -o -name mm2 \) -print -quit | grep -q .; then
-        error "Unexpected KDF executable in ARM64 bundle. Refusing an unverified architecture."
-    fi
-fi
+log "Verifying bundled KDF executable..."
+[ -f "$BUNDLE_DIR/lib/kdf" ] || error "KDF executable missing from Linux bundle"
+bash "$SCRIPT_DIR/verify-kdf-artifacts.sh" linux "$BUNDLE_DIR"
 
 log "Verifying Ubuntu 22.04 binary compatibility..."
 python3 "$SCRIPT_DIR/verify_linux_glibc.py" \

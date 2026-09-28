@@ -23,7 +23,7 @@ if [ "$PLATFORM" = "android" ]; then
 fi
 
 if [ "$PLATFORM" = "native" ] || [ "$PLATFORM" = "all" ]; then
-    for native_platform in ios macos windows linux android-aarch64 android-armv7; do
+    for native_platform in ios macos windows linux linux-arm64 android-aarch64 android-armv7; do
         bash "$0" "$native_platform"
     done
     exit 0
@@ -96,6 +96,10 @@ def expected_artifacts(root, platform_name):
             root / "linux" / "bin" / "kdf",
             root / "linux" / "bin" / "mm2",
         ],
+        "linux-arm64": [
+            root / "linux" / "arm64" / "bin" / "kdf",
+            root / "linux" / "arm64" / "bin" / "mm2",
+        ],
         "windows": [
             root / "windows" / "bin" / "kdf.exe",
             root / "windows" / "bin" / "mm2.exe",
@@ -122,6 +126,7 @@ def expected_artifacts(root, platform_name):
 def fallback_artifact_names(platform_name):
     return {
         "linux": ["kdf", "mm2"],
+        "linux-arm64": ["kdf", "mm2"],
         "windows": ["kdf.exe", "mm2.exe"],
         "macos": ["kdf", "mm2"],
         "ios": ["libkdf.a", "libmm2.a"],
