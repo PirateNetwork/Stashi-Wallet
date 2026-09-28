@@ -243,6 +243,7 @@ stage_rust_linux "$BUNDLE_DIR"
 
 log "Verifying bundled KDF executable..."
 [ -f "$BUNDLE_DIR/lib/kdf" ] || error "KDF executable missing from Linux bundle"
+[ -x "$BUNDLE_DIR/lib/kdf" ] || error "Bundled KDF is not executable"
 bash "$SCRIPT_DIR/verify-kdf-artifacts.sh" linux "$BUNDLE_DIR"
 
 log "Verifying Ubuntu 22.04 binary compatibility..."
