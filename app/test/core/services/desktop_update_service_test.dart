@@ -1,7 +1,133 @@
+import 'dart:ffi' show Abi;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pirate_wallet/core/services/desktop_update_service.dart';
 
 void main() {
+  group('Linux release architecture', () {
+    DesktopReleaseAsset asset(String name) => DesktopReleaseAsset(
+      name: name,
+      downloadUrl: 'https://example.invalid/$name',
+    );
+
+    test('selects the matching Debian package from a mixed release', () {
+      final assets = [
+        asset('Stashi-Wallet-amd64.deb'),
+        asset('Stashi-Wallet-arm64.deb'),
+      ];
+      expect(
+        DesktopUpdateService.selectLinuxAssetForTesting(
+          assets,
+          abi: Abi.linuxX64,
+        )?.asset.name,
+        'Stashi-Wallet-amd64.deb',
+      );
+      expect(
+        DesktopUpdateService.selectLinuxAssetForTesting(
+          assets,
+          abi: Abi.linuxArm64,
+        )?.asset.name,
+        'Stashi-Wallet-arm64.deb',
+      );
+    });
+
+    test('never falls back to the other CPU or an ambiguous name', () {
+      for (final name in [
+        'Stashi-Wallet-amd64.deb',
+        'Stashi-Wallet-linux-x86_64.AppImage',
+        'Stashi-Wallet.flatpak',
+        'Stashi-Wallet-arm64-amd64.deb',
+      ]) {
+        expect(
+          DesktopUpdateService.selectLinuxAssetForTesting([
+            asset(name),
+          ], abi: Abi.linuxArm64),
+          isNull,
+          reason: name,
+        );
+      }
+      expect(
+        DesktopUpdateService.selectLinuxAssetForTesting([
+          asset('Stashi-Wallet-arm64.deb'),
+        ], abi: Abi.linuxX64),
+        isNull,
+      );
+      expect(
+        DesktopUpdateService.selectLinuxAssetForTesting([
+          asset('Stashi-Wallet-arm64.deb'),
+        ], abi: Abi.linuxArm),
+        isNull,
+      );
+    });
+
+    test('recognizes ARM64 and x64 names in all Linux formats', () {
+      final cases = [
+        (
+          'Stashi-Wallet-aarch64.AppImage',
+          Abi.linuxArm64,
+          DesktopUpdateAssetKind.linuxAppImage,
+        ),
+        (
+          'Stashi-Wallet-arm64.flatpak',
+          Abi.linuxArm64,
+          DesktopUpdateAssetKind.linuxFlatpak,
+        ),
+        (
+          'Stashi-Wallet-x86_64.AppImage',
+          Abi.linuxX64,
+          DesktopUpdateAssetKind.linuxAppImage,
+        ),
+        (
+          'Stashi-Wallet-x86_64.flatpak',
+          Abi.linuxX64,
+          DesktopUpdateAssetKind.linuxFlatpak,
+        ),
+        (
+          'Stashi-Wallet.flatpak',
+          Abi.linuxX64,
+          DesktopUpdateAssetKind.linuxFlatpak,
+        ),
+      ];
+      for (final (name, abi, kind) in cases) {
+        final selected = DesktopUpdateService.selectLinuxAssetForTesting([
+          asset(name),
+        ], abi: abi);
+        expect(selected?.asset.name, name);
+        expect(selected?.kind, kind);
+      }
+    });
+
+    test('skips newer releases with no compatible Linux artifact', () {
+      final now = DateTime.utc(2026, 9, 28);
+      DesktopReleaseInfo release(
+        String tag,
+        List<DesktopReleaseAsset> assets,
+      ) => DesktopReleaseInfo(
+        tagName: tag,
+        name: tag,
+        releaseUrl: '',
+        publishedAt: now.subtract(const Duration(days: 1)),
+        isDraft: false,
+        isPrerelease: false,
+        assets: assets,
+      );
+      final selected = DesktopUpdateService.newestEligibleRelease(
+        [
+          release('v1.2.6', [asset('Stashi-Wallet-amd64.deb')]),
+          release('v1.2.5', [asset('Stashi-Wallet-arm64.deb')]),
+        ],
+        now,
+        supportsAssets: (assets) =>
+            DesktopUpdateService.selectLinuxAssetForTesting(
+              assets,
+              abi: Abi.linuxArm64,
+            ) !=
+            null,
+      );
+      expect(selected?.tagName, 'v1.2.5');
+    });
+  });
+
   group('official release asset URLs', () {
     const path = '/releases/download/v1.2.2/installer.exe';
     const current = 'https://github.com/PirateNetwork/Stashi-Wallet';

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:ffi' show Abi;
 import 'dart:io';
 
 import '../security/release_verification_service.dart';
@@ -77,6 +78,17 @@ class DesktopUpdateService {
   static final DesktopUpdateService instance = DesktopUpdateService._();
   static final _DesktopUpdateAssetSelectionHelper _assetSelection =
       _DesktopUpdateAssetSelectionHelper();
+
+  @visibleForTesting
+  static ({DesktopReleaseAsset asset, DesktopUpdateAssetKind kind})?
+  selectLinuxAssetForTesting(
+    List<DesktopReleaseAsset> assets, {
+    required Abi abi,
+  }) => _assetSelection.selectLinuxAsset(
+    assets,
+    abi: abi,
+    installMode: _LinuxInstallMode.systemPackage,
+  );
 
   static const String _releaseApiUrl =
       'https://api.github.com/repos/PirateNetwork/Stashi-Wallet/releases';

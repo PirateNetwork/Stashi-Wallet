@@ -57,67 +57,11 @@ class _DesktopUpdateAssetSelectionHelper {
     }
 
     if (Platform.isLinux) {
-      final appImage = prefer(_isLinuxAppImageAsset);
-      final deb = prefer(_isLinuxDebAsset);
-      final flatpak = prefer(_isLinuxFlatpakAsset);
-      switch (_detectLinuxInstallMode()) {
-        case _LinuxInstallMode.appImage:
-          if (appImage != null) {
-            return (
-              asset: appImage,
-              kind: DesktopUpdateAssetKind.linuxAppImage,
-            );
-          }
-          if (deb != null) {
-            return (asset: deb, kind: DesktopUpdateAssetKind.linuxDeb);
-          }
-          if (flatpak != null) {
-            return (asset: flatpak, kind: DesktopUpdateAssetKind.linuxFlatpak);
-          }
-          return null;
-        case _LinuxInstallMode.flatpak:
-          if (flatpak != null) {
-            return (asset: flatpak, kind: DesktopUpdateAssetKind.linuxFlatpak);
-          }
-          if (deb != null) {
-            return (asset: deb, kind: DesktopUpdateAssetKind.linuxDeb);
-          }
-          if (appImage != null) {
-            return (
-              asset: appImage,
-              kind: DesktopUpdateAssetKind.linuxAppImage,
-            );
-          }
-          return null;
-        case _LinuxInstallMode.systemPackage:
-          if (deb != null) {
-            return (asset: deb, kind: DesktopUpdateAssetKind.linuxDeb);
-          }
-          if (flatpak != null) {
-            return (asset: flatpak, kind: DesktopUpdateAssetKind.linuxFlatpak);
-          }
-          if (appImage != null) {
-            return (
-              asset: appImage,
-              kind: DesktopUpdateAssetKind.linuxAppImage,
-            );
-          }
-          return null;
-        case _LinuxInstallMode.unknown:
-          if (deb != null) {
-            return (asset: deb, kind: DesktopUpdateAssetKind.linuxDeb);
-          }
-          if (appImage != null) {
-            return (
-              asset: appImage,
-              kind: DesktopUpdateAssetKind.linuxAppImage,
-            );
-          }
-          if (flatpak != null) {
-            return (asset: flatpak, kind: DesktopUpdateAssetKind.linuxFlatpak);
-          }
-          return null;
-      }
+      return selectLinuxAsset(
+        assets,
+        abi: Abi.current(),
+        installMode: _detectLinuxInstallMode(),
+      );
     }
 
     if (Platform.isMacOS) {
@@ -130,6 +74,98 @@ class _DesktopUpdateAssetSelectionHelper {
     }
 
     return null;
+  }
+
+  ({DesktopReleaseAsset asset, DesktopUpdateAssetKind kind})? selectLinuxAsset(
+    List<DesktopReleaseAsset> assets, {
+    required Abi abi,
+    required _LinuxInstallMode installMode,
+  }) {
+    // Never offer a binary from another CPU family. In particular, the legacy
+    // architecture-neutral Flatpak filename was only ever built for x86-64.
+    if (abi != Abi.linuxX64 && abi != Abi.linuxArm64) return null;
+
+    DesktopReleaseAsset? preferLinux(
+      bool Function(DesktopReleaseAsset asset) format,
+    ) {
+      for (final asset in assets) {
+        if (format(asset) &&
+            _matchesLinuxArchitecture(asset.name, abi) &&
+            !isUnsignedAsset(asset.name)) {
+          return asset;
+        }
+      }
+      for (final asset in assets) {
+        if (format(asset) && _matchesLinuxArchitecture(asset.name, abi)) {
+          return asset;
+        }
+      }
+      return null;
+    }
+
+    final appImage = preferLinux(_isLinuxAppImageAsset);
+    final deb = preferLinux(_isLinuxDebAsset);
+    final flatpak = preferLinux(_isLinuxFlatpakAsset);
+    switch (installMode) {
+      case _LinuxInstallMode.appImage:
+        if (appImage != null) {
+          return (asset: appImage, kind: DesktopUpdateAssetKind.linuxAppImage);
+        }
+        if (deb != null) {
+          return (asset: deb, kind: DesktopUpdateAssetKind.linuxDeb);
+        }
+        if (flatpak != null) {
+          return (asset: flatpak, kind: DesktopUpdateAssetKind.linuxFlatpak);
+        }
+        return null;
+      case _LinuxInstallMode.flatpak:
+        if (flatpak != null) {
+          return (asset: flatpak, kind: DesktopUpdateAssetKind.linuxFlatpak);
+        }
+        if (deb != null) {
+          return (asset: deb, kind: DesktopUpdateAssetKind.linuxDeb);
+        }
+        if (appImage != null) {
+          return (asset: appImage, kind: DesktopUpdateAssetKind.linuxAppImage);
+        }
+        return null;
+      case _LinuxInstallMode.systemPackage:
+        if (deb != null) {
+          return (asset: deb, kind: DesktopUpdateAssetKind.linuxDeb);
+        }
+        if (flatpak != null) {
+          return (asset: flatpak, kind: DesktopUpdateAssetKind.linuxFlatpak);
+        }
+        if (appImage != null) {
+          return (asset: appImage, kind: DesktopUpdateAssetKind.linuxAppImage);
+        }
+        return null;
+      case _LinuxInstallMode.unknown:
+        if (deb != null) {
+          return (asset: deb, kind: DesktopUpdateAssetKind.linuxDeb);
+        }
+        if (appImage != null) {
+          return (asset: appImage, kind: DesktopUpdateAssetKind.linuxAppImage);
+        }
+        if (flatpak != null) {
+          return (asset: flatpak, kind: DesktopUpdateAssetKind.linuxFlatpak);
+        }
+        return null;
+    }
+  }
+
+  bool _matchesLinuxArchitecture(String name, Abi abi) {
+    final lower = name.toLowerCase();
+    final x64 = RegExp(r'(^|[._-])(amd64|x86_64|x64)(?=[._-]|$)')
+        .hasMatch(lower);
+    final arm64 = RegExp(r'(^|[._-])(arm64|aarch64)(?=[._-]|$)')
+        .hasMatch(lower);
+    if (x64 && arm64) return false;
+    if (abi == Abi.linuxArm64) return arm64;
+    if (abi == Abi.linuxX64) {
+      return x64 || lower == 'stashi-wallet.flatpak';
+    }
+    return false;
   }
 
   bool isUnsignedAsset(String name) {
