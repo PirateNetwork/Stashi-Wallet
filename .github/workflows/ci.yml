@@ -495,6 +495,19 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
 
+      - name: Setup Rust for Windows Tor regression
+        if: matrix.platform == 'Windows'
+        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - name: Test Windows Tor time arithmetic
+        if: matrix.platform == 'Windows'
+        shell: bash
+        run: |
+          cd crates
+          cargo test -p saturating-time --locked
+
       - name: Setup Java
         if: matrix.platform == 'Android'
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6
