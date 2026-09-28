@@ -33,12 +33,13 @@ pub use background::{
 pub use background_logger::{BackgroundSyncEvent, BackgroundSyncLogger};
 pub use cancel::CancelToken;
 pub use client::{
-    bootstrap_transport, fetch_spki_pin, i2p_status, rotate_tor_exit, shutdown_transport,
-    tor_status, BroadcastResult, CompactBlock, CompactBlockChunk, CompactBlockData,
-    CompactIronwoodAction, CompactOutput, CompactSaplingOutput, CompactSaplingSpend, CompactTx,
-    EndpointHealth, LightClient, LightClientConfig, LightClientEndpoint, LightdInfo, RetryConfig,
-    TlsConfig, TransactionStatus, TransportMode, TreeState, DEFAULT_LIGHTD_HOST,
-    DEFAULT_LIGHTD_PORT, DEFAULT_LIGHTD_SPKI_PIN, DEFAULT_LIGHTD_URL,
+    bootstrap_transport, fetch_spki_pin, i2p_status, rotate_tor_exit, select_transport,
+    shutdown_transport, tor_status, BroadcastResult, CompactBlock, CompactBlockChunk,
+    CompactBlockData, CompactIronwoodAction, CompactOutput, CompactSaplingOutput,
+    CompactSaplingSpend, CompactTx, EndpointHealth, LightClient, LightClientConfig,
+    LightClientEndpoint, LightdInfo, RetryConfig, TlsConfig, TransactionStatus, TransportMode,
+    TreeState, DEFAULT_LIGHTD_HOST, DEFAULT_LIGHTD_PORT, DEFAULT_LIGHTD_SPKI_PIN,
+    DEFAULT_LIGHTD_URL,
 };
 pub use consensus::{
     check_consensus_branch, check_consensus_branch_with_activation_height, ConsensusBranchCheck,

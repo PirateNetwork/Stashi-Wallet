@@ -438,7 +438,7 @@ pub struct EndpointPoolDiagnostics {
 }
 
 /// Network tunnel mode
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TunnelMode {
     /// Tor (default)
     Tor,

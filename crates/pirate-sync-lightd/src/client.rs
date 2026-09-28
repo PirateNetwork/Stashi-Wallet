@@ -151,28 +151,9 @@ impl GlobalTransportState {
         {
             return Err(Error::Cancelled);
         }
-        let config = requested.clone();
-        let existing = {
-            let guard = Arc::clone(&self.manager).read_owned().await;
-            guard.as_ref().map(Arc::clone)
-        };
-        if let Some(manager) = existing {
-            Arc::clone(&manager)
-                .update_config(config)
-                .await
-                .map_err(map_net_error)?;
-            if desired_transport_config()
-                .as_ref()
-                .is_some_and(|desired| desired != &requested)
-            {
-                return Err(Error::Cancelled);
-            }
-            return Ok(manager);
-        }
-
-        // Constructing a manager can start native transports. Serialize the
-        // empty-state path so concurrent bootstrap and connection requests
-        // cannot launch separate embedded routers before either is published.
+        // Serialize both creation and updates with shutdown. A stale Tor
+        // bootstrap must not update the shared manager after the new Direct
+        // request has already configured it (or vice versa).
         let _initialization_guard = Arc::clone(&self.initialization).lock_owned().await;
         if desired_transport_config()
             .as_ref()
@@ -267,6 +248,31 @@ static TOR_CONFIG_OVERRIDE: Lazy<std::sync::RwLock<Option<NetTorConfig>>> =
 fn set_desired_transport_config(config: NetTransportConfig) {
     if let Ok(mut guard) = DESIRED_TRANSPORT_CONFIG.write() {
         *guard = Some(config);
+    }
+}
+
+/// Record a user-selected transport before scheduling its asynchronous startup.
+/// A delayed bootstrap must not be allowed to replace a newer selection.
+pub fn select_transport(mode: TransportMode, socks5_url: Option<String>) -> Result<()> {
+    let config = build_transport_config_from_mode(mode, socks5_url.as_deref())?;
+    let mut guard = DESIRED_TRANSPORT_CONFIG
+        .write()
+        .map_err(|_| Error::Connection("Transport selection lock poisoned".to_string()))?;
+    *guard = Some(config);
+    Ok(())
+}
+
+fn select_transport_if_unset(config: &NetTransportConfig) -> Result<()> {
+    let mut guard = DESIRED_TRANSPORT_CONFIG
+        .write()
+        .map_err(|_| Error::Connection("Transport selection lock poisoned".to_string()))?;
+    match guard.as_ref() {
+        Some(selected) if selected != config => Err(Error::Cancelled),
+        Some(_) => Ok(()),
+        None => {
+            *guard = Some(config.clone());
+            Ok(())
+        }
     }
 }
 
@@ -910,9 +916,17 @@ fn is_transport_not_ready_error(err: &Error) -> bool {
 /// Bootstrap transport early (Tor/I2P/SOCKS5) without touching wallet state.
 pub async fn bootstrap_transport(mode: TransportMode, socks5_url: Option<String>) -> Result<()> {
     let config = build_transport_config_from_mode(mode, socks5_url.as_deref())?;
-    set_desired_transport_config(config.clone());
-    let manager = GLOBAL_TRANSPORT.clone().get_or_init(config).await?;
+    // Standalone callers can establish an initial selection, but an old
+    // queued bootstrap cannot undo a newer choice made by set_tunnel.
+    select_transport_if_unset(&config)?;
+    let manager = GLOBAL_TRANSPORT.clone().get_or_init(config.clone()).await?;
+    if desired_transport_config().as_ref() != Some(&config) {
+        return Err(Error::Cancelled);
+    }
     manager.ensure_ready().await.map_err(map_net_error)?;
+    if desired_transport_config().as_ref() != Some(&config) {
+        return Err(Error::Cancelled);
+    }
     Ok(())
 }
 
@@ -5530,6 +5544,65 @@ mod tests {
             Err(Error::Cancelled)
         ));
 
+        state.shutdown().await;
+        clear_desired_transport_config();
+    }
+
+    #[tokio::test]
+    async fn queued_tor_bootstrap_cannot_replace_newer_direct_selection() {
+        let _test_guard = TRANSPORT_STATE_TEST_LOCK.lock().await;
+        shutdown_transport().await;
+
+        select_transport(TransportMode::Tor, None).unwrap();
+        let (release, queued) = tokio::sync::oneshot::channel::<()>();
+        let delayed = tokio::spawn(async move {
+            queued.await.unwrap();
+            bootstrap_transport(TransportMode::Tor, None).await
+        });
+
+        select_transport(TransportMode::Direct, None).unwrap();
+        release.send(()).unwrap();
+        assert!(matches!(delayed.await.unwrap(), Err(Error::Cancelled)));
+
+        let direct = build_transport_config_from_mode(TransportMode::Direct, None).unwrap();
+        assert_eq!(desired_transport_config(), Some(direct.clone()));
+        let manager = GLOBAL_TRANSPORT
+            .clone()
+            .get_or_init(direct.clone())
+            .await
+            .unwrap();
+        assert!(manager.matches_config(&direct));
+        shutdown_transport().await;
+    }
+
+    #[tokio::test]
+    async fn in_flight_manager_update_rechecks_transport_selection() {
+        let _test_guard = TRANSPORT_STATE_TEST_LOCK.lock().await;
+        clear_desired_transport_config();
+        let state = Arc::new(GlobalTransportState {
+            manager: Arc::new(RwLock::new(None)),
+            initialization: Arc::new(Mutex::new(())),
+        });
+        let direct = build_transport_config_from_mode(TransportMode::Direct, None).unwrap();
+        select_transport(TransportMode::Direct, None).unwrap();
+        state.clone().get_or_init(direct.clone()).await.unwrap();
+
+        let held_update = state.initialization.clone().lock_owned().await;
+        let updating = tokio::spawn({
+            let state = state.clone();
+            let direct = direct.clone();
+            async move { state.get_or_init(direct).await }
+        });
+        tokio::pin!(updating);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(20), &mut updating)
+                .await
+                .is_err()
+        );
+
+        select_transport(TransportMode::Tor, None).unwrap();
+        drop(held_update);
+        assert!(matches!(updating.await.unwrap(), Err(Error::Cancelled)));
         state.shutdown().await;
         clear_desired_transport_config();
     }

@@ -111,10 +111,10 @@ class TorStatusNotifier extends Notifier<TorStatusDetails> {
         return;
       }
 
-      const torMode = TunnelMode.tor();
-      await FfiBridge.shutdownTransport();
-      await FfiBridge.setTunnel(torMode, ensureReady: false);
-      await FfiBridge.bootstrapTunnel(torMode);
+      // Retrying a failed Tor client does not change the selected transport.
+      // In particular, a delayed recovery must never reselect Tor after the
+      // user has switched to Direct, I2P, or SOCKS5.
+      await FfiBridge.bootstrapTunnel(const TunnelMode.tor());
 
       final status = await FfiBridge.getTorStatusDetails();
       if (!ref.mounted) return;
@@ -374,7 +374,7 @@ class TransportConfigNotifier extends Notifier<TransportConfig> {
     }
     await _applyTunnel(state);
     if (revision != _stateRevision) return;
-    await _reconcileTunnelMode();
+    await _reconcileTunnelMode(revision);
     if (revision != _stateRevision) return;
     await _persist();
   }
@@ -471,9 +471,10 @@ class TransportConfigNotifier extends Notifier<TransportConfig> {
     }
   }
 
-  Future<void> _reconcileTunnelMode() async {
+  Future<void> _reconcileTunnelMode(int revision) async {
     try {
       final appliedMode = (await FfiBridge.getTunnel()).name.toLowerCase();
+      if (revision != _stateRevision) return;
       if (state.mode != appliedMode) {
         state = state.copyWith(mode: appliedMode);
         await _persist();

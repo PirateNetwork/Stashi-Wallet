@@ -109,8 +109,12 @@ pub(super) fn light_client_config_for_endpoint(
 fn spawn_bootstrap_transport(mode: TunnelMode) {
     let (transport, socks5_url, _) = tunnel_transport_config_for(&mode);
     let task = async move {
-        if let Err(e) = pirate_sync_lightd::bootstrap_transport(transport, socks5_url).await {
-            tracing::warn!("Failed to bootstrap transport: {}", e);
+        match pirate_sync_lightd::bootstrap_transport(transport, socks5_url).await {
+            Err(pirate_sync_lightd::Error::Cancelled) => {
+                tracing::debug!("Skipped bootstrap for superseded transport selection");
+            }
+            Err(e) => tracing::warn!("Failed to bootstrap transport: {}", e),
+            Ok(()) => {}
         }
     };
 
@@ -147,7 +151,15 @@ fn spawn_disconnect_active_sync_channels(reason: &'static str) {
 
 pub fn set_tunnel(mode: TunnelMode) -> Result<()> {
     tracing::info!("Setting tunnel mode: {:?}", mode);
-    *TUNNEL_MODE.write() = mode.clone();
+    let (transport, socks5_url, _) = tunnel_transport_config_for(&mode);
+    {
+        // Hold the mode lock until the sync layer has recorded this choice.
+        // Otherwise two concurrent calls can publish the mode and the
+        // selected network transport in opposite orders.
+        let mut selected = TUNNEL_MODE.write();
+        pirate_sync_lightd::select_transport(transport, socks5_url)?;
+        *selected = mode.clone();
+    }
     // #region agent log
     pirate_core::debug_log::with_locked_file(|file| {
         let ts = std::time::SystemTime::now()
@@ -194,6 +206,9 @@ pub fn get_tunnel() -> Result<TunnelMode> {
 }
 
 pub async fn bootstrap_tunnel(mode: TunnelMode) -> Result<()> {
+    if *TUNNEL_MODE.read() != mode {
+        return Err(anyhow!("Transport selection changed before bootstrap"));
+    }
     let (transport, socks5_url, _) = tunnel_transport_config_for(&mode);
     // #region agent log
     pirate_core::debug_log::with_locked_file(|file| {
@@ -283,8 +298,18 @@ pub async fn set_tor_bridge_settings(
     });
     // #endregion
 
-    let current = TUNNEL_MODE.read().clone();
-    if matches!(current, TunnelMode::Tor) {
+    let restart_tor = {
+        let selected = TUNNEL_MODE.read();
+        if matches!(*selected, TunnelMode::Tor) {
+            // Applying new bridge settings changes the Tor configuration.
+            // Publish it only while Tor remains the selected mode.
+            pirate_sync_lightd::select_transport(TransportMode::Tor, None)?;
+            true
+        } else {
+            false
+        }
+    };
+    if restart_tor {
         pirate_sync_lightd::bootstrap_transport(TransportMode::Tor, None)
             .await
             .map_err(|e| anyhow!("Failed to bootstrap transport: {}", e))?;
