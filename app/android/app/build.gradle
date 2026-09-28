@@ -82,6 +82,11 @@ flutter {
 // A UI-only feature flag cannot remove Play's foreground-service declaration.
 androidComponents {
     onVariants(selector().all()) { variant ->
+        if (variant.buildType == 'release') {
+            // Flutter/KDF are built only for ARM in release. Keep both ARM ABIs
+            // for Play, while excluding orphan x86_64 plugin libraries.
+            variant.packaging.jniLibs.excludes.add('**/x86_64/**')
+        }
         def manifest = variant.artifacts.get(
             com.android.build.api.artifact.SingleArtifact.MERGED_MANIFEST.INSTANCE)
         def suffix = variant.name.capitalize()
