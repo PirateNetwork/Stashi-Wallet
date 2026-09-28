@@ -2064,7 +2064,17 @@ jobs:
         run: |
           chmod +x scripts/build-linux.sh
           REPRODUCIBLE=1 ./scripts/build-linux.sh deb
-          test "$(dpkg-deb --field dist/linux/Stashi-Wallet-arm64.deb Architecture)" = arm64
+          deb_file=dist/linux/Stashi-Wallet-arm64.deb
+          test "$(dpkg-deb --field "$deb_file" Architecture)" = arm64
+          depends="$(dpkg-deb --field "$deb_file" Depends)"
+          for dependency in libudev1 libgcc-s1 'libc6 (>= 2.35)'; do
+            [[ "$depends" == *"$dependency"* ]] || exit 1
+          done
+          package_root="$RUNNER_TEMP/stashi-arm64-package"
+          mkdir -p "$package_root"
+          dpkg-deb --extract "$deb_file" "$package_root"
+          test -x "$package_root/usr/bin/lib/kdf"
+          readelf -h "$package_root/usr/bin/lib/kdf" | grep -q AArch64
 
       - name: Generate SBOM
         run: |
