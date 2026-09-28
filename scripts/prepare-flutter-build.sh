@@ -25,8 +25,21 @@ if [ ! -f "$PROJECT_ROOT/app/.dart_tool/package_config.json" ]; then
     exit 1
 fi
 
-echo "[prepare-flutter-build] Prefetching checksummed KDF assets for $PLATFORM..."
-bash "$SCRIPT_DIR/prefetch-kdf-artifact.sh" "$PLATFORM"
+if [ "$PLATFORM" = linux ] && [ "$(uname -s)" = Linux ] &&
+    [[ "$(uname -m)" == aarch64 || "$(uname -m)" == arm64 ]]; then
+    # The SDK publishes only an x86_64 Linux KDF executable today. Never
+    # download or bundle that binary in an ARM64 wallet. This guard must fail
+    # when swaps are enabled so ARM64 KDF support is implemented first.
+    if ! grep -Eq '^[[:space:]]*const bool kAtomicSwapsEnabled[[:space:]]*=[[:space:]]*false[[:space:]]*;' \
+        "$PROJECT_ROOT/app/lib/core/swaps/swap_availability.dart"; then
+        echo "Linux ARM64 requires a native KDF build before swaps can be enabled." >&2
+        exit 1
+    fi
+    echo "[prepare-flutter-build] Skipping KDF on Linux ARM64 while atomic swaps are disabled."
+else
+    echo "[prepare-flutter-build] Prefetching checksummed KDF assets for $PLATFORM..."
+    bash "$SCRIPT_DIR/prefetch-kdf-artifact.sh" "$PLATFORM"
+fi
 
 echo "[prepare-flutter-build] Materializing pinned Komodo assets and disabling transformer fetches..."
 bash "$SCRIPT_DIR/prepare-komodo-assets.sh"

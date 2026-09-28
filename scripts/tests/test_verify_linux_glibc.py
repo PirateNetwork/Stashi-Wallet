@@ -45,6 +45,26 @@ class VerifyLinuxGlibcTest(unittest.TestCase):
             result = verify_linux_glibc.main([temp_dir])
         self.assertEqual(result, 2)
 
+    def test_rejects_a_foreign_cpu_even_when_glibc_is_compatible(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "wallet"
+            header = b"\x7fELF" + bytes([2, 1]) + bytes(12)
+            with mock.patch.object(
+                verify_linux_glibc,
+                "read_glibc_versions",
+                return_value={"2.35"},
+            ):
+                path.write_bytes(header + (62).to_bytes(2, "little"))
+                self.assertEqual(
+                    verify_linux_glibc.main([temp_dir, "--machine", "aarch64"]),
+                    1,
+                )
+                path.write_bytes(header + (183).to_bytes(2, "little"))
+                self.assertEqual(
+                    verify_linux_glibc.main([temp_dir, "--machine", "aarch64"]),
+                    0,
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

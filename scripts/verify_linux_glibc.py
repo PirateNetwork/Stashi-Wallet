@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reject Linux ELF payloads that exceed the supported glibc ABI floor."""
+"""Reject Linux ELF payloads with an unsupported glibc ABI or CPU."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from typing import Iterable
 
 GLIBC_PATTERN = re.compile(r"\bGLIBC_(\d+(?:\.\d+)+)\b")
 DEFAULT_MAX_GLIBC = "2.35"
+ELF_MACHINES = {"x86_64": 62, "aarch64": 183}
 
 
 def version_tuple(version: str) -> tuple[int, ...]:
@@ -57,6 +58,17 @@ def read_glibc_versions(path: Path, readelf: str) -> set[str]:
     return parse_glibc_versions(result.stdout)
 
 
+def read_elf_machine(path: Path) -> int:
+    with path.open("rb") as stream:
+        header = stream.read(20)
+    if len(header) < 20 or header[:4] != b"\x7fELF":
+        raise ValueError(f"Invalid ELF header: {path}")
+    endian = {1: "little", 2: "big"}.get(header[5])
+    if endian is None:
+        raise ValueError(f"Invalid ELF byte order: {path}")
+    return int.from_bytes(header[18:20], endian)
+
+
 def audit(
     roots: Iterable[Path],
     maximum: str,
@@ -90,6 +102,11 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"newest permitted GLIBC symbol version (default: {DEFAULT_MAX_GLIBC})",
     )
     parser.add_argument("--readelf", default="readelf")
+    parser.add_argument(
+        "--machine",
+        choices=ELF_MACHINES,
+        help="also require every ELF payload to target this CPU architecture",
+    )
     return parser
 
 
@@ -107,6 +124,25 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
+
+    if args.machine:
+        wrong_machine = []
+        try:
+            for path, _ in inspected:
+                machine = read_elf_machine(path)
+                if machine != ELF_MACHINES[args.machine]:
+                    wrong_machine.append((path, machine))
+        except (OSError, ValueError) as exc:
+            print(f"[verify-linux-glibc][ERROR] {exc}", file=sys.stderr)
+            return 2
+        if wrong_machine:
+            for path, machine in wrong_machine:
+                print(
+                    f"[verify-linux-glibc][ERROR] Wrong ELF machine {machine} "
+                    f"for {args.machine}: {path}",
+                    file=sys.stderr,
+                )
+            return 1
 
     for path, highest in inspected:
         requirement = f"GLIBC_{highest}" if highest else "no dynamic GLIBC imports"

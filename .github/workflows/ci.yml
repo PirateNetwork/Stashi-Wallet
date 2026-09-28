@@ -1976,6 +1976,132 @@ jobs:
           name: linux-provenance
           path: dist/provenance/**/*
 
+  package-linux-arm64:
+    name: Package - Linux ARM64 (Deb + SBOM)
+    runs-on: ubuntu-22.04-arm
+    env:
+      REPRODUCIBLE: "1"
+      TOR_PT_SOURCE: only
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/tags/v'))
+    needs:
+      - rust-test
+      - flutter-test
+      - security-audit
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+
+      # Flutter publishes ARM64 Linux engine artifacts but not a prebuilt ARM64
+      # Linux SDK archive. Bootstrapping the pinned framework tag on this host
+      # supplies the native Dart SDK without cross-compiling an x86 build.
+      - name: Setup Flutter for Linux ARM64
+        run: |
+          git clone --depth 1 --branch "$FLUTTER_VERSION" \
+            https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter-arm64"
+          test "$(git -C "$RUNNER_TEMP/flutter-arm64" rev-parse HEAD)" = \
+            "d3b14c876900e553bc736ca19295fc09e3853e8e"
+          echo "$RUNNER_TEMP/flutter-arm64/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/flutter-arm64/bin/flutter" --version
+          "$RUNNER_TEMP/flutter-arm64/bin/flutter" precache --linux
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+
+      - name: Setup Java
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            libboost-program-options-dev \
+            libgtk-3-dev \
+            libglib2.0-dev \
+            libsecret-1-dev \
+            libsqlite3-dev \
+            libssl-dev \
+            zlib1g-dev \
+            pkg-config \
+            clang \
+            cmake \
+            ninja-build \
+            libblkid-dev \
+            liblzma-dev \
+            dpkg-dev
+
+      - name: Set SOURCE_DATE_EPOCH
+        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
+
+      - name: Cache SBOM tools
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: |
+            .tools/rust-sbom
+            .tools/syft
+          key: sbom-tools-${{ runner.os }}-${{ runner.arch }}-rust-${{ env.RUST_VERSION }}-auditable-0.7.2-audit-info-0.5.4-syft-1.40.1-v1
+
+      - name: Verify toolchain pins
+        run: |
+          chmod +x scripts/verify-toolchain.sh
+          scripts/verify-toolchain.sh
+
+      - name: Build ARM64 Debian package
+        env:
+          GITHUB_API_PUBLIC_READONLY_TOKEN: ${{ github.token }}
+        run: |
+          chmod +x scripts/build-linux.sh
+          REPRODUCIBLE=1 ./scripts/build-linux.sh deb
+          test "$(dpkg-deb --field dist/linux/Stashi-Wallet-arm64.deb Architecture)" = arm64
+
+      - name: Generate SBOM
+        run: |
+          chmod +x scripts/generate-sbom.sh
+          ./scripts/generate-sbom.sh dist/sbom linux
+
+      - name: Reclaim workspace disk
+        run: |
+          chmod +x scripts/cleanup-build-intermediates.sh
+          ./scripts/cleanup-build-intermediates.sh
+
+      - name: Generate Provenance
+        run: |
+          chmod +x scripts/generate-provenance.sh
+          ./scripts/generate-provenance.sh dist/linux/Stashi-Wallet-arm64.deb dist/provenance
+
+      - name: Upload ARM64 Debian package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: linux-arm64-deb
+          path: |
+            dist/linux/Stashi-Wallet-arm64.deb
+            dist/linux/Stashi-Wallet-arm64.deb.sha256
+            dist/linux/installed-payload-linux-arm64.txt
+
+      - name: Upload ARM64 SBOM
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: linux-arm64-sbom
+          path: dist/sbom/**/*
+
+      - name: Upload ARM64 Provenance
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: linux-arm64-provenance
+          path: dist/provenance/**/*
+
   # ========================================================================
   # Signed Release Artifacts (Non-Reproducible)
   # ========================================================================
@@ -2592,6 +2718,7 @@ jobs:
       - package-windows
       - package-macos
       - package-linux
+      - package-linux-arm64
       - sign-android
       - sign-windows
       - sign-macos
@@ -2961,6 +3088,7 @@ jobs:
       - package-windows
       - package-macos
       - package-linux
+      - package-linux-arm64
     steps:
       - name: All checks passed
         run: echo "✅ All CI checks passed successfully! Artifacts ready for distribution."

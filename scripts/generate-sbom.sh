@@ -48,6 +48,7 @@ export CARGO_INCREMENTAL=0
 
 SYFT_VERSION="${SYFT_VERSION:-1.40.1}"
 SYFT_SHA256_LINUX_AMD64="${SYFT_SHA256_LINUX_AMD64:-c229137c919f22aa926c1c015388db5ec64e99c078e0baac053808e8f36e2e00}"
+SYFT_SHA256_LINUX_ARM64="${SYFT_SHA256_LINUX_ARM64:-13c03a712ad496083d164bdd009c458fda854fb4c8456441fc9c286bbb500e07}"
 SYFT_SHA256_DARWIN_ARM64="${SYFT_SHA256_DARWIN_ARM64:-c0f6a4fc0563ef1dfe1acf9a4518db66cb37bbb1391889aba3be773dff3487dd}"
 SYFT_SHA256_DARWIN_AMD64="${SYFT_SHA256_DARWIN_AMD64:-9e84d1f152ef9d3bb541cc7cedf81ed4c7ed78f6cc2e4c8f0db9e052b64cd7be}"
 SYFT_SHA256_WINDOWS_AMD64="${SYFT_SHA256_WINDOWS_AMD64:-eedac363e277dfecac420b6e4ed0a861bc2c9c84a7544157f52807a99bff07cd}"
@@ -111,11 +112,17 @@ if ! command -v syft &> /dev/null; then
 
     case "$OS" in
         Linux)
-            if [[ "$ARCH" != "x86_64" && "$ARCH" != "amd64" ]]; then
-                error "Unsupported Linux arch for syft: $ARCH"
-            fi
-            SYFT_TGZ="syft_${SYFT_VERSION}_linux_amd64.tar.gz"
-            SYFT_SHA256="$SYFT_SHA256_LINUX_AMD64"
+            case "$ARCH" in
+                x86_64|amd64)
+                    SYFT_TGZ="syft_${SYFT_VERSION}_linux_amd64.tar.gz"
+                    SYFT_SHA256="$SYFT_SHA256_LINUX_AMD64"
+                    ;;
+                aarch64|arm64)
+                    SYFT_TGZ="syft_${SYFT_VERSION}_linux_arm64.tar.gz"
+                    SYFT_SHA256="$SYFT_SHA256_LINUX_ARM64"
+                    ;;
+                *) error "Unsupported Linux arch for syft: $ARCH" ;;
+            esac
             ;;
         Darwin)
             if [[ "$ARCH" == "arm64" ]]; then

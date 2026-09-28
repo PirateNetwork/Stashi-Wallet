@@ -63,8 +63,29 @@ read_pubspec_version() {
     APP_VERSION_FULL="$APP_VERSION_SEMVER+$APP_VERSION_BUILD"
 }
 
-# Parse arguments
+# Parse arguments and the native Linux architecture. Flutter's Linux desktop
+# build does not cross-compile, so the bundle must match the packaging host.
 FORMAT="${1:-appimage}"  # appimage, flatpak, or deb
+case "$(uname -m)" in
+    x86_64|amd64)
+        FLUTTER_ARCH=x64
+        DEB_ARCH=amd64
+        ELF_MACHINE=x86_64
+        ;;
+    aarch64|arm64)
+        FLUTTER_ARCH=arm64
+        DEB_ARCH=arm64
+        ELF_MACHINE=aarch64
+        [[ "$FORMAT" == deb ]] || error "Linux ARM64 currently supports Debian packages only."
+        ;;
+    *)
+        error "Unsupported Linux architecture: $(uname -m)"
+        ;;
+esac
+
+if [[ "$FORMAT" == deb ]] && [[ "$(dpkg --print-architecture)" != "$DEB_ARCH" ]]; then
+    error "dpkg architecture does not match the native Flutter build architecture."
+fi
 
 # Reproducible build settings
 export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git log -1 --format=%ct 2>/dev/null || date +%s)}"
@@ -212,7 +233,7 @@ bash "$SCRIPT_DIR/prepare-flutter-build.sh" linux
 log "Building Linux app..."
 flutter_build_linux_release
 
-BUNDLE_DIR="$APP_DIR/build/linux/x64/release/bundle"
+BUNDLE_DIR="$APP_DIR/build/linux/$FLUTTER_ARCH/release/bundle"
 
 if [ ! -d "$BUNDLE_DIR" ]; then
     error "Build failed: Bundle directory not found"
@@ -220,12 +241,21 @@ fi
 
 stage_rust_linux "$BUNDLE_DIR"
 
-log "Verifying bundled KDF artifacts..."
-bash "$SCRIPT_DIR/verify-kdf-artifacts.sh" linux "$BUNDLE_DIR"
+if [[ "$DEB_ARCH" == amd64 ]]; then
+    log "Verifying bundled KDF artifacts..."
+    bash "$SCRIPT_DIR/verify-kdf-artifacts.sh" linux "$BUNDLE_DIR"
+else
+    # Atomic swaps are disabled today. If they are enabled, ARM64 must first
+    # get a native KDF build and this exception must be removed.
+    if find "$BUNDLE_DIR" -type f \( -name kdf -o -name mm2 \) -print -quit | grep -q .; then
+        error "Unexpected KDF executable in ARM64 bundle. Refusing an unverified architecture."
+    fi
+fi
 
 log "Verifying Ubuntu 22.04 binary compatibility..."
 python3 "$SCRIPT_DIR/verify_linux_glibc.py" \
     --max-version 2.35 \
+    --machine "$ELF_MACHINE" \
     "$BUNDLE_DIR"
 
 OUTPUT_DIR="$PROJECT_ROOT/dist/linux"
@@ -234,8 +264,12 @@ mkdir -p "$OUTPUT_DIR"
 runtime_executable="$BUNDLE_DIR/stashi-wallet"
 [ -f "$runtime_executable" ] || error "Installed Linux executable not found: $runtime_executable"
 runtime_hash="$(sha256sum "$runtime_executable" | awk '{print $1}')"
+payload_name="installed-payload-linux.txt"
+if [[ "$DEB_ARCH" == arm64 ]]; then
+    payload_name="installed-payload-linux-arm64.txt"
+fi
 printf '%s  %s\n' "$runtime_hash" 'stashi-wallet' \
-    > "$OUTPUT_DIR/installed-payload-linux.txt"
+    > "$OUTPUT_DIR/$payload_name"
 
 build_appimage() {
     log "Creating AppImage..."
@@ -458,7 +492,7 @@ Package: stashi-wallet
 Version: $APP_VERSION_SEMVER
 Section: utils
 Priority: optional
-Architecture: amd64
+Architecture: $DEB_ARCH
 Maintainer: Pirate Chain Foundation <dev@piratechainfoundation.com>
 Provides: pirate-unified-wallet
 Replaces: pirate-unified-wallet
@@ -493,7 +527,7 @@ EOF
     cat > "$DEB_DIR/usr/share/doc/stashi-wallet/copyright" <<EOF
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Package-Name: stashi-wallet
-Source: https://github.com/PirateNetwork/Pirate-Unified-Light-Wallet
+Source: https://github.com/PirateNetwork/Stashi-Wallet
 
 Files: *
 Copyright: 2026 Pirate Chain Foundation
@@ -502,16 +536,18 @@ EOF
     
     # Build deb package
     normalize_mtime "$DEB_DIR"
-    dpkg-deb --build "$DEB_DIR" "$OUTPUT_DIR/Stashi-Wallet-amd64.deb"
+    dpkg-deb --build "$DEB_DIR" "$OUTPUT_DIR/Stashi-Wallet-$DEB_ARCH.deb"
     
     # Generate checksum
     cd "$OUTPUT_DIR"
-    sha256sum "Stashi-Wallet-amd64.deb" > "Stashi-Wallet-amd64.deb.sha256"
+    sha256sum "Stashi-Wallet-$DEB_ARCH.deb" > "Stashi-Wallet-$DEB_ARCH.deb.sha256"
     
-    log "Debian package created: $OUTPUT_DIR/Stashi-Wallet-amd64.deb"
+    log "Debian package created: $OUTPUT_DIR/Stashi-Wallet-$DEB_ARCH.deb"
     
     # Create repository metadata (for apt install stashi-wallet)
-    create_apt_repo_metadata
+    if [[ "$DEB_ARCH" == amd64 ]]; then
+        create_apt_repo_metadata
+    fi
 }
 
 create_apt_repo_metadata() {
