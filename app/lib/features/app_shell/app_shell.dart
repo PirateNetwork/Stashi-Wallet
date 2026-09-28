@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../design/tokens/colors.dart';
+import '../../design/tokens/spacing.dart';
 import '../../ui/molecules/p_bottom_sheet.dart';
 import '../../ui/molecules/wallet_switcher.dart';
 import '../../ui/organisms/p_app_bar.dart';
@@ -104,8 +105,8 @@ class AppShell extends ConsumerWidget {
     );
   }
 
-  PAppBar? _desktopAppBarFor(String path) {
-    if (!isDesktopPlatform) {
+  PAppBar? _desktopAppBarFor(String path, {required bool desktopLayout}) {
+    if (!desktopLayout) {
       return null;
     }
     if (path.startsWith('/pay')) {
@@ -147,20 +148,25 @@ class AppShell extends ConsumerWidget {
     if (kAtomicSwapsEnabled) {
       ref.watch(kdfSwapWarmupProvider);
     }
+    final desktopLayout =
+        isDesktopPlatform && !PSpacing.isHandset(MediaQuery.sizeOf(context));
     final currentIndex = _locationToIndex(location);
     final nav = PNav(
       currentIndex: currentIndex,
       onDestinationSelected: (index) => _onDestinationSelected(context, index),
-      destinations: isDesktopPlatform
+      destinations: desktopLayout
           ? _destinations().take(3).toList(growable: false)
           : _destinations(),
-      onPayTap: isDesktopPlatform ? null : () => _openPaySheet(context),
+      onPayTap: desktopLayout ? null : () => _openPaySheet(context),
       payIndex: 1,
     );
 
     final content = SafeArea(top: false, child: child);
-    final desktopAppBar = _desktopAppBarFor(location);
-    final body = isDesktopPlatform
+    final desktopAppBar = _desktopAppBarFor(
+      location,
+      desktopLayout: desktopLayout,
+    );
+    final body = desktopLayout
         ? Column(
             children: [
               Expanded(
@@ -198,7 +204,7 @@ class AppShell extends ConsumerWidget {
       title: 'Stashi Wallet',
       useSafeArea: false,
       body: body,
-      bottomNavigationBar: isDesktopPlatform ? null : nav,
+      bottomNavigationBar: desktopLayout ? null : nav,
     );
   }
 }

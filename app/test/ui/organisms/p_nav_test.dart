@@ -78,7 +78,10 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: MediaQuery(
-          data: const MediaQueryData(textScaler: TextScaler.linear(2)),
+          data: const MediaQueryData(
+            size: Size(1280, 900),
+            textScaler: TextScaler.linear(2),
+          ),
           child: Scaffold(
             body: PNav(
               currentIndex: 0,
@@ -182,6 +185,44 @@ void main() {
     expect(navRect.height, lessThanOrEqualTo(64));
     expect(recentLabel.maxLines, 2);
     expect(recentLabel.overflow, isNull);
+    expect(tester.takeException(), isNull);
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  testWidgets('Linux phone-sized viewport uses bottom navigation', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 844);
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: const SizedBox.expand(),
+          bottomNavigationBar: PNav(
+            currentIndex: 0,
+            onDestinationSelected: (_) {},
+            onPayTap: () {},
+            payIndex: 1,
+            destinations: const [
+              PNavDestination(icon: Icons.home_outlined, label: 'Home'),
+              PNavDestination(
+                icon: Icons.payments_outlined,
+                label: 'Wallets',
+                isPay: true,
+              ),
+              PNavDestination(icon: Icons.settings_outlined, label: 'Settings'),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byKey(PNav.mobileNavigationKey), findsOneWidget);
+    expect(find.byKey(const ValueKey('desktop-navigation-rail')), findsNothing);
     expect(tester.takeException(), isNull);
     debugDefaultTargetPlatformOverride = null;
   });

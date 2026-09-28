@@ -35,7 +35,7 @@ class PNav extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (isDesktopPlatform) {
+    if (isDesktopPlatform && !PSpacing.isHandset(MediaQuery.sizeOf(context))) {
       final compact = PSpacing.isCompactDesktopViewport(
         MediaQuery.sizeOf(context),
       );

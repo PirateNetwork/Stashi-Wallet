@@ -26,19 +26,16 @@ Future<DesktopWindowSpec> resolveDesktopWindowSpecForCurrentDisplay() async {
     final allDisplays = await screenRetriever.getAllDisplays();
     final cursorPoint = await screenRetriever.getCursorScreenPoint();
 
-    final currentDisplay = allDisplays.firstWhere(
-      (display) {
-        final visibleSize = display.visibleSize ?? display.size;
-        final visiblePosition = display.visiblePosition ?? Offset.zero;
-        return Rect.fromLTWH(
-          visiblePosition.dx,
-          visiblePosition.dy,
-          visibleSize.width,
-          visibleSize.height,
-        ).contains(cursorPoint);
-      },
-      orElse: () => primaryDisplay,
-    );
+    final currentDisplay = allDisplays.firstWhere((display) {
+      final visibleSize = display.visibleSize ?? display.size;
+      final visiblePosition = display.visiblePosition ?? Offset.zero;
+      return Rect.fromLTWH(
+        visiblePosition.dx,
+        visiblePosition.dy,
+        visibleSize.width,
+        visibleSize.height,
+      ).contains(cursorPoint);
+    }, orElse: () => primaryDisplay);
 
     return resolveDesktopWindowSpec(
       currentDisplay.visibleSize ?? currentDisplay.size,
@@ -59,6 +56,23 @@ DesktopWindowSpec resolveDesktopWindowSpec(Size visibleDisplaySize) {
 
   final availableWidth = _availableExtent(visibleDisplaySize.width);
   final availableHeight = _availableExtent(visibleDisplaySize.height);
+
+  // GTK reports the Librem 5 as a Linux desktop display. Keep its initial
+  // window tall on a narrow portrait screen instead of forcing the desktop
+  // aspect ratio and leaving only a short strip for wallet content.
+  if (visibleDisplaySize.height > visibleDisplaySize.width &&
+      visibleDisplaySize.width < kDesktopPreferredMinimumSize.width) {
+    return DesktopWindowSpec(
+      initialSize: Size(
+        availableWidth.floorToDouble(),
+        availableHeight.floorToDouble(),
+      ),
+      minimumSize: Size(
+        math.min(availableWidth, 320).floorToDouble(),
+        math.min(availableHeight, 480).floorToDouble(),
+      ),
+    );
+  }
 
   var width = math.min(kDesktopPreferredWindowSize.width, availableWidth);
   var height = math.min(kDesktopPreferredWindowSize.height, availableHeight);
