@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:ffi' show Abi;
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
@@ -89,6 +90,17 @@ ReleaseVerificationService _fixtureService({
 }
 
 void main() {
+  test('Linux installed executable uses the matching signed CPU record', () {
+    expect(
+      ReleaseVerificationService.linuxExecutablePayloadName(Abi.linuxX64),
+      'stashi-wallet',
+    );
+    expect(
+      ReleaseVerificationService.linuxExecutablePayloadName(Abi.linuxArm64),
+      'stashi-wallet-linux-arm64',
+    );
+  });
+
   test(
     'accepts CRLF armored signatures without changing signed content',
     () async {

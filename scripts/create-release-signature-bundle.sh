@@ -97,61 +97,8 @@ sign_file "$CHECKSUM_MANIFEST" "$CHECKSUM_MANIFEST.sig"
 METADATA_ZIP="$RELEASE_DIR/Stashi-Wallet-release-metadata.zip"
 PAYLOAD_MANIFEST="$STAGE_DIR/build-payloads-${RELEASE_TAG}.txt"
 if [[ -f "$METADATA_ZIP" ]]; then
-  python3 - "$METADATA_ZIP" "$PAYLOAD_MANIFEST" <<'PY'
-import pathlib
-import re
-import sys
-import zipfile
-
-archive_path = pathlib.Path(sys.argv[1])
-output_path = pathlib.Path(sys.argv[2])
-line_pattern = re.compile(r"^([0-9a-fA-F]{64})[ \t]+[*]?([^\\/]+)$")
-entries: dict[str, str] = {}
-
-with zipfile.ZipFile(archive_path) as archive:
-    candidates = sorted(
-        name
-        for name in archive.namelist()
-        if pathlib.PurePosixPath(name).name.startswith("installed-payload-")
-        and name.endswith(".txt")
-    )
-    by_platform: dict[str, list[str]] = {}
-    for name in candidates:
-        filename = pathlib.PurePosixPath(name).name
-        match = re.fullmatch(r"installed-payload-([a-z0-9]+)(-unsigned)?\.txt", filename)
-        if match is not None:
-            by_platform.setdefault(match.group(1), []).append(name)
-    names = []
-    for platform, platform_names in sorted(by_platform.items()):
-        signed_name = f"installed-payload-{platform}.txt"
-        names.append(
-            next(
-                (name for name in platform_names if pathlib.PurePosixPath(name).name == signed_name),
-                platform_names[0],
-            )
-        )
-    for name in names:
-        text = archive.read(name).decode("utf-8")
-        for raw_line in text.splitlines():
-            line = raw_line.strip()
-            if not line or line.startswith("#"):
-                continue
-            match = line_pattern.fullmatch(line)
-            if match is None:
-                raise SystemExit(f"Invalid installed payload checksum in {name}: {raw_line!r}")
-            digest, filename = match.groups()
-            digest = digest.lower()
-            previous = entries.setdefault(filename, digest)
-            if previous != digest:
-                raise SystemExit(f"Conflicting installed payload checksum for {filename}")
-
-if entries:
-    output_path.write_text(
-        "".join(f"{digest}  {filename}\n" for filename, digest in sorted(entries.items())),
-        encoding="utf-8",
-        newline="\n",
-    )
-PY
+  python3 "$PROJECT_ROOT/scripts/merge-installed-payloads.py" \
+    "$METADATA_ZIP" "$PAYLOAD_MANIFEST"
 fi
 
 if [[ -s "$PAYLOAD_MANIFEST" ]]; then

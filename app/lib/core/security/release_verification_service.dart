@@ -1,9 +1,11 @@
 import 'dart:convert';
+import 'dart:ffi' show Abi;
 import 'dart:io';
 
 import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
 import 'package:dart_pg/dart_pg.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart';
 
 import '../ffi/ffi_bridge.dart';
@@ -66,11 +68,16 @@ final class LocalReleaseArtifact {
     required this.path,
     required this.name,
     required this.sha256,
+    this.signedPayloadName,
   });
 
   final String path;
   final String name;
   final String sha256;
+
+  /// Architecture-qualified name of an installed executable in the signed
+  /// build-payload manifest. The on-disk filename remains [name].
+  final String? signedPayloadName;
 }
 
 typedef ReleaseBytesDownloader = Future<Uint8List> Function(String url);
@@ -105,6 +112,13 @@ final class ReleaseVerificationService {
     Duration(milliseconds: 500),
     Duration(seconds: 2),
   ];
+
+  @visibleForTesting
+  static String? linuxExecutablePayloadName(Abi abi) {
+    if (abi == Abi.linuxX64) return 'stashi-wallet';
+    if (abi == Abi.linuxArm64) return 'stashi-wallet-linux-arm64';
+    return null;
+  }
 
   final ReleaseBytesDownloader _downloadBytes;
   final ReleaseAssetLoader _loadAsset;
@@ -341,17 +355,27 @@ final class ReleaseVerificationService {
 
     final artifacts = <LocalReleaseArtifact>[];
     final seen = <String>{};
+    final linuxExecutable = Platform.isLinux
+        ? File(Platform.resolvedExecutable).absolute.path
+        : null;
     for (final path in paths) {
       final file = File(path);
       if (!file.existsSync()) continue;
       final absolute = file.absolute.path;
       if (!seen.add(absolute)) continue;
+      String? signedPayloadName;
+      if (absolute == linuxExecutable) {
+        signedPayloadName = linuxExecutablePayloadName(Abi.current());
+        // No signed installed-executable record exists for other Linux ABIs.
+        if (signedPayloadName == null) continue;
+      }
       final digest = await sha256.bind(file.openRead()).first;
       artifacts.add(
         LocalReleaseArtifact(
           path: absolute,
           name: _basename(absolute),
           sha256: digest.toString(),
+          signedPayloadName: signedPayloadName,
         ),
       );
     }
@@ -543,11 +567,17 @@ final class ReleaseVerificationService {
     Map<String, String> checksums,
   ) {
     for (final artifact in artifacts) {
+      final signedName = artifact.signedPayloadName;
+      if (signedName != null) {
+        if (_lookupName(checksums, signedName) != null) return artifact;
+        continue;
+      }
       if (checksums.values.contains(_normalizeHash(artifact.sha256))) {
         return artifact;
       }
     }
     for (final artifact in artifacts) {
+      if (artifact.signedPayloadName != null) continue;
       if (_lookupName(checksums, artifact.name) != null) {
         return artifact;
       }
@@ -559,6 +589,11 @@ final class ReleaseVerificationService {
     Map<String, String> checksums,
     LocalReleaseArtifact artifact,
   ) {
+    // A shared on-disk Linux basename cannot identify the CPU-specific build.
+    // Select its signed architecture entry before comparing the digest, so a
+    // modified ARM64 executable is compared with the ARM64 expected hash.
+    final signedName = artifact.signedPayloadName;
+    if (signedName != null) return _lookupName(checksums, signedName);
     // Android names an installed APK base.apk, and desktop users may rename
     // an AppImage. The signed digest, rather than an installation filename,
     // establishes identity. Prefer an exact digest before diagnosing mismatch.
