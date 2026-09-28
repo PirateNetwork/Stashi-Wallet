@@ -11,8 +11,7 @@
 //! - iOS: UITextField secure text entry trick + notification observers
 //! - Desktop: Application-level hooks (limited protection)
 
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 /// Screenshot protection state
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -72,91 +71,87 @@ impl ProtectionReason {
 ///
 /// Manages screenshot protection state across the application.
 /// The actual platform-specific implementation is done via FFI.
+#[derive(Clone)]
 pub struct ScreenshotGuard {
-    /// Current protection state
-    state: std::sync::RwLock<ProtectionState>,
-    /// Stack of active protection reasons (allows nesting)
-    protection_stack: std::sync::RwLock<Vec<ProtectionReason>>,
-    /// Whether platform supports screenshot blocking
-    platform_supported: AtomicBool,
-    /// Reference count for nested protections
-    ref_count: AtomicU32,
+    inner: Arc<RwLock<GuardState>>,
+}
+
+struct GuardState {
+    state: ProtectionState,
+    protection_stack: Vec<ProtectionReason>,
+    platform_supported: bool,
 }
 
 impl ScreenshotGuard {
     /// Create new screenshot guard
     pub fn new() -> Self {
         Self {
-            state: std::sync::RwLock::new(ProtectionState::Disabled),
-            protection_stack: std::sync::RwLock::new(Vec::new()),
-            platform_supported: AtomicBool::new(false),
-            ref_count: AtomicU32::new(0),
+            inner: Arc::new(RwLock::new(GuardState {
+                state: ProtectionState::Disabled,
+                protection_stack: Vec::new(),
+                platform_supported: false,
+            })),
         }
     }
 
     /// Set platform support status (called from FFI during init)
     pub fn set_platform_supported(&self, supported: bool) {
-        self.platform_supported.store(supported, Ordering::SeqCst);
+        self.inner.write().unwrap().platform_supported = supported;
     }
 
     /// Check if platform supports screenshot blocking
     pub fn is_platform_supported(&self) -> bool {
-        self.platform_supported.load(Ordering::SeqCst)
+        self.inner.read().unwrap().platform_supported
     }
 
     /// Get current protection state
     pub fn state(&self) -> ProtectionState {
-        *self.state.read().unwrap()
+        self.inner.read().unwrap().state
     }
 
     /// Enable screenshot protection
     ///
     /// Returns a guard that automatically disables protection on drop.
     pub fn enable(&self, reason: ProtectionReason) -> ScreenshotProtectionGuard {
-        self.ref_count.fetch_add(1, Ordering::SeqCst);
-        self.protection_stack.write().unwrap().push(reason);
-        *self.state.write().unwrap() = ProtectionState::Enabled;
+        let mut state = self.inner.write().unwrap();
+        state.protection_stack.push(reason);
+        state.state = ProtectionState::Enabled;
 
         tracing::debug!(
             "Screenshot protection enabled: {} (ref_count: {})",
             reason.description(),
-            self.ref_count.load(Ordering::SeqCst)
+            state.protection_stack.len()
         );
 
         ScreenshotProtectionGuard {
-            guard: Arc::new(self.clone_inner()),
+            guard: self.clone(),
             reason,
         }
     }
 
     /// Disable screenshot protection
     fn disable_internal(&self, reason: ProtectionReason) {
-        let prev_count = self.ref_count.fetch_sub(1, Ordering::SeqCst);
-
-        // Remove reason from stack
-        {
-            let mut stack = self.protection_stack.write().unwrap();
-            if let Some(pos) = stack.iter().rposition(|r| *r == reason) {
-                stack.remove(pos);
-            }
+        let mut state = self.inner.write().unwrap();
+        if let Some(pos) = state.protection_stack.iter().rposition(|r| *r == reason) {
+            state.protection_stack.remove(pos);
         }
 
-        // Only fully disable if no more protections active
-        if prev_count == 1 {
-            *self.state.write().unwrap() = ProtectionState::Disabled;
+        if state.protection_stack.is_empty() {
+            state.state = ProtectionState::Disabled;
             tracing::debug!("Screenshot protection disabled");
         } else {
             tracing::debug!(
                 "Screenshot protection still active (ref_count: {})",
-                prev_count - 1
+                state.protection_stack.len()
             );
         }
     }
 
     /// Temporarily suspend protection (for accessibility screenshots)
     pub fn suspend(&self) -> bool {
-        if *self.state.read().unwrap() == ProtectionState::Enabled {
-            *self.state.write().unwrap() = ProtectionState::Suspended;
+        let mut state = self.inner.write().unwrap();
+        if state.state == ProtectionState::Enabled {
+            state.state = ProtectionState::Suspended;
             tracing::warn!("Screenshot protection suspended");
             true
         } else {
@@ -166,22 +161,24 @@ impl ScreenshotGuard {
 
     /// Resume protection after suspension
     pub fn resume(&self) {
-        if *self.state.read().unwrap() == ProtectionState::Suspended {
-            *self.state.write().unwrap() = ProtectionState::Enabled;
+        let mut state = self.inner.write().unwrap();
+        if state.state == ProtectionState::Suspended {
+            state.state = ProtectionState::Enabled;
             tracing::debug!("Screenshot protection resumed");
         }
     }
 
     /// Get active protection reasons
     pub fn active_reasons(&self) -> Vec<ProtectionReason> {
-        self.protection_stack.read().unwrap().clone()
+        self.inner.read().unwrap().protection_stack.clone()
     }
 
     /// Get highest security level among active protections
     pub fn highest_security_level(&self) -> u8 {
-        self.protection_stack
+        self.inner
             .read()
             .unwrap()
+            .protection_stack
             .iter()
             .map(|r| r.security_level())
             .max()
@@ -191,21 +188,9 @@ impl ScreenshotGuard {
     /// Check if protection is currently active
     pub fn is_active(&self) -> bool {
         matches!(
-            *self.state.read().unwrap(),
+            self.inner.read().unwrap().state,
             ProtectionState::Enabled | ProtectionState::Suspended
         )
-    }
-
-    fn clone_inner(&self) -> ScreenshotGuardInner {
-        // This is used by the RAII `ScreenshotProtectionGuard` to run cleanup on drop.
-        // We can't capture `self` directly in a `'static` closure, so we clone the guard
-        // state we need into an `Arc` and call `disable()` on it.
-        let state = Arc::new(self.clone());
-        ScreenshotGuardInner {
-            disable_fn: Box::new(move |reason| {
-                state.disable_internal(reason);
-            }),
-        }
     }
 }
 
@@ -215,28 +200,12 @@ impl Default for ScreenshotGuard {
     }
 }
 
-impl Clone for ScreenshotGuard {
-    fn clone(&self) -> Self {
-        Self {
-            state: std::sync::RwLock::new(*self.state.read().unwrap()),
-            protection_stack: std::sync::RwLock::new(self.protection_stack.read().unwrap().clone()),
-            platform_supported: AtomicBool::new(self.platform_supported.load(Ordering::SeqCst)),
-            ref_count: AtomicU32::new(self.ref_count.load(Ordering::SeqCst)),
-        }
-    }
-}
-
-/// Internal structure for guard cleanup
-struct ScreenshotGuardInner {
-    disable_fn: Box<dyn Fn(ProtectionReason) + Send + Sync>,
-}
-
 /// RAII guard for screenshot protection
 ///
 /// When this guard is dropped, screenshot protection is automatically
 /// decremented (and disabled if no other protections are active).
 pub struct ScreenshotProtectionGuard {
-    guard: Arc<ScreenshotGuardInner>,
+    guard: ScreenshotGuard,
     reason: ProtectionReason,
 }
 
@@ -249,7 +218,7 @@ impl ScreenshotProtectionGuard {
 
 impl Drop for ScreenshotProtectionGuard {
     fn drop(&mut self) {
-        (self.guard.disable_fn)(self.reason);
+        self.guard.disable_internal(self.reason);
     }
 }
 
@@ -384,13 +353,19 @@ pub struct ScreenshotProtectionStatus {
 
 impl From<&ScreenshotGuard> for ScreenshotProtectionStatus {
     fn from(guard: &ScreenshotGuard) -> Self {
+        let state = guard.inner.read().unwrap();
         Self {
-            state: guard.state(),
-            active_count: guard.ref_count.load(Ordering::SeqCst),
-            platform_supported: guard.is_platform_supported(),
-            security_level: guard.highest_security_level(),
-            reasons: guard
-                .active_reasons()
+            state: state.state,
+            active_count: state.protection_stack.len() as u32,
+            platform_supported: state.platform_supported,
+            security_level: state
+                .protection_stack
+                .iter()
+                .map(ProtectionReason::security_level)
+                .max()
+                .unwrap_or(0),
+            reasons: state
+                .protection_stack
                 .iter()
                 .map(|r| r.description().to_string())
                 .collect(),
@@ -435,11 +410,11 @@ mod tests {
     fn test_nested_protections() {
         let guard_manager = ScreenshotGuard::new();
 
-        let _p1 = guard_manager.enable(ProtectionReason::Sensitive);
-        assert_eq!(guard_manager.ref_count.load(Ordering::SeqCst), 1);
+        let p1 = guard_manager.enable(ProtectionReason::Sensitive);
+        assert_eq!(guard_manager.active_reasons().len(), 1);
 
-        let _p2 = guard_manager.enable(ProtectionReason::SeedPhrase);
-        assert_eq!(guard_manager.ref_count.load(Ordering::SeqCst), 2);
+        let p2 = guard_manager.enable(ProtectionReason::SeedPhrase);
+        assert_eq!(guard_manager.active_reasons().len(), 2);
 
         // Highest security level should be SeedPhrase's
         assert_eq!(guard_manager.highest_security_level(), 10);
@@ -447,6 +422,28 @@ mod tests {
         // Both reasons should be active
         let reasons = guard_manager.active_reasons();
         assert_eq!(reasons.len(), 2);
+
+        drop(p2);
+        assert_eq!(guard_manager.state(), ProtectionState::Enabled);
+        assert_eq!(
+            guard_manager.active_reasons(),
+            vec![ProtectionReason::Sensitive]
+        );
+        drop(p1);
+        assert_eq!(guard_manager.state(), ProtectionState::Disabled);
+        assert!(guard_manager.active_reasons().is_empty());
+    }
+
+    #[test]
+    fn dropping_a_token_updates_every_clone_of_the_guard() {
+        let original = ScreenshotGuard::new();
+        let clone = original.clone();
+        let token = clone.enable(ProtectionReason::SeedPhrase);
+
+        assert!(original.is_active());
+        drop(token);
+        assert!(!original.is_active());
+        assert_eq!(ScreenshotProtectionStatus::from(&original).active_count, 0);
     }
 
     #[test]

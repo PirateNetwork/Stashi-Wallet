@@ -13,7 +13,7 @@
 
 #![allow(missing_docs)]
 
-use crate::screenshot_guard::{ProtectionReason, ScreenshotGuard};
+use crate::screenshot_guard::{ProtectionReason, ScreenshotGuard, ScreenshotProtectionGuard};
 use crate::secure_clipboard::{ClipboardDataType, SecureClipboard};
 use crate::security::AppPassphrase;
 use crate::{Error, Result};
@@ -140,6 +140,8 @@ pub struct SeedExportManager {
     request: std::sync::RwLock<Option<SeedExportRequest>>,
     /// Screenshot guard
     screenshot_guard: ScreenshotGuard,
+    /// Keep protection active until the export flow ends.
+    screenshot_protection: std::sync::Mutex<Option<ScreenshotProtectionGuard>>,
     /// Secure clipboard
     clipboard: SecureClipboard,
     /// Passphrase hash for verification
@@ -153,6 +155,7 @@ impl SeedExportManager {
             state: std::sync::RwLock::new(ExportFlowState::NotStarted),
             request: std::sync::RwLock::new(None),
             screenshot_guard: ScreenshotGuard::new(),
+            screenshot_protection: std::sync::Mutex::new(None),
             clipboard: SecureClipboard::new(),
             passphrase_hash: std::sync::RwLock::new(None),
         }
@@ -173,8 +176,9 @@ impl SeedExportManager {
         let mut state = self.state.write().unwrap();
         let mut request = self.request.write().unwrap();
 
-        // Enable screenshot protection
-        let _guard = self.screenshot_guard.enable(ProtectionReason::SeedPhrase);
+        // Retain the RAII token for the whole flow, including the revealed seed.
+        *self.screenshot_protection.lock().unwrap() =
+            Some(self.screenshot_guard.enable(ProtectionReason::SeedPhrase));
 
         *request = Some(SeedExportRequest::new(wallet_id));
         *state = ExportFlowState::WarningDisplayed;
@@ -213,6 +217,8 @@ impl SeedExportManager {
 
         if !success {
             *state = ExportFlowState::Cancelled;
+            *request = None;
+            self.screenshot_protection.lock().unwrap().take();
             return Ok(*state);
         }
 
@@ -340,6 +346,7 @@ impl SeedExportManager {
 
         *state = ExportFlowState::Cancelled;
         *request = None;
+        self.screenshot_protection.lock().unwrap().take();
 
         tracing::info!("Seed export cancelled");
     }
@@ -351,6 +358,7 @@ impl SeedExportManager {
 
         *state = ExportFlowState::NotStarted;
         *request = None;
+        self.screenshot_protection.lock().unwrap().take();
 
         tracing::debug!("Seed export flow reset");
     }
@@ -428,10 +436,12 @@ mod tests {
     fn test_export_flow_states() {
         let manager = SeedExportManager::new();
         assert_eq!(manager.state(), ExportFlowState::NotStarted);
+        assert!(!manager.are_screenshots_blocked());
 
         // Start
         let state = manager.start_export("wallet_123".to_string()).unwrap();
         assert_eq!(state, ExportFlowState::WarningDisplayed);
+        assert!(manager.are_screenshots_blocked());
 
         // Acknowledge
         let state = manager.acknowledge_warning().unwrap();
@@ -440,6 +450,10 @@ mod tests {
         // Skip biometric
         let state = manager.skip_biometric().unwrap();
         assert_eq!(state, ExportFlowState::AwaitingPassphrase);
+        assert!(manager.are_screenshots_blocked());
+
+        manager.reset();
+        assert!(!manager.are_screenshots_blocked());
     }
 
     #[test]
@@ -449,6 +463,29 @@ mod tests {
 
         manager.cancel();
         assert_eq!(manager.state(), ExportFlowState::Cancelled);
+        assert!(!manager.are_screenshots_blocked());
+    }
+
+    #[test]
+    fn failed_biometric_releases_screenshot_protection() {
+        let manager = SeedExportManager::new();
+        manager.start_export("wallet_123".to_string()).unwrap();
+        manager.acknowledge_warning().unwrap();
+        assert_eq!(
+            manager.complete_biometric(false).unwrap(),
+            ExportFlowState::Cancelled
+        );
+        assert!(!manager.are_screenshots_blocked());
+    }
+
+    #[test]
+    fn repeated_start_does_not_accumulate_protection_tokens() {
+        let manager = SeedExportManager::new();
+        manager.start_export("wallet_123".to_string()).unwrap();
+        manager.start_export("wallet_456".to_string()).unwrap();
+        assert_eq!(manager.screenshot_guard.active_reasons().len(), 1);
+        manager.cancel();
+        assert!(!manager.are_screenshots_blocked());
     }
 
     #[test]

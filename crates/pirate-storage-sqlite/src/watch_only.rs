@@ -403,6 +403,16 @@ mod tests {
     }
 
     #[test]
+    fn viewing_key_export_releases_scoped_screenshot_guard() {
+        let manager = WatchOnlyManager::new();
+        let exported = manager
+            .export_sapling_viewing_key("wallet_456", "zxviews-test-key".to_string())
+            .unwrap();
+        assert_eq!(exported.sapling_viewing_key(), "zxviews-test-key");
+        assert!(!manager.are_screenshots_blocked());
+    }
+
+    #[test]
     fn test_banner_types() {
         let incoming = WatchOnlyBanner::incoming_only();
         assert_eq!(incoming.banner_type, WatchOnlyBannerType::Info);
