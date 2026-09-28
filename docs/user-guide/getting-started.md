@@ -14,7 +14,7 @@ Select the package for your device:
   - Download `Stashi-Wallet-linux-x86_64.AppImage` for a portable file that runs on most 64-bit Linux distributions without installation.
   - Download `Stashi-Wallet-amd64.deb` for a Debian-based distribution such as Debian, Ubuntu, Linux Mint, Pop!_OS, or Zorin OS.
   - Download `Stashi-Wallet.flatpak` if your distribution supports Flatpak or you normally install applications through Flatpak. Fedora, Endless OS, and many other distributions can use this format after Flatpak is enabled.
-- For Android, use `Stashi-Wallet-android-V8.apk` on a current 64-bit ARM mobile device or tablet. Use `Stashi-Wallet-android-V7.apk` only on an older 32-bit ARM device that cannot install the V8 package.
+- For Android, use `Stashi-Wallet-android-V8.apk` on a 64-bit ARM mobile device or tablet. The Google Play build remains available through the store for supported devices.
 - Stashi Wallet is not yet distributed for iPhone or iPad. Until an iOS version is available, use a third-party wallet with Pirate Chain support, such as Edge.
 
 The release includes SHA-256 checksums and PGP signatures. See [Verify the downloaded release files](settings-and-verification.md#verify-the-downloaded-release-files) to check the files before installation.

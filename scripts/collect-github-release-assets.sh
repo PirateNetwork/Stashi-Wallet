@@ -274,7 +274,7 @@ fi
 
 # Top-level release assets should be normal-user installables only.
 find "$ARTIFACTS_DIR" -type f \( \
-  -name 'Stashi-Wallet-android-*.apk' \
+  -name 'Stashi-Wallet-android-V8.apk' \
   -o -name 'Stashi-Wallet-windows-installer.exe' \
   -o -name 'Stashi-Wallet-windows-component-*.exe' \
   -o -name 'Stashi-Wallet-macos.dmg' \
@@ -285,8 +285,8 @@ find "$ARTIFACTS_DIR" -type f \( \
   done
 
 # If signing is unavailable, publish unsigned desktop builds so testers still
-# receive installable artifacts. Unsigned mobile/store builds stay in the
-# developer bundle because regular users cannot install them safely.
+# receive installable artifacts. Unsigned Android builds remain CI artifacts;
+# the mobile store/test ZIP uses the signed AAB when one is available.
 if [[ ! -f "$RELEASE_DIR/Stashi-Wallet-windows-installer.exe" ]]; then
   copy_first 'Stashi-Wallet-windows-installer-unsigned.exe' "$RELEASE_DIR"
 fi
@@ -400,11 +400,13 @@ stage_developer_archive "${REACT_NATIVE_PLUGIN_CHANGED:-false}" \
   "pirate-unified-wallet-react-native-plugin-artifacts" \
   "react-native-plugin"
 
-copy_matching "$DEV_DIR/mobile-store-and-test-builds" \( \
-  -name 'Stashi-Wallet-android*.aab' \
-  -o -name 'Stashi-Wallet-android-*-unsigned.apk' \
-  -o -name 'Stashi-Wallet-ios-unsigned.ipa' \
-\)
+copy_first 'Stashi-Wallet-android.aab' "$DEV_DIR/mobile-store-and-test-builds"
+if find "$ARTIFACTS_DIR" -type f -name 'Stashi-Wallet-ios.ipa' -print -quit | grep -q .; then
+  copy_first 'Stashi-Wallet-ios.ipa' "$DEV_DIR/mobile-store-and-test-builds"
+else
+  # iOS signing is optional; retain the clearly labeled test-only fallback.
+  copy_first 'Stashi-Wallet-ios-unsigned.ipa' "$DEV_DIR/mobile-store-and-test-builds"
+fi
 
 # Portable Windows builds remain available to testers without adding a second
 # Windows distribution path to the normal-user release assets.

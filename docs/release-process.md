@@ -201,6 +201,12 @@ Signing behavior depends on platform and environment:
   - `scripts/build-ios.sh true` requires a valid Xcode signing configuration
   - when release signing is disabled, the unsigned IPA is kept in `Stashi-Wallet-mobile-store-test-builds.zip`; it is not a normal-user installable
 
+The mobile store/test ZIP contains the signed Android AAB when available and
+the signed iOS IPA when available. If iOS signing is disabled, it contains the
+explicitly named unsigned IPA instead. APKs and the unsigned AAB are excluded
+from this ZIP; the signed 64-bit ARM APK remains a direct GitHub release
+download.
+
 Artifact naming
 ---------------
 
@@ -218,7 +224,7 @@ Current script outputs are:
   - `Stashi-Wallet-macos.dmg`
   - `Stashi-Wallet-macos-unsigned.dmg`
 - Android
-  - split APK outputs named by ABI
+  - 64-bit ARM APK for direct installation
   - signed and unsigned variants
   - `Stashi-Wallet-android.aab`
   - `Stashi-Wallet-android-unsigned.aab`
@@ -254,7 +260,7 @@ Top-level release assets are:
 - signed Windows installer, with an unsigned installer fallback only when signing is unavailable
 - Linux AppImage, deb, and Flatpak packages
 - signed macOS DMG, with an unsigned fallback only when signing is unavailable
-- signed Android split APKs for direct installation
+- signed 64-bit ARM Android APK for direct installation
 - signed iOS IPA when available
 - `PirateWalletNative.xcframework.zip` and `PirateWalletSDK-Package.swift` only when the iOS SDK changes, because Swift Package Manager binary targets need a direct release URL
 - `Stashi-Wallet-release-metadata.zip`

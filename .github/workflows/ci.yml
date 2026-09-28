@@ -472,7 +472,7 @@ jobs:
         include:
           - platform: Android
             os: ubuntu-latest
-            build-command: flutter build apk --release --split-per-abi --target-platform=android-arm64,android-arm
+            build-command: flutter build apk --release --split-per-abi --target-platform=android-arm64
           - platform: iOS
             os: macos-latest
             build-command: ios unsigned xcodebuild
@@ -617,7 +617,7 @@ jobs:
           cd app
           status=1
           for attempt in 1 2 3; do
-            if flutter build apk --release --split-per-abi --target-platform=android-arm64,android-arm; then
+            if flutter build apk --release --split-per-abi --target-platform=android-arm64; then
               exit 0
             else
               status=$?
@@ -1424,14 +1424,6 @@ jobs:
             dist/android/Stashi-Wallet-android-V8-unsigned.apk
             dist/android/Stashi-Wallet-android-V8-unsigned.apk.sha256
 
-      - name: Upload APK (V7)
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: android-apk-unsigned-v7
-          path: |
-            dist/android/Stashi-Wallet-android-V7-unsigned.apk
-            dist/android/Stashi-Wallet-android-V7-unsigned.apk.sha256
-
       - name: Upload AAB
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
@@ -2032,13 +2024,6 @@ jobs:
           name: android-apk-unsigned-v8
           path: dist/android
 
-      - name: Download APK artifacts (V7)
-        if: steps.signing.outputs.enabled == 'true'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
-        with:
-          name: android-apk-unsigned-v7
-          path: dist/android
-
       - name: Download AAB artifacts
         if: steps.signing.outputs.enabled == 'true'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
@@ -2066,24 +2051,22 @@ jobs:
             echo "apksigner not found at $APKSIGNER" >&2
             exit 1
           fi
-          mapfile -t APK_UNSIGNED_LIST < <(ls dist/android/*-unsigned.apk 2>/dev/null || true)
-          if [ "${#APK_UNSIGNED_LIST[@]}" -eq 0 ]; then
-            echo "No unsigned APKs found in dist/android" >&2
+          APK_UNSIGNED="dist/android/Stashi-Wallet-android-V8-unsigned.apk"
+          if [ ! -f "$APK_UNSIGNED" ]; then
+            echo "Unsigned V8 APK not found at $APK_UNSIGNED" >&2
             exit 1
           fi
-          for APK_UNSIGNED in "${APK_UNSIGNED_LIST[@]}"; do
-            APK_SIGNED="${APK_UNSIGNED/-unsigned.apk/.apk}"
-            echo "Signing $APK_UNSIGNED -> $APK_SIGNED"
-            "$APKSIGNER" sign \
-              --ks "$KEYSTORE_PATH" \
-              --ks-key-alias "$KEY_ALIAS" \
-              --ks-pass "pass:$KEYSTORE_PASSWORD" \
-              --key-pass "pass:$KEY_PASSWORD" \
-              --out "$APK_SIGNED" \
-              "$APK_UNSIGNED"
-            "$APKSIGNER" verify --verbose "$APK_SIGNED"
-            sha256sum "$APK_SIGNED" > "$APK_SIGNED.sha256"
-          done
+          APK_SIGNED="dist/android/Stashi-Wallet-android-V8.apk"
+          echo "Signing $APK_UNSIGNED -> $APK_SIGNED"
+          "$APKSIGNER" sign \
+            --ks "$KEYSTORE_PATH" \
+            --ks-key-alias "$KEY_ALIAS" \
+            --ks-pass "pass:$KEYSTORE_PASSWORD" \
+            --key-pass "$KEY_PASSWORD" \
+            --out "$APK_SIGNED" \
+            "$APK_UNSIGNED"
+          "$APKSIGNER" verify --verbose "$APK_SIGNED"
+          sha256sum "$APK_SIGNED" > "$APK_SIGNED.sha256"
 
           AAB_UNSIGNED="dist/android/Stashi-Wallet-android-unsigned.aab"
           AAB_SIGNED="dist/android/Stashi-Wallet-android.aab"
@@ -2110,16 +2093,6 @@ jobs:
           path: |
             dist/android/Stashi-Wallet-android-V8.apk
             dist/android/Stashi-Wallet-android-V8.apk.sha256
-          if-no-files-found: error
-
-      - name: Upload signed APK (V7)
-        if: steps.signing.outputs.enabled == 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: android-apk-signed-v7
-          path: |
-            dist/android/Stashi-Wallet-android-V7.apk
-            dist/android/Stashi-Wallet-android-V7.apk.sha256
           if-no-files-found: error
 
       - name: Upload signed AAB

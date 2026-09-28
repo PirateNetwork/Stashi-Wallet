@@ -79,7 +79,12 @@ SIGN="${2:-false}"      # Sign the build
 REPRODUCIBLE="${REPRODUCIBLE:-0}"
 ANDROID_SPLIT_PER_ABI="${ANDROID_SPLIT_PER_ABI:-1}"
 ANDROID_GRADLE_STACKTRACE="${ANDROID_GRADLE_STACKTRACE:-1}"
-ANDROID_TARGET_PLATFORMS="${ANDROID_TARGET_PLATFORMS:-android-arm64,android-arm}"
+if [ "$BUILD_TYPE" = "apk" ]; then
+    ANDROID_TARGET_PLATFORMS="${ANDROID_TARGET_PLATFORMS:-android-arm64}"
+else
+    # Keep the store bundle compatible with supported 32-bit Android devices.
+    ANDROID_TARGET_PLATFORMS="${ANDROID_TARGET_PLATFORMS:-android-arm64,android-arm}"
+fi
 configure_android_abis "$ANDROID_TARGET_PLATFORMS"
 
 # Reproducible build settings
