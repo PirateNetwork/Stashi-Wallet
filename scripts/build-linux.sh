@@ -468,6 +468,12 @@ EOF
 
 build_deb() {
     log "Creating Debian package..."
+
+    local deb_depends="libgtk-3-0, libglib2.0-0, libsqlite3-0"
+    if [[ "$DEB_ARCH" == arm64 ]]; then
+        # KDF needs libudev/libgcc; the Linux build baseline is glibc 2.35.
+        deb_depends+=", libudev1, libgcc-s1, libc6 (>= 2.35)"
+    fi
     
     DEB_DIR="$OUTPUT_DIR/deb"
     rm -rf "$DEB_DIR"
@@ -495,7 +501,7 @@ Description: Privacy-first cryptocurrency wallet for Pirate Chain
  Stashi Wallet is a privacy-first wallet for
  Pirate Chain (ARRR) with Sapling shielded transactions, Tor routing,
  and watch-only capabilities.
-Depends: libgtk-3-0, libglib2.0-0, libsqlite3-0
+Depends: $deb_depends
 Homepage: https://piratechain.com
 EOF
     
