@@ -245,12 +245,6 @@ static DESIRED_TRANSPORT_CONFIG: Lazy<StdRwLock<Option<NetTransportConfig>>> =
 static TOR_CONFIG_OVERRIDE: Lazy<std::sync::RwLock<Option<NetTorConfig>>> =
     Lazy::new(|| std::sync::RwLock::new(None));
 
-fn set_desired_transport_config(config: NetTransportConfig) {
-    if let Ok(mut guard) = DESIRED_TRANSPORT_CONFIG.write() {
-        *guard = Some(config);
-    }
-}
-
 /// Record a user-selected transport before scheduling its asynchronous startup.
 /// A delayed bootstrap must not be allowed to replace a newer selection.
 pub fn select_transport(mode: TransportMode, socks5_url: Option<String>) -> Result<()> {
@@ -5536,8 +5530,7 @@ mod tests {
             .await
             .expect("direct transport");
 
-        let tor = NetTransportConfig::default();
-        set_desired_transport_config(tor);
+        select_transport(TransportMode::Tor, None).unwrap();
         assert!(state.clone().get_matching(direct.clone()).await.is_none());
         assert!(matches!(
             state.clone().get_or_init(direct).await,
