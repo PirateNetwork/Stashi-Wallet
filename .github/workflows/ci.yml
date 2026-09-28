@@ -2198,7 +2198,7 @@ jobs:
             --ks "$KEYSTORE_PATH" \
             --ks-key-alias "$KEY_ALIAS" \
             --ks-pass "pass:$KEYSTORE_PASSWORD" \
-            --key-pass "$KEY_PASSWORD" \
+            --key-pass "pass:$KEY_PASSWORD" \
             --out "$APK_SIGNED" \
             "$APK_UNSIGNED"
           "$APKSIGNER" verify --verbose "$APK_SIGNED"
