@@ -103,6 +103,11 @@ impl ClipboardTimer {
             self.timeout_ms.store(timeout_secs * 1000, Ordering::SeqCst);
             *self.data_type.write().unwrap() = data_type;
             self.active.store(true, Ordering::SeqCst);
+        } else {
+            // A public copy supersedes any previous sensitive copy. Do not
+            // let the old countdown later clear the new clipboard content.
+            self.cancel();
+            *self.data_type.write().unwrap() = data_type;
         }
     }
 
@@ -328,6 +333,20 @@ mod tests {
 
         timer.cancel();
         assert!(!timer.is_active());
+    }
+
+    #[test]
+    fn public_copy_cancels_prior_sensitive_countdown() {
+        let clipboard = SecureClipboard::new();
+        clipboard.prepare_copy("seed words", ClipboardDataType::SeedPhrase);
+        assert!(clipboard.timer().is_active());
+
+        clipboard.prepare_copy("public text", ClipboardDataType::Public);
+        assert!(!clipboard.timer().is_active());
+        assert_eq!(clipboard.timer().data_type(), ClipboardDataType::Public);
+        assert!(!clipboard.should_clear());
+        assert!(clipboard.verify_content("public text"));
+        assert!(!clipboard.verify_content("seed words"));
     }
 
     #[test]
