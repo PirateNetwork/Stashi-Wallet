@@ -21,7 +21,7 @@ members = [
 exclude = ["patches/saturating-time"]
 
 [workspace.package]
-version = "0.3.6"
+version = "0.3.7"
 edition = "2021"
 authors = ["Pirate Chain Contributors"]
 license = "MIT OR Apache-2.0"
