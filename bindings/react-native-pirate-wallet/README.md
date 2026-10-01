@@ -18,10 +18,19 @@ Repo-level build and integration notes:
 
 The JS surface mirrors the SDK boundary used by the native Android and iOS SDKs.
 
-## Compact Android binary with host networking and parameters
+## Networking
 
-The default Android companion packages embed Tor, I2P, and the Sapling proving
-parameters, and work without downloading additional proving files. Hosts that need a smaller APK can
+The React Native SDK uses Direct networking and omits embedded Tor and I2P on
+both Android and iOS. It connects to the configured lightwalletd server without
+a transport setup call. Direct connections expose the device's IP address to
+the server and DNS provider. The consuming app owns its networking and privacy
+policy, including protection provided by its operating-system network
+environment. Tor and I2P integration belongs to Stashi's separate app build.
+
+## Smaller Android binary with external Sapling parameters
+
+The default Android companion packages embed the Sapling proving parameters and
+work without downloading additional files. Hosts that need a smaller APK can
 install `react-native-pirate-wallet-android-external` at the **same exact version**
 as this wrapper instead. Extract its `.tgz` from the React Native SDK archive in
 the GitHub release and install the local package:
@@ -42,32 +51,10 @@ Select it in the consuming app's `android/gradle.properties`:
 pirateWalletAndroidBinaryPackage=react-native-pirate-wallet-android-external
 ```
 
-This package contains ARM64, ARMv7 and x86_64 libraries without embedded Tor,
-I2P, or Sapling files. Selecting it excludes the regular embedded Android companion
+This package contains ARM64, ARMv7 and x86_64 libraries without the embedded
+Sapling files. Selecting it excludes the regular embedded Android companion
 packages from the APK, even if npm installed them as optional dependencies.
 Do not package both variants of `libpirate_ffi_native.so`.
-
-Configure account storage, then explicitly select the host's SOCKS5 proxy before
-testing an endpoint, starting sync, broadcasting, or making another network
-request:
-
-```js
-await sdk.setTunnel({ mode: 'socks5', url: 'socks5h://127.0.0.1:9050' })
-```
-
-The host must start and maintain this proxy; `socks5h` sends hostname resolution
-through it. If the host intentionally permits Direct, explicitly select
-`await sdk.setTunnel({ mode: 'direct' })`. Direct exposes the device's IP address
-to the server and DNS provider. Unavailable transports and proxy failures never
-fall back to Direct.
-
-The initial Tor selection remains for privacy. In this compact package,
-selecting `tor` or `i2p` rejects with `Embedded Tor is unavailable in this build`
-or `Embedded I2P is unavailable in this build` (followed by the missing feature
-name); neither starts an embedded client. Select a supported mode after account
-storage configuration, which may restore a saved mode. Selection applies to the
-service across wallets and cancels stale sync connections; restart affected
-synchronizers after the setter succeeds.
 
 Before signing any transaction, the host must download the two standard public
 parameter files using its own network and privacy policy, save them in app-private
@@ -174,7 +161,7 @@ bash scripts/prepare-react-native-plugin.sh
 That copies:
 
 - Android JNI libraries into the two Android companion packages
-- compact host-network Android JNI libraries into the opt-in Android companion
+- external-parameter Android JNI libraries into the opt-in Android companion
 - the iOS device XCFramework slice and two thin simulator archives into the
   three iOS companion packages
 
@@ -231,13 +218,6 @@ Low-level entry points:
   - validates and caches host-provided Sapling proving files
   - required by the external Android companion before any transaction signing, including Ironwood-only
   - returns `{ acknowledged: true }`; rejects on unreadable or invalid files
-- `sdk.setTunnel({ mode, url? })`
-  - RPC: `set_tunnel`
-  - modes: `tor`, `i2p`, `socks5`, or `direct`; `socks5` requires a non-empty `url`
-  - returns `{ acknowledged: true }`; native errors reject with their original message
-  - invalid modes and blank SOCKS5 URLs throw before invoking native code
-  - compact Android builds require explicit SOCKS5 or Direct selection before connecting
-  - changing the service-wide transport cancels stale sync connections
 - `createPirateWalletSdk()`
   - returns a new `PirateWalletSdk` instance backed by the linked native module
 
@@ -387,7 +367,7 @@ const saved = await sdk.getLightdEndpointConfig(walletId)
 - `testLightdEndpoint({ url, tlsPin? })`
   - RPC: `test_node`
   - also accepts `testLightdEndpoint(url, tlsPin?)`
-  - tests through the currently selected Direct, Tor, SOCKS5, or I2P transport
+  - tests through the SDK's Direct transport
   - reports success, height, latency, transport, TLS/pin information, server
     version, chain name, and any connection error
 - `setLightdEndpoint({ walletId, url, tlsPin? })`
@@ -402,10 +382,10 @@ const saved = await sdk.getLightdEndpointConfig(walletId)
   - an empty `failoverEndpoints` array disables automatic failover
 
 Pool membership is validated by the backend before anything is persisted.
-Every member must resolve to the same recognized Pirate network, use the same
-clearnet, onion, or I2P route, and use the same HTTP/TLS security mode as the
-primary. The primary is removed from the alternate list and duplicate
-alternates are collapsed. A pinned primary cannot use automatic failover,
+Every member must resolve to the same recognized Pirate network and use the
+same route and HTTP/TLS security mode as the primary. SDK endpoints use
+clearnet routes through Direct networking. The primary is removed from the
+alternate list and duplicate alternates are collapsed. A pinned primary cannot use automatic failover,
 because one server's SPKI pin cannot authenticate unrelated servers; use
 `setLightdEndpoint()` when pinning a single server.
 

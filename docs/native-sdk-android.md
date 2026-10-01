@@ -111,51 +111,18 @@ That script:
 
 The script also defaults `GRADLE_USER_HOME` to a repo-local cache so local builds do not depend on a host-global Gradle cache.
 
-Default builds include `embedded-tor`, `embedded-i2p`, and
-`embedded-sapling-params`. Source integrations can omit embedded transports while
-retaining proving files:
+Native SDK builds use Direct networking and omit embedded Tor and I2P. The
+standard build includes `embedded-sapling-params`; `--no-default-features` omits
+the public proving files. Stashi enables its embedded privacy transports through
+its separate app build.
 
-```bash
-bash scripts/build-android-sdk.sh --no-embedded-transports
-```
+## Networking
 
-This writes `pirate-android-sdk-host-network-release.aar` and the module package
-under `dist/android-sdk-host-network/`. It builds `pirate-ffi-native` with
-`--no-default-features --features embedded-sapling-params` and leaves the standard
-JNI staging directory available for the default React Native companions. For
-custom Cargo builds, add either `embedded-tor` or `embedded-i2p` explicitly if the
-host needs that embedded transport. `--no-default-features` alone also omits the
-Sapling proving files.
-
-## Transport configuration
-
-For builds that omit embedded transports, configure account storage, then select
-SOCKS5 or Direct before testing an endpoint, starting sync, broadcasting, or
-making another network request:
-
-```kotlin
-sdk.setTunnel(TunnelMode.Socks5("socks5h://127.0.0.1:9050"))
-```
-
-The host starts and maintains the proxy. `socks5h` sends hostname resolution
-through it. The SDK does not launch embedded Tor or I2P in this variant. Selecting
-`TunnelMode.Tor` or `TunnelMode.I2p` throws `PirateWalletSdkException` with a
-transport-unavailable error.
-
-If the application intentionally permits Direct, select it explicitly:
-
-```kotlin
-sdk.setTunnel(TunnelMode.Direct)
-```
-
-Direct reveals the device's IP address to the server and DNS provider. Proxy
-failures and unavailable embedded transports do not fall back to Direct. The
-initial Tor selection is retained for privacy; a host-network build cannot
-connect until the host selects a supported mode. Call `setTunnel` after account
-storage configuration because that storage namespace can restore a saved mode.
-Transport selection applies to the service across wallets. Changing it cancels
-stale sync connections; restart the affected synchronizers after the setter
-succeeds.
+The SDK connects directly to the configured lightwalletd server without a
+transport setup call. Direct connections expose the device's IP address to the
+server and DNS provider. The consuming app owns its network and privacy policy,
+including any protection provided by its operating-system network environment.
+Tor and I2P integration belongs to Stashi and is excluded from SDK artifacts.
 
 ## Outputs
 
@@ -170,8 +137,8 @@ The package zip is there for teams that want to vendor the whole Gradle module i
 
 ## Compact SDK with external Sapling parameters
 
-The standard AAR embeds Tor, I2P, and the public Sapling proving files. To build
-the optional smaller AAR without all three:
+The standard AAR embeds the public Sapling proving files. To build the optional
+smaller AAR without those files:
 
 ```bash
 bash scripts/build-android-sdk.sh --external-sapling-params

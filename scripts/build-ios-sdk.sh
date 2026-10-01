@@ -12,28 +12,6 @@ CRATE_DIR="$CRATES_DIR/pirate-ffi-native"
 HEADER="$CRATE_DIR/pirate_wallet_service.h"
 IOS_MIN_DEPLOYMENT_TARGET="${IOS_MIN_DEPLOYMENT_TARGET:-15.0}"
 IOS_NPM_MAX_COMPRESSED_ARCHIVE_BYTES="${IOS_NPM_MAX_COMPRESSED_ARCHIVE_BYTES:-190000000}"
-NO_EMBEDDED_TRANSPORTS=0
-for arg in "$@"; do
-  case "$arg" in
-    --no-embedded-transports)
-      NO_EMBEDDED_TRANSPORTS=1
-      ;;
-    --help|-h)
-      echo "Usage: $0 [--no-embedded-transports]"
-      exit 0
-      ;;
-    *)
-      echo "Usage: $0 [--no-embedded-transports]" >&2
-      exit 1
-      ;;
-  esac
-done
-
-if [[ "$NO_EMBEDDED_TRANSPORTS" -eq 1 ]]; then
-  DIST_DIR="$PROJECT_ROOT/dist/ios-sdk-host-network"
-  FRAMEWORKS_DIR="$DIST_DIR/Frameworks"
-  REACT_NATIVE_SLICES_DIR="$DIST_DIR/react-native"
-fi
 
 if [[ "$OSTYPE" != "darwin"* ]]; then
   echo "iOS SDK packaging requires macOS." >&2
@@ -154,14 +132,9 @@ verify_architectures() {
 cd "$CRATES_DIR"
 # The XCFramework packages static libraries only. Build just the staticlib
 # artifact so iOS packaging does not waste time or fail linking an unused cdylib.
-cargo_args=(rustc --release --locked --package pirate-ffi-native --lib)
-if [[ "$NO_EMBEDDED_TRANSPORTS" -eq 1 ]]; then
-  # Source consumers may delegate networking without changing proving behavior.
-  cargo_args+=(--no-default-features --features embedded-sapling-params)
-fi
-cargo "${cargo_args[@]}" --target aarch64-apple-ios -- --crate-type staticlib
-cargo "${cargo_args[@]}" --target aarch64-apple-ios-sim -- --crate-type staticlib
-cargo "${cargo_args[@]}" --target x86_64-apple-ios -- --crate-type staticlib
+cargo rustc --release --locked --target aarch64-apple-ios --package pirate-ffi-native --lib -- --crate-type staticlib
+cargo rustc --release --locked --target aarch64-apple-ios-sim --package pirate-ffi-native --lib -- --crate-type staticlib
+cargo rustc --release --locked --target x86_64-apple-ios --package pirate-ffi-native --lib -- --crate-type staticlib
 
 strip_static_archive \
   "$CRATES_DIR/target/aarch64-apple-ios/release/libpirate_ffi_native.a" \

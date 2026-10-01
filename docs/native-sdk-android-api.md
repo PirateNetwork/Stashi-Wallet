@@ -14,6 +14,9 @@ This page lists the public Android SDK surface in:
 
 ## PirateWalletSdk
 
+The SDK uses Direct networking automatically. Embedded Tor and I2P are excluded
+from SDK builds; the consuming app owns its networking and privacy policy.
+
 Core:
 
 - `invoke(requestJson, pretty = false)`
@@ -21,15 +24,6 @@ Core:
 - `buildInfoJson(pretty = false)`
 - `buildInfo()`
 - `initializeSaplingParameters(spendPath, outputPath)`
-- `setTunnel(mode: TunnelMode)`
-
-`setTunnel` returns `Unit`. Modes are `TunnelMode.Tor`,
-`TunnelMode.I2p`, `TunnelMode.Socks5(url)`, and `TunnelMode.Direct`. In SDK builds
-without embedded transports, explicitly select SOCKS5 or Direct after account
-storage configuration and before any network operation. A missing embedded
-transport throws `PirateWalletSdkException`; the SDK never falls back to Direct.
-Blank SOCKS5 URLs throw `IllegalArgumentException` before native invocation.
-See the overview for host proxy setup and its privacy implications.
 
 `initializeSaplingParameters` validates app-private Sapling parameter files and
 caches them process-wide. The external-parameters Android AAR requires it before

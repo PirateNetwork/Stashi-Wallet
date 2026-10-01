@@ -1,7 +1,7 @@
 {
   "name": "react-native-pirate-wallet-android-external",
   "version": "0.3.9",
-  "description": "Compact Android native libraries with host-managed networking and Sapling proving parameters for react-native-pirate-wallet",
+  "description": "Android native libraries with Direct networking and host-provided Sapling proving parameters for react-native-pirate-wallet",
   "keywords": [
     "react-native",
     "pirate-chain",

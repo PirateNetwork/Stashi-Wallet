@@ -31,7 +31,7 @@ fi
 
 for abi in arm64-v8a armeabi-v7a x86_64; do
   if [[ ! -s "$ANDROID_EXTERNAL_SRC/$abi/libpirate_ffi_native.so" ]]; then
-    echo "Missing compact host-network Android JNI library: $ANDROID_EXTERNAL_SRC/$abi (run scripts/build-android-sdk.sh --external-sapling-params)" >&2
+    echo "Missing external-parameter Android JNI library: $ANDROID_EXTERNAL_SRC/$abi (run scripts/build-android-sdk.sh --external-sapling-params)" >&2
     exit 1
   fi
 done
@@ -89,7 +89,7 @@ cp \
 
 echo "Staged Android ARM JNI libraries into $ANDROID_ARM_DST"
 echo "Staged Android x86_64 JNI library into $ANDROID_X86_DST"
-echo "Staged compact host-network Android JNI libraries into $ANDROID_EXTERNAL_DST"
+echo "Staged external-parameter Android JNI libraries into $ANDROID_EXTERNAL_DST"
 echo "Staged iOS device XCFramework slice into $IOS_DEVICE_DST"
 echo "Staged iOS arm64 simulator archive into $IOS_SIMULATOR_ARM64_DST"
 echo "Staged iOS x86_64 simulator archive into $IOS_SIMULATOR_X86_64_DST"

@@ -11,9 +11,9 @@ The React Native packages in this repo live in:
 - `bindings/react-native-pirate-wallet-ios-simulator-x86_64/`
 
 The public package contains the JavaScript API and platform bridges. The five
-default companion packages contain the native Android and iOS binaries. The
-additional compact Android companion omits embedded Tor, I2P, and Sapling proving
-parameters. The simulator
+default companion packages contain the native Android and iOS binaries. All SDK
+binaries omit embedded Tor and I2P. The additional compact Android companion
+also omits Sapling proving parameters. The simulator
 architectures are published separately so no npm tarball carries two copies of
 the Rust dependency graph; CocoaPods combines them into a universal simulator
 slice during installation.
@@ -270,21 +270,9 @@ pirateWalletAndroidBinaryPackage=react-native-pirate-wallet-android-external
 ```
 
 This replaces both default Android binary companions in Gradle's JNI inputs,
-even if npm installed them. Configure account storage, then explicitly select
-the host's proxy before any network request:
-
-```js
-await sdk.setTunnel({ mode: 'socks5', url: 'socks5h://127.0.0.1:9050' })
-```
-
-The host starts and maintains the proxy; `socks5h` delegates hostname resolution
-to it. Direct is available only after an explicit
-`await sdk.setTunnel({ mode: 'direct' })` choice and reveals the device's IP
-address to the server and DNS provider. Tor/I2P selections reject with an
-embedded-transport-unavailable error in this build. There is no fallback to
-Direct. Apply the selection after account storage configuration because the
-storage namespace can restore a saved mode; restart affected synchronizers when
-changing the transport.
+even if npm installed them. Both variants use Direct networking automatically
+and omit embedded Tor and I2P. The compact variant additionally omits proving
+files.
 
 Before any transaction signing, including Ironwood-only signing, download and
 verify the public Sapling proving files according to the host's network policy,
@@ -294,11 +282,17 @@ syncing do not require these files. The SDK does not download them. See the
 [package README](../bindings/react-native-pirate-wallet/README.md) for exact file
 sizes, hashes, installation instructions, and initialization behavior.
 
-Source consumers can select Rust `embedded-tor`, `embedded-i2p`, and
-`embedded-sapling-params` separately. Standard Android and iOS binary companions
-retain all three. The compact Android build uses `--no-default-features`, while
-the SDK scripts' `--no-embedded-transports` option retains proving files in a
-separate host-network output directory.
+The compact Android build uses `--no-default-features` to omit the proving files.
+Standard Android and iOS native SDK builds embed them.
+
+### Networking and privacy
+
+The SDK connects directly to the configured lightwalletd server without a
+transport setup call. Direct connections reveal the device's IP address to the
+server and DNS provider. The consuming app owns its networking and privacy
+policy, including any protection provided by its operating-system network
+environment. Tor and I2P integration belongs to Stashi's separate app build and
+is excluded from React Native SDK artifacts.
 
 ## Mnemonic language support
 
