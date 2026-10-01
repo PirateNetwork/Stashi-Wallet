@@ -10,21 +10,21 @@ version = "0.3.7"
 artifact = "pirate-qortal-cli"
 
 [qortal_jni]
-version = "0.3.7"
+version = "0.3.8"
 artifact = "pirate-qortal-jni"
 
 [native_ffi]
-version = "0.3.7"
+version = "0.3.8"
 artifact = "pirate-ffi-native"
 
 [ios_sdk]
-version = "0.3.7"
+version = "0.3.8"
 artifact = "pirate-ios-sdk"
 
 [android_sdk]
-version = "0.3.7"
+version = "0.3.8"
 artifact = "pirate-android-sdk"
 
 [react_native_plugin]
-version = "0.3.8"
+version = "0.3.9"
 artifact = "react-native-pirate-wallet"

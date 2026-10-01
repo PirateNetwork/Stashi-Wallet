@@ -3860,7 +3860,7 @@ dependencies = [
 
 [[package]]
 name = "pirate-core"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "anyhow",
  "argon2",
@@ -3907,7 +3907,7 @@ dependencies = [
 
 [[package]]
 name = "pirate-ffi-frb"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "anyhow",
  "flutter_rust_bridge",
@@ -3921,7 +3921,7 @@ dependencies = [
 
 [[package]]
 name = "pirate-ffi-native"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "jni",
  "pirate-wallet-service",
@@ -3930,7 +3930,7 @@ dependencies = [
 
 [[package]]
 name = "pirate-net"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "argon2",
  "arti-client",
@@ -3967,7 +3967,7 @@ dependencies = [
 
 [[package]]
 name = "pirate-params"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "chrono",
  "serde",
@@ -3987,7 +3987,7 @@ dependencies = [
 
 [[package]]
 name = "pirate-qortal-jni"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "anyhow",
  "base64",
@@ -4001,7 +4001,7 @@ dependencies = [
 
 [[package]]
 name = "pirate-storage-sqlite"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "aes-gcm",
  "argon2",
@@ -4037,7 +4037,7 @@ dependencies = [
 
 [[package]]
 name = "pirate-sync-lightd"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4088,7 +4088,7 @@ dependencies = [
 
 [[package]]
 name = "pirate-sync-oblivious"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "async-trait",
  "pirate-core",
@@ -4098,7 +4098,7 @@ dependencies = [
 
 [[package]]
 name = "pirate-wallet-service"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "anyhow",
  "bech32",
@@ -5689,7 +5689,7 @@ dependencies = [
 
 [[package]]
 name = "sync-harness"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "anyhow",
  "clap",
