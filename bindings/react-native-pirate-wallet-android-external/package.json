@@ -1,0 +1,41 @@
+{
+  "name": "react-native-pirate-wallet-android-external",
+  "version": "0.3.8",
+  "description": "Android native libraries with host-provided Sapling proving parameters for react-native-pirate-wallet",
+  "keywords": [
+    "react-native",
+    "pirate-chain",
+    "android",
+    "wallet",
+    "privacy",
+    "shielded"
+  ],
+  "homepage": "https://github.com/PirateNetwork/Stashi-Wallet/tree/main/bindings/react-native-pirate-wallet-android-external#readme",
+  "bugs": {
+    "url": "https://github.com/PirateNetwork/Stashi-Wallet/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PirateNetwork/Stashi-Wallet.git",
+    "directory": "bindings/react-native-pirate-wallet-android-external"
+  },
+  "author": "Pirate Chain Contributors",
+  "license": "MIT",
+  "files": [
+    "android/src/main/jniLibs/",
+    "scripts/",
+    "LICENSE-MIT",
+    "README.md",
+    "package.json"
+  ],
+  "scripts": {
+    "verify:package": "node scripts/verify-package.js",
+    "prepack": "npm run verify:package"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

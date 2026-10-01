@@ -137,8 +137,12 @@ if (
 
 try {
   const { resolveAndroidJniLibsPaths } = require("./resolve-android-packages");
-  if (resolveAndroidJniLibsPaths().length !== 2) {
-    fail("Both Android binary packages must resolve");
+  const selectionFlag = process.argv.indexOf("--android-binary-package");
+  const selectedPackage = selectionFlag === -1 ? undefined : process.argv[selectionFlag + 1];
+  if (selectionFlag !== -1 && !selectedPackage) {
+    fail("--android-binary-package requires a package name");
+  } else if (resolveAndroidJniLibsPaths(selectedPackage).length !== (selectedPackage ? 1 : 2)) {
+    fail("The selected Android binary packages must resolve");
   }
 } catch (error) {
   fail(error.message);

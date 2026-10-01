@@ -21,6 +21,7 @@ ANDROID_SDK_GRADLE_PATH = Path("bindings/android-sdk/build.gradle.kts")
 REACT_NATIVE_BINARY_PACKAGE_PATHS = (
     Path("bindings/react-native-pirate-wallet-android/package.json"),
     Path("bindings/react-native-pirate-wallet-android-x86_64/package.json"),
+    Path("bindings/react-native-pirate-wallet-android-external/package.json"),
     Path("bindings/react-native-pirate-wallet-ios-device/package.json"),
     Path("bindings/react-native-pirate-wallet-ios-simulator-arm64/package.json"),
     Path("bindings/react-native-pirate-wallet-ios-simulator-x86_64/package.json"),
@@ -169,6 +170,10 @@ def validate_source_versions(current: dict) -> None:
                 f"{binary_package_name} version does not match release-artifacts.toml "
                 f"({binary_package_version!r} != {release_version!r})"
             )
+        if binary_package_name == "react-native-pirate-wallet-android-external":
+            # This variant is installed explicitly, so it has no default
+            # dependency entry. Its own version is still checked above.
+            continue
         dependency_version = package.get("optionalDependencies", {}).get(
             binary_package_name
         )

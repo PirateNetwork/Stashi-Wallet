@@ -119,13 +119,13 @@ class IosPackagingPolicyTest(unittest.TestCase):
             self.react_native_package,
         )
 
-    def test_packaging_emits_wrapper_and_five_native_companions(self) -> None:
+    def test_packaging_emits_wrapper_and_six_native_companions(self) -> None:
         package_entries = re.findall(
             r'^  "react-native-pirate-wallet[^\"]*"$',
             self.react_native_package,
             re.MULTILINE,
         )
-        self.assertEqual(len(package_entries), 6)
+        self.assertEqual(len(package_entries), 7)
 
 
 if __name__ == "__main__":

@@ -36,7 +36,10 @@ android {
 
     sourceSets {
         getByName("main") {
-            jniLibs.srcDir("src/main/jniLibs")
+            jniLibs.setSrcDirs(listOf(
+                providers.gradleProperty("pirateWalletJniLibsDir")
+                    .getOrElse("src/main/jniLibs")
+            ))
         }
     }
 }

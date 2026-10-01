@@ -12,6 +12,7 @@ MAX_TARBALL_BYTES="${MAX_NPM_TARBALL_BYTES:-195000000}"
 package_names=(
   "react-native-pirate-wallet-android"
   "react-native-pirate-wallet-android-x86_64"
+  "react-native-pirate-wallet-android-external"
   "react-native-pirate-wallet-ios-device"
   "react-native-pirate-wallet-ios-simulator-arm64"
   "react-native-pirate-wallet-ios-simulator-x86_64"
@@ -126,10 +127,13 @@ trap 'rm -rf "$consumer_dir"' EXIT
   node node_modules/react-native-pirate-wallet-android/scripts/verify-package.js \
     --publish-layout
   node node_modules/react-native-pirate-wallet-android-x86_64/scripts/verify-package.js
+  node node_modules/react-native-pirate-wallet-android-external/scripts/verify-package.js
   node node_modules/react-native-pirate-wallet-ios-device/scripts/verify-package.js
   node node_modules/react-native-pirate-wallet-ios-simulator-arm64/scripts/verify-package.js
   node node_modules/react-native-pirate-wallet-ios-simulator-x86_64/scripts/verify-package.js
   node node_modules/react-native-pirate-wallet/scripts/verify-package.js
+  node node_modules/react-native-pirate-wallet/scripts/verify-package.js \
+    --android-binary-package react-native-pirate-wallet-android-external
   node -e '
     const fs = require("fs");
     const {resolveAndroidJniLibsPaths} = require(
@@ -143,4 +147,5 @@ trap 'rm -rf "$consumer_dir"' EXIT
     }
   '
   npm --prefix node_modules/react-native-pirate-wallet test
+  node node_modules/react-native-pirate-wallet/test/android-packages.js
 )

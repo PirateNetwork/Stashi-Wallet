@@ -7,10 +7,35 @@ CRATES_DIR="$PROJECT_ROOT/crates"
 SDK_DIR="$PROJECT_ROOT/bindings/android-sdk"
 JNI_DIR="$SDK_DIR/src/main/jniLibs"
 TOOLCHAIN_WRAPPER_DIR=""
+VERIFY_AAR_DIR=""
+EXTERNAL_SAPLING_PARAMS=0
+if [[ "${1:-}" == "--external-sapling-params" && "$#" -eq 1 ]]; then
+  EXTERNAL_SAPLING_PARAMS=1
+elif [[ "$#" -ne 0 ]]; then
+  echo "Usage: $0 [--external-sapling-params]" >&2
+  exit 1
+fi
+
+DIST_DIR="$PROJECT_ROOT/dist/android-sdk"
+PACKAGE_NAME="pirate-android-sdk-package"
+if [[ "$EXTERNAL_SAPLING_PARAMS" -eq 1 ]]; then
+  DIST_DIR="$PROJECT_ROOT/dist/android-sdk-external"
+  JNI_DIR="$DIST_DIR/jniLibs"
+  PACKAGE_NAME="pirate-android-sdk-external-package"
+  # Tune only this opt-in SDK artifact. Unwind must remain enabled because the
+  # transaction worker converts caught panics to recoverable host errors.
+  export CARGO_PROFILE_RELEASE_LTO="${CARGO_PROFILE_RELEASE_LTO:-thin}"
+  export CARGO_PROFILE_RELEASE_CODEGEN_UNITS="${CARGO_PROFILE_RELEASE_CODEGEN_UNITS:-1}"
+  export CARGO_PROFILE_RELEASE_OPT_LEVEL="${CARGO_PROFILE_RELEASE_OPT_LEVEL:-3}"
+fi
+export CARGO_PROFILE_RELEASE_PANIC=unwind
 
 cleanup() {
   if [[ -n "${TOOLCHAIN_WRAPPER_DIR:-}" && -d "$TOOLCHAIN_WRAPPER_DIR" ]]; then
     rm -rf "$TOOLCHAIN_WRAPPER_DIR"
+  fi
+  if [[ -n "${VERIFY_AAR_DIR:-}" && -d "$VERIFY_AAR_DIR" ]]; then
+    rm -rf "$VERIFY_AAR_DIR"
   fi
 }
 
@@ -262,9 +287,13 @@ build_rust_target() {
   local source_lib
   local staged_lib
 
-  cargo build --release --target "$rust_target" --package pirate-ffi-native --locked
+  local cargo_args=(build --release --target "$rust_target" --package pirate-ffi-native --locked)
+  if [[ "$EXTERNAL_SAPLING_PARAMS" -eq 1 ]]; then
+    cargo_args+=(--no-default-features)
+  fi
+  cargo "${cargo_args[@]}"
   mkdir -p "$JNI_DIR/$abi"
-  source_lib="$CRATES_DIR/target/$rust_target/release/libpirate_ffi_native.so"
+  source_lib="${CARGO_TARGET_DIR:-$CRATES_DIR/target}/$rust_target/release/libpirate_ffi_native.so"
   staged_lib="$JNI_DIR/$abi/libpirate_ffi_native.so"
   cp "$source_lib" "$staged_lib"
 
@@ -279,6 +308,11 @@ build_rust_target "aarch64-linux-android" "arm64-v8a"
 build_rust_target "armv7-linux-androideabi" "armeabi-v7a"
 build_rust_target "x86_64-linux-android" "x86_64"
 
+if [[ "$EXTERNAL_SAPLING_PARAMS" -eq 1 ]]; then
+  node "$PROJECT_ROOT/bindings/react-native-pirate-wallet-android-external/scripts/verify-package.js" \
+    --jni-libs "$JNI_DIR"
+fi
+
 GRADLE_CMD="$(find_gradle || true)"
 if [[ -n "$GRADLE_CMD" ]]; then
   export GRADLE_USER_HOME="${GRADLE_USER_HOME:-$PROJECT_ROOT/.gradle-android-sdk}"
@@ -286,25 +320,42 @@ if [[ -n "$GRADLE_CMD" ]]; then
   if JAVA_HOME_RESOLVED="$(resolve_java_home || true)"; then
     export JAVA_HOME="$JAVA_HOME_RESOLVED"
   fi
-  (cd "$SDK_DIR" && "$GRADLE_CMD" --no-daemon test assembleRelease)
+  (cd "$SDK_DIR" && "$GRADLE_CMD" --no-daemon \
+    "-PpirateWalletJniLibsDir=$JNI_DIR" test assembleRelease)
 else
   echo "Gradle wrapper not present and gradle is not installed. Rust JNI libraries have been staged in $JNI_DIR" >&2
 fi
 
-DIST_DIR="$PROJECT_ROOT/dist/android-sdk"
 mkdir -p "$DIST_DIR"
 
-if compgen -G "$SDK_DIR/build/outputs/aar/*.aar" > /dev/null; then
-  cp "$SDK_DIR"/build/outputs/aar/*.aar "$DIST_DIR"/
+# A local JNI-only build must not pick up an AAR from a previous Gradle run.
+if [[ -n "$GRADLE_CMD" ]] && compgen -G "$SDK_DIR/build/outputs/aar/*.aar" > /dev/null; then
+  for aar in "$SDK_DIR"/build/outputs/aar/*.aar; do
+    aar_name="$(basename "$aar")"
+    if [[ "$EXTERNAL_SAPLING_PARAMS" -eq 1 ]]; then
+      aar_name="pirate-android-sdk-external-release.aar"
+      VERIFY_AAR_DIR="$(mktemp -d)"
+      unzip -q "$aar" 'jni/*' -d "$VERIFY_AAR_DIR"
+      node "$PROJECT_ROOT/bindings/react-native-pirate-wallet-android-external/scripts/verify-package.js" \
+        --jni-libs "$VERIFY_AAR_DIR/jni"
+      rm -rf "$VERIFY_AAR_DIR"
+      VERIFY_AAR_DIR=""
+    fi
+    cp "$aar" "$DIST_DIR/$aar_name"
+  done
 fi
 
-SDK_PACKAGE_DIR="$DIST_DIR/pirate-android-sdk-package"
+SDK_PACKAGE_DIR="$DIST_DIR/$PACKAGE_NAME"
 rm -rf "$SDK_PACKAGE_DIR"
 mkdir -p "$SDK_PACKAGE_DIR"
 cp -R "$SDK_DIR/src" "$SDK_PACKAGE_DIR/"
+if [[ "$EXTERNAL_SAPLING_PARAMS" -eq 1 ]]; then
+  rm -rf "$SDK_PACKAGE_DIR/src/main/jniLibs"
+  cp -R "$JNI_DIR" "$SDK_PACKAGE_DIR/src/main/jniLibs"
+fi
 cp "$SDK_DIR/build.gradle.kts" "$SDK_DIR/settings.gradle.kts" "$SDK_DIR/gradle.properties" "$SDK_DIR/consumer-rules.pro" "$SDK_PACKAGE_DIR/"
 
-PACKAGE_ZIP="$DIST_DIR/pirate-android-sdk-package.zip"
+PACKAGE_ZIP="$DIST_DIR/$PACKAGE_NAME.zip"
 rm -f "$PACKAGE_ZIP" "$PACKAGE_ZIP.sha256"
 (cd "$DIST_DIR" && zip -qr "$(basename "$PACKAGE_ZIP")" "$(basename "$SDK_PACKAGE_DIR")")
 (cd "$DIST_DIR" && sha256sum "$(basename "$PACKAGE_ZIP")" > "$(basename "$PACKAGE_ZIP").sha256")

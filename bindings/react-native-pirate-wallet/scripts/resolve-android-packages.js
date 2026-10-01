@@ -3,10 +3,11 @@
 const fs = require('fs');
 const path = require('path');
 
-const androidPackageNames = [
+const embeddedPackageNames = [
   'react-native-pirate-wallet-android',
   'react-native-pirate-wallet-android-x86_64',
 ];
+const externalPackageName = 'react-native-pirate-wallet-android-external';
 const packageRoot = path.resolve(__dirname, '..');
 
 function candidatePackageJsonPaths(packageName) {
@@ -26,14 +27,22 @@ function candidatePackageJsonPaths(packageName) {
   return [...new Set(candidates)];
 }
 
-function resolveAndroidJniLibsPaths() {
+function resolveAndroidJniLibsPaths(binaryPackageName) {
   const wrapperPackage = JSON.parse(
     fs.readFileSync(path.join(packageRoot, 'package.json'), 'utf8'),
   );
 
-  return androidPackageNames.map(packageName => {
+  if (binaryPackageName && binaryPackageName !== externalPackageName) {
+    throw new Error(`Unsupported Android binary package: ${binaryPackageName}`);
+  }
+  const packageNames = binaryPackageName
+    ? [externalPackageName]
+    : embeddedPackageNames;
+  return packageNames.map(packageName => {
     const expectedVersion =
-      wrapperPackage.optionalDependencies?.[packageName];
+      packageName === externalPackageName
+        ? wrapperPackage.version
+        : wrapperPackage.optionalDependencies?.[packageName];
 
     for (const packageJsonPath of candidatePackageJsonPaths(packageName)) {
       if (!fs.statSync(packageJsonPath, {throwIfNoEntry: false})?.isFile()) {
@@ -73,3 +82,12 @@ function resolveAndroidJniLibsPaths() {
 }
 
 module.exports = {resolveAndroidJniLibsPaths};
+
+if (require.main === module) {
+  try {
+    process.stdout.write(JSON.stringify(resolveAndroidJniLibsPaths(process.argv[2])));
+  } catch (error) {
+    console.error(error.message);
+    process.exitCode = 1;
+  }
+}

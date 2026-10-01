@@ -363,6 +363,7 @@ if is_true "${ANDROID_SDK_CHANGED:-false}"; then
   copy_matching "$DEV_DIR/sdk/android" \( \
     -name '*.aar' \
     -o -name 'pirate-android-sdk-package.zip' \
+    -o -name 'pirate-android-sdk-external-package.zip' \
   \)
 fi
 

@@ -33,6 +33,7 @@ class ReleaseMobileArtifactsTest(unittest.TestCase):
                 "libpirate_ffi_native.so",
                 "PirateWalletNative.xcframework.zip",
                 "pirate-android-sdk-package.zip",
+                "pirate-android-sdk-external-package.zip",
                 "react-native-pirate-wallet-package.zip",
             }
             if signed_ios:
@@ -91,6 +92,14 @@ class ReleaseMobileArtifactsTest(unittest.TestCase):
             with zipfile.ZipFile(bundle) as archive:
                 bundled = set(archive.namelist())
             published = {path.name for path in release.iterdir()}
+            android_sdk_bundle = next(
+                release.glob("pirate-unified-wallet-android-sdk-artifacts-*.zip")
+            )
+            with zipfile.ZipFile(android_sdk_bundle) as archive:
+                self.assertTrue(any(
+                    name.endswith("pirate-android-sdk-external-package.zip")
+                    for name in archive.namelist()
+                ))
             return published, bundled
 
     def test_signed_mobile_bundle_and_only_v8_direct_download(self) -> None:

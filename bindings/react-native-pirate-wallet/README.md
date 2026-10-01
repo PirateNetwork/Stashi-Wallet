@@ -23,8 +23,8 @@ The JS surface mirrors the SDK boundary used by the native Android and iOS SDKs.
 The default Android companion packages embed the Sapling proving parameters and
 work without downloading additional files. Hosts that need a smaller APK can
 install `react-native-pirate-wallet-android-external` at the **same exact version**
-as this wrapper instead. Download its `.tgz` from the GitHub release and install
-the local package:
+as this wrapper instead. Extract its `.tgz` from the React Native SDK archive in
+the GitHub release and install the local package:
 
 ```bash
 npm install ./react-native-pirate-wallet-android-external-<wrapper-version>.tgz

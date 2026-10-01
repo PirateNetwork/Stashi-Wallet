@@ -157,6 +157,23 @@ jobs:
           cd crates
           cargo test --all-features --locked
 
+      - name: Verify external Sapling parameter SDK configuration
+        run: |
+          set -euo pipefail
+          cd crates
+          cargo tree -p pirate-ffi-native --no-default-features --edges normal,build --locked --prefix none > /tmp/pirate-external-dependencies.txt
+          if grep -q '^wagyu-zcash-parameters ' /tmp/pirate-external-dependencies.txt; then
+            echo "External SDK still embeds Sapling parameter crates" >&2
+            exit 1
+          fi
+          cargo tree -p pirate-ffi-frb --no-default-features --features frb --edges normal,build --locked --prefix none > /tmp/pirate-wallet-dependencies.txt
+          if ! grep -q '^wagyu-zcash-parameters ' /tmp/pirate-wallet-dependencies.txt; then
+            echo "Stashi wallet build lost its embedded Sapling parameters" >&2
+            exit 1
+          fi
+          cargo test -p pirate-core --lib --no-default-features params::tests --locked
+          cargo test -p pirate-wallet-service --lib --no-default-features service::tests --locked
+
   rust-qortal-tests:
     name: Rust - Qortal Adapter Tests
     runs-on: ubuntu-latest
@@ -1043,6 +1060,11 @@ jobs:
         with:
           gradle-version: "8.13"
 
+      - name: Build Android SDK with external Sapling parameters
+        run: |
+          chmod +x scripts/build-android-sdk.sh
+          ./scripts/build-android-sdk.sh --external-sapling-params
+
       - name: Build Android SDK
         run: |
           chmod +x scripts/build-android-sdk.sh
@@ -1072,6 +1094,7 @@ jobs:
           name: android-sdk
           path: |
             dist/android-sdk/*
+            dist/android-sdk-external/**/*
             bindings/android-sdk/build/outputs/aar/*.aar
             bindings/android-sdk/src/main/jniLibs/**/*
             bindings/android-sdk/src/main/kotlin/com/pirate/wallet/sdk/*
@@ -1108,6 +1131,8 @@ jobs:
         run: |
           mkdir -p bindings/android-sdk/src/main/jniLibs bindings/ios-sdk/Frameworks dist/ios-sdk
           cp -R /tmp/pirate-android-sdk-artifact/bindings/android-sdk/src/main/jniLibs/. bindings/android-sdk/src/main/jniLibs/
+          mkdir -p dist/android-sdk-external
+          cp -R /tmp/pirate-android-sdk-artifact/dist/android-sdk-external/jniLibs dist/android-sdk-external/
           rm -rf bindings/ios-sdk/Frameworks/PirateWalletNative.xcframework
           cp -R /tmp/pirate-ios-sdk-artifact/bindings/ios-sdk/Frameworks/PirateWalletNative.xcframework bindings/ios-sdk/Frameworks/
           cp -R /tmp/pirate-ios-sdk-artifact/dist/ios-sdk/react-native dist/ios-sdk/
@@ -1136,6 +1161,7 @@ jobs:
           node ../scripts/verify-package.js
           node ../../react-native-pirate-wallet-android/scripts/verify-package.js
           node ../../react-native-pirate-wallet-android-x86_64/scripts/verify-package.js
+          node ../../react-native-pirate-wallet-android-external/scripts/verify-package.js
           if [ "$(uname -s)" = "Darwin" ]; then
             node ../../react-native-pirate-wallet-ios-device/scripts/verify-package.js
             node ../../react-native-pirate-wallet-ios-simulator-arm64/scripts/verify-package.js
@@ -1180,6 +1206,15 @@ jobs:
           cd bindings/react-native-pirate-wallet/example/android
           chmod +x ./gradlew
           ./gradlew --no-daemon assembleDebug
+
+      - name: Build Android example with external Sapling parameters
+        env:
+          GRADLE_USER_HOME: ${{ runner.temp }}/gradle-rn-example-android
+        run: |
+          cd bindings/react-native-pirate-wallet/example
+          npm install --no-save --package-lock=false --ignore-scripts --legacy-peer-deps --no-audit --no-fund ../../react-native-pirate-wallet-android-external
+          cd android
+          ./gradlew --no-daemon -PpirateWalletAndroidBinaryPackage=react-native-pirate-wallet-android-external assembleDebug
 
       - name: Package React Native plugin
         run: |
@@ -1240,6 +1275,8 @@ jobs:
           mkdir -p bindings/android-sdk/src/main/jniLibs bindings/ios-sdk/Frameworks dist/ios-sdk
           cp -R /tmp/pirate-android-sdk-artifact/bindings/android-sdk/src/main/jniLibs/. bindings/android-sdk/src/main/jniLibs/
           rm -rf bindings/ios-sdk/Frameworks/PirateWalletNative.xcframework
+          mkdir -p dist/android-sdk-external
+          cp -R /tmp/pirate-android-sdk-artifact/dist/android-sdk-external/jniLibs dist/android-sdk-external/
           cp -R /tmp/pirate-ios-sdk-artifact/bindings/ios-sdk/Frameworks/PirateWalletNative.xcframework bindings/ios-sdk/Frameworks/
           cp -R /tmp/pirate-ios-sdk-artifact/dist/ios-sdk/react-native dist/ios-sdk/
           chmod +x scripts/prepare-react-native-plugin.sh
@@ -2950,8 +2987,8 @@ jobs:
         run: |
           set -euo pipefail
           mapfile -t npm_tarballs < <(find npm-artifact -type f -name '*.tgz' -print)
-          if [ "${#npm_tarballs[@]}" -ne 6 ]; then
-            echo "Expected six npm tarballs, found ${#npm_tarballs[@]}" >&2
+          if [ "${#npm_tarballs[@]}" -ne 7 ]; then
+            echo "Expected seven npm tarballs, found ${#npm_tarballs[@]}" >&2
             exit 1
           fi
 
@@ -3039,6 +3076,7 @@ jobs:
 
           verify_package react-native-pirate-wallet-android NPM_ANDROID
           verify_package react-native-pirate-wallet-android-x86_64 NPM_ANDROID_X86_64
+          verify_package react-native-pirate-wallet-android-external NPM_ANDROID_EXTERNAL
           verify_package react-native-pirate-wallet-ios-device NPM_IOS_DEVICE
           verify_package react-native-pirate-wallet-ios-simulator-arm64 NPM_IOS_SIMULATOR_ARM64
           verify_package react-native-pirate-wallet-ios-simulator-x86_64 NPM_IOS_SIMULATOR_X86_64
@@ -3051,6 +3089,12 @@ jobs:
       - name: Publish Android x86_64 npm package with provenance
         if: env.NPM_ANDROID_X86_64_ALREADY_PUBLISHED != 'true'
         run: npm publish "$NPM_ANDROID_X86_64_TARBALL" --access public
+
+      # A new package needs an initial publication and its own npm trusted
+      # publisher configuration. GitHub release tarballs work before this is enabled.
+      - name: Publish external-parameter Android npm package with provenance
+        if: vars.NPM_EXTERNAL_ANDROID_PUBLISH_ENABLED == 'true' && env.NPM_ANDROID_EXTERNAL_ALREADY_PUBLISHED != 'true'
+        run: npm publish "$NPM_ANDROID_EXTERNAL_TARBALL" --access public
 
       - name: Publish iOS device npm package with provenance
         if: env.NPM_IOS_DEVICE_ALREADY_PUBLISHED != 'true'

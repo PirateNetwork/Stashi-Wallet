@@ -21,23 +21,21 @@ def safeExtGet(prop, fallback) {
   rootProject.ext.has(prop) ? rootProject.ext.get(prop) : fallback
 }
 
-def androidBinaryPackages = [
-  'react-native-pirate-wallet-android',
-  'react-native-pirate-wallet-android-x86_64',
-]
-def androidJniLibsDirs = androidBinaryPackages.collect { packageName ->
-  def candidates = [
-    file("../node_modules/${packageName}/android/src/main/jniLibs"),
-    file("../../${packageName}/android/src/main/jniLibs"),
-  ]
-  def jniLibsDir = candidates.find { it.isDirectory() }
-  if (jniLibsDir == null) {
-    throw new GradleException(
-      "${packageName} must be installed before building Android"
-    )
-  }
-  jniLibsDir
+def androidBinaryPackage = providers.gradleProperty('pirateWalletAndroidBinaryPackage').orNull
+// Use the same resolver as package verification, including exact version checks
+// and support for hoisted node_modules. Selecting external never adds embedded libs.
+def resolveCommand = ['node', file('../scripts/resolve-android-packages.js').absolutePath]
+if (androidBinaryPackage != null) {
+  resolveCommand.add(androidBinaryPackage)
 }
+def resolveProcess = new ProcessBuilder(resolveCommand)
+  .directory(rootProject.projectDir).start()
+def resolvedOutput = resolveProcess.inputStream.getText('UTF-8')
+def resolveError = resolveProcess.errorStream.getText('UTF-8')
+if (resolveProcess.waitFor() != 0) {
+  throw new GradleException("Cannot resolve Pirate Android native libraries: ${resolveError.trim()}")
+}
+def androidJniLibsDirs = new groovy.json.JsonSlurper().parseText(resolvedOutput)
 
 android {
   namespace "com.pirate.wallet.reactnative"
