@@ -107,6 +107,50 @@ That script:
 
 This packaging step requires macOS and Xcode.
 
+The standard binary SDK includes `embedded-tor`, `embedded-i2p`, and
+`embedded-sapling-params`. Source integrations that manage their own proxy can
+omit the embedded transports:
+
+```bash
+bash scripts/build-ios-sdk.sh --no-embedded-transports
+```
+
+That opt-in build uses `--no-default-features --features embedded-sapling-params`
+and writes its XCFramework, Swift package archive, and thin simulator archives
+under `dist/ios-sdk-host-network/`. It keeps the default Frameworks directory
+and React Native binary companions separate. Proving parameters remain embedded.
+Custom Cargo builds can add `embedded-tor` or `embedded-i2p` individually;
+`--no-default-features` alone also omits the proving files and requires
+`initialize_sapling_parameters` through the JSON service before any signing.
+
+## Transport configuration
+
+When using a build without embedded transports, configure account storage, then
+select the host's SOCKS5 proxy before testing endpoints, starting sync,
+broadcasting, or making another network request:
+
+```swift
+try await sdk.setTunnelAsync(.socks5(url: "socks5h://127.0.0.1:9050"))
+```
+
+The host starts and maintains the proxy. `socks5h` resolves hostnames through it.
+Selecting `.tor` or `.i2p` rejects with a transport-unavailable SDK error when
+the corresponding embedded feature is absent. Standard binary SDK packages
+retain those capabilities.
+
+If the application intentionally permits Direct, select it explicitly:
+
+```swift
+try await sdk.setTunnelAsync(.direct)
+```
+
+Direct exposes the device's IP address to the server and DNS provider. There is
+no automatic fallback to Direct. The initial Tor selection remains in place,
+so a build without Tor cannot connect until a supported mode is selected. Call
+the setter after account storage configuration, which can restore a saved mode.
+Transport selection applies to the service across wallets. Changing it cancels
+stale sync connections; restart affected synchronizers after the setter succeeds.
+
 ## Outputs
 
 Release outputs:

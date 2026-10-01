@@ -91,7 +91,12 @@ function main() {
     }
   }
   for (const abi of abis) {
-    verifyNativeLibrary(path.join(jniLibsDir, abi, 'libpirate_ffi_native.so'), abi);
+    const abiDirectory = path.join(jniLibsDir, abi);
+    const entries = fs.readdirSync(abiDirectory);
+    if (entries.length !== 1 || entries[0] !== 'libpirate_ffi_native.so') {
+      throw new Error(`${abi} must contain only libpirate_ffi_native.so; found ${entries.join(', ')}`);
+    }
+    verifyNativeLibrary(path.join(abiDirectory, 'libpirate_ffi_native.so'), abi);
   }
 }
 

@@ -25,6 +25,17 @@ Core:
 - `buildInfo()`
 - `buildInfoJsonAsync(pretty:)`
 - `buildInfoAsync()`
+- `setTunnel(_:)`
+- `setTunnelAsync(_:)`
+
+Both tunnel setters return `Void` and accept `TunnelMode`:
+`.tor`, `.i2p`, `.socks5(url:)`, or `.direct`. Builds without embedded transports
+require an explicit SOCKS5 or Direct selection after account storage
+configuration and before connecting. A missing embedded transport throws an SDK
+`PirateWalletSdkError.serviceFailure`; the SDK never falls back to Direct. Blank
+SOCKS5 URLs throw `PirateWalletSdkError.encodingFailed` before native invocation.
+See the overview for proxy setup and
+privacy implications.
 
 Wallet lifecycle:
 

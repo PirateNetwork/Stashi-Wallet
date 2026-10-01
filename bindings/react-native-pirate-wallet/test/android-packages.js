@@ -75,6 +75,28 @@ try {
   ].join('\0')));
   verifyNativeLibrary(fakeLibrary, 'arm64-v8a');
   assert.throws(() => verifyNativeLibrary(fakeLibrary, 'x86_64'), /wrong ELF architecture/);
+
+  const jniLibs = path.join(temporaryRoot, 'jniLibs');
+  const verifierPath = path.join(__dirname, '../../react-native-pirate-wallet-android-external/scripts/verify-package.js');
+  for (const [abi, machine] of [['arm64-v8a', 183], ['armeabi-v7a', 40], ['x86_64', 62]]) {
+    const bytes = fs.readFileSync(fakeLibrary);
+    bytes[4] = abi === 'armeabi-v7a' ? 1 : 2;
+    bytes.writeUInt16LE(machine, 18);
+    fs.mkdirSync(path.join(jniLibs, abi), {recursive: true});
+    fs.writeFileSync(path.join(jniLibs, abi, 'libpirate_ffi_native.so'), bytes);
+  }
+  const verifyLayout = () => spawnSync(process.execPath, [verifierPath, '--jni-libs', jniLibs], {
+    encoding: 'utf8',
+  });
+  const validLayout = verifyLayout();
+  assert.strictEqual(validLayout.status, 0, validLayout.stderr);
+  const strayParameters = path.join(jniLibs, 'arm64-v8a', 'sapling-spend.params');
+  fs.writeFileSync(strayParameters, 'unexpected bundled asset');
+  assert.match(verifyLayout().stderr, /must contain only libpirate_ffi_native.so/);
+  fs.rmSync(strayParameters);
+  fs.mkdirSync(path.join(jniLibs, 'riscv64'));
+  assert.match(verifyLayout().stderr, /Unexpected Android ABI directory/);
+
   fs.appendFileSync(fakeLibrary, Buffer.from(
     'c87e58906a996bb89bcb515f71408b6b79d0498511dfa90e23aec6b7cf1124f7c' +
       'cf2c50faf3ba66c136be6c30c2ff68039fafde5fc7b87ad2e9465e060b1a57e', 'hex'));
@@ -85,7 +107,7 @@ try {
   fs.ftruncateSync(descriptor, 50_000_001);
   fs.closeSync(descriptor);
   assert.throws(() => verifyNativeLibrary(fakeLibrary, 'arm64-v8a'), /size budget/);
-  console.log('Android binary selection and external parameter layout tests passed');
+  console.log('Android binary selection and compact package layout tests passed');
 } finally {
   fs.rmSync(temporaryRoot, {recursive: true, force: true});
 }

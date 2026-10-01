@@ -9,12 +9,28 @@ JNI_DIR="$SDK_DIR/src/main/jniLibs"
 TOOLCHAIN_WRAPPER_DIR=""
 VERIFY_AAR_DIR=""
 EXTERNAL_SAPLING_PARAMS=0
-if [[ "${1:-}" == "--external-sapling-params" && "$#" -eq 1 ]]; then
-  EXTERNAL_SAPLING_PARAMS=1
-elif [[ "$#" -ne 0 ]]; then
-  echo "Usage: $0 [--external-sapling-params]" >&2
-  exit 1
-fi
+NO_EMBEDDED_TRANSPORTS=0
+for arg in "$@"; do
+  case "$arg" in
+    --external-sapling-params)
+      # The compact companion delegates transports and proving-file delivery
+      # to its host. Keep every default feature out of this artifact.
+      EXTERNAL_SAPLING_PARAMS=1
+      NO_EMBEDDED_TRANSPORTS=1
+      ;;
+    --no-embedded-transports)
+      NO_EMBEDDED_TRANSPORTS=1
+      ;;
+    --help|-h)
+      echo "Usage: $0 [--external-sapling-params] [--no-embedded-transports]"
+      exit 0
+      ;;
+    *)
+      echo "Usage: $0 [--external-sapling-params] [--no-embedded-transports]" >&2
+      exit 1
+      ;;
+  esac
+done
 
 DIST_DIR="$PROJECT_ROOT/dist/android-sdk"
 PACKAGE_NAME="pirate-android-sdk-package"
@@ -27,6 +43,10 @@ if [[ "$EXTERNAL_SAPLING_PARAMS" -eq 1 ]]; then
   export CARGO_PROFILE_RELEASE_LTO="${CARGO_PROFILE_RELEASE_LTO:-thin}"
   export CARGO_PROFILE_RELEASE_CODEGEN_UNITS="${CARGO_PROFILE_RELEASE_CODEGEN_UNITS:-1}"
   export CARGO_PROFILE_RELEASE_OPT_LEVEL="${CARGO_PROFILE_RELEASE_OPT_LEVEL:-3}"
+elif [[ "$NO_EMBEDDED_TRANSPORTS" -eq 1 ]]; then
+  DIST_DIR="$PROJECT_ROOT/dist/android-sdk-host-network"
+  JNI_DIR="$DIST_DIR/jniLibs"
+  PACKAGE_NAME="pirate-android-sdk-host-network-package"
 fi
 export CARGO_PROFILE_RELEASE_PANIC=unwind
 
@@ -288,8 +308,11 @@ build_rust_target() {
   local staged_lib
 
   local cargo_args=(build --release --target "$rust_target" --package pirate-ffi-native --locked)
-  if [[ "$EXTERNAL_SAPLING_PARAMS" -eq 1 ]]; then
+  if [[ "$NO_EMBEDDED_TRANSPORTS" -eq 1 ]]; then
     cargo_args+=(--no-default-features)
+    if [[ "$EXTERNAL_SAPLING_PARAMS" -eq 0 ]]; then
+      cargo_args+=(--features embedded-sapling-params)
+    fi
   fi
   cargo "${cargo_args[@]}"
   mkdir -p "$JNI_DIR/$abi"
@@ -340,6 +363,8 @@ if [[ -n "$GRADLE_CMD" ]] && compgen -G "$SDK_DIR/build/outputs/aar/*.aar" > /de
         --jni-libs "$VERIFY_AAR_DIR/jni"
       rm -rf "$VERIFY_AAR_DIR"
       VERIFY_AAR_DIR=""
+    elif [[ "$NO_EMBEDDED_TRANSPORTS" -eq 1 ]]; then
+      aar_name="pirate-android-sdk-host-network-release.aar"
     fi
     cp "$aar" "$DIST_DIR/$aar_name"
   done
@@ -349,7 +374,7 @@ SDK_PACKAGE_DIR="$DIST_DIR/$PACKAGE_NAME"
 rm -rf "$SDK_PACKAGE_DIR"
 mkdir -p "$SDK_PACKAGE_DIR"
 cp -R "$SDK_DIR/src" "$SDK_PACKAGE_DIR/"
-if [[ "$EXTERNAL_SAPLING_PARAMS" -eq 1 ]]; then
+if [[ "$NO_EMBEDDED_TRANSPORTS" -eq 1 ]]; then
   rm -rf "$SDK_PACKAGE_DIR/src/main/jniLibs"
   cp -R "$JNI_DIR" "$SDK_PACKAGE_DIR/src/main/jniLibs"
 fi

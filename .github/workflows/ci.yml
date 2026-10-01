@@ -157,13 +157,13 @@ jobs:
           cd crates
           cargo test --all-features --locked
 
-      - name: Verify external Sapling parameter SDK configuration
+      - name: Verify host-network SDK and embedded wallet configurations
         run: |
           set -euo pipefail
           cd crates
           cargo tree -p pirate-ffi-native --no-default-features --edges normal,build --locked --prefix none > /tmp/pirate-external-dependencies.txt
-          if grep -q '^wagyu-zcash-parameters ' /tmp/pirate-external-dependencies.txt; then
-            echo "External SDK still embeds Sapling parameter crates" >&2
+          if grep -Eq '^(wagyu-zcash-parameters|arti-client|tor-rtcompat|tor-ptmgr|tor-dirmgr) ' /tmp/pirate-external-dependencies.txt; then
+            echo "Host-network SDK still embeds proving parameter or Tor runtime crates" >&2
             exit 1
           fi
           cargo tree -p pirate-ffi-frb --no-default-features --features frb --edges normal,build --locked --prefix none > /tmp/pirate-wallet-dependencies.txt
@@ -171,8 +171,23 @@ jobs:
             echo "Stashi wallet build lost its embedded Sapling parameters" >&2
             exit 1
           fi
+          if ! grep -q '^arti-client ' /tmp/pirate-wallet-dependencies.txt; then
+            echo "Stashi wallet build lost its embedded Tor runtime" >&2
+            exit 1
+          fi
+          cargo tree -p pirate-ffi-frb --no-default-features --features frb --edges features --invert pirate-net --locked > /tmp/pirate-wallet-features.txt
+          if ! grep -q 'pirate-net feature "embedded-i2p"' /tmp/pirate-wallet-features.txt; then
+            echo "Stashi wallet build lost its embedded I2P router support" >&2
+            exit 1
+          fi
           cargo test -p pirate-core --lib --no-default-features params::tests --locked
+          cargo test -p pirate-net --lib --no-default-features --locked
+          cargo test -p pirate-sync-lightd --lib --no-default-features client::tests --locked
           cargo test -p pirate-wallet-service --lib --no-default-features service::tests --locked
+          cargo test -p pirate-wallet-service --lib --no-default-features api::tunnel::tests --locked
+          cargo check -p pirate-ffi-native --no-default-features --features embedded-sapling-params --locked
+          cargo check -p pirate-ffi-native --no-default-features --features embedded-tor --locked
+          cargo check -p pirate-ffi-native --no-default-features --features embedded-i2p --locked
 
   rust-qortal-tests:
     name: Rust - Qortal Adapter Tests

@@ -5,12 +5,15 @@ The React Native packages in this repo live in:
 - `bindings/react-native-pirate-wallet/`
 - `bindings/react-native-pirate-wallet-android/`
 - `bindings/react-native-pirate-wallet-android-x86_64/`
+- `bindings/react-native-pirate-wallet-android-external/` (opt-in compact Android)
 - `bindings/react-native-pirate-wallet-ios-device/`
 - `bindings/react-native-pirate-wallet-ios-simulator-arm64/`
 - `bindings/react-native-pirate-wallet-ios-simulator-x86_64/`
 
 The public package contains the JavaScript API and platform bridges. The five
-companion packages contain the native Android and iOS binaries. The simulator
+default companion packages contain the native Android and iOS binaries. The
+additional compact Android companion omits embedded Tor, I2P, and Sapling proving
+parameters. The simulator
 architectures are published separately so no npm tarball carries two copies of
 the Rust dependency graph; CocoaPods combines them into a universal simulator
 slice during installation.
@@ -144,17 +147,22 @@ The React Native package is a bridge and packaging layer on top of the native SD
 Before testing or packaging the React Native plugin from this monorepo, stage the native artifacts:
 
 ```bash
+bash scripts/build-android-sdk.sh
+bash scripts/build-android-sdk.sh --external-sapling-params
+bash scripts/build-ios-sdk.sh
 bash scripts/prepare-react-native-plugin.sh
 ```
 
 That script copies:
 
 - Android JNI libraries from `bindings/android-sdk/src/main/jniLibs/`
+- compact Android JNI libraries from `dist/android-sdk-external/jniLibs/`
 - iOS XCFramework output from `bindings/ios-sdk/Frameworks/`
 
 into:
 
 - the Android ARM and x86_64 companion packages
+- the opt-in compact Android companion
 - the iOS device and two architecture-specific simulator companion packages
 
 If those native artifacts are missing, the React Native package will not build correctly.
@@ -172,6 +180,7 @@ Important files:
 - `bindings/react-native-pirate-wallet/example/`
 - `bindings/react-native-pirate-wallet-android/package.json`
 - `bindings/react-native-pirate-wallet-android-x86_64/package.json`
+- `bindings/react-native-pirate-wallet-android-external/package.json`
 - `bindings/react-native-pirate-wallet-ios-device/package.json`
 - `bindings/react-native-pirate-wallet-ios-simulator-arm64/package.json`
 - `bindings/react-native-pirate-wallet-ios-simulator-x86_64/package.json`
@@ -184,7 +193,7 @@ The example app is the minimal real consumer used by CI:
 
 - `bindings/react-native-pirate-wallet/example/`
 
-Release CI creates and tests npm tarballs for the public wrapper and five
+Release CI creates and tests npm tarballs for the public wrapper and six
 native companions. They use the `react_native_plugin` version from
 `release-artifacts.toml`; publication sends the native packages before the
 wrapper.
@@ -249,6 +258,47 @@ iOS:
 - `configureSecureAccountStorage()` derives account directories under
   `Application Support/PirateWallet/accounts/<sanitized-account-id>` unless the
   caller provides `storagePath`
+
+### Compact Android integration
+
+Install `react-native-pirate-wallet-android-external` at the same exact version
+as the JS wrapper, using its release `.tgz` while the package is not yet on npm.
+Select it in the app's `android/gradle.properties`:
+
+```properties
+pirateWalletAndroidBinaryPackage=react-native-pirate-wallet-android-external
+```
+
+This replaces both default Android binary companions in Gradle's JNI inputs,
+even if npm installed them. Configure account storage, then explicitly select
+the host's proxy before any network request:
+
+```js
+await sdk.setTunnel({ mode: 'socks5', url: 'socks5h://127.0.0.1:9050' })
+```
+
+The host starts and maintains the proxy; `socks5h` delegates hostname resolution
+to it. Direct is available only after an explicit
+`await sdk.setTunnel({ mode: 'direct' })` choice and reveals the device's IP
+address to the server and DNS provider. Tor/I2P selections reject with an
+embedded-transport-unavailable error in this build. There is no fallback to
+Direct. Apply the selection after account storage configuration because the
+storage namespace can restore a saved mode; restart affected synchronizers when
+changing the transport.
+
+Before any transaction signing, including Ironwood-only signing, download and
+verify the public Sapling proving files according to the host's network policy,
+store them in app-private storage, and call
+`sdk.initializeSaplingParameters({ spendPath, outputPath })`. Receiving and
+syncing do not require these files. The SDK does not download them. See the
+[package README](../bindings/react-native-pirate-wallet/README.md) for exact file
+sizes, hashes, installation instructions, and initialization behavior.
+
+Source consumers can select Rust `embedded-tor`, `embedded-i2p`, and
+`embedded-sapling-params` separately. Standard Android and iOS binary companions
+retain all three. The compact Android build uses `--no-default-features`, while
+the SDK scripts' `--no-embedded-transports` option retains proving files in a
+separate host-network output directory.
 
 ## Mnemonic language support
 
