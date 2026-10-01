@@ -7,8 +7,10 @@ license.workspace = true
 repository.workspace = true
 
 [features]
-default = ["embedded-sapling-params", "embedded-tor", "embedded-i2p"]
+default = ["embedded-sapling-params"]
 embedded-sapling-params = ["pirate-core/embedded-sapling-params"]
+# App transport settings belong to Stashi, not the consumer native SDK.
+stashi-transports = ["embedded-tor", "embedded-i2p"]
 embedded-tor = ["pirate-sync-lightd/embedded-tor"]
 embedded-i2p = ["pirate-sync-lightd/embedded-i2p"]
 

@@ -10,15 +10,13 @@ repository.workspace = true
 crate-type = ["staticlib", "cdylib", "lib"]
 
 [features]
-default = ["embedded-sapling-params", "embedded-tor", "embedded-i2p"]
+default = ["embedded-sapling-params", "stashi-transports"]
 embedded-sapling-params = ["pirate-wallet-service/embedded-sapling-params", "pirate-core/embedded-sapling-params"]
-embedded-tor = ["pirate-wallet-service/embedded-tor"]
-embedded-i2p = ["pirate-wallet-service/embedded-i2p"]
+stashi-transports = ["pirate-wallet-service/stashi-transports"]
 # Enable FRB generated code (after running flutter_rust_bridge_codegen)
 # Stashi builds enable `frb` with --no-default-features; keep those builds
-# self-contained even though native SDK hosts can supply their own parameters
-# and network transport.
-frb = ["embedded-sapling-params", "embedded-tor", "embedded-i2p"]
+# self-contained while consumer native SDKs use Direct and may supply parameters.
+frb = ["embedded-sapling-params", "stashi-transports"]
 
 [dependencies]
 pirate-wallet-service = { path = "../pirate-wallet-service", default-features = false }

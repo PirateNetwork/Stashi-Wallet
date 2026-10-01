@@ -119,8 +119,8 @@ lazy_static::lazy_static! {
     static ref WALLETS: Arc<RwLock<Vec<WalletMeta>>> = Arc::new(RwLock::new(Vec::new()));
     /// Currently active wallet ID
     static ref ACTIVE_WALLET: Arc<RwLock<Option<WalletId>>> = Arc::new(RwLock::new(None));
-    /// Network tunnel configuration (Tor default)
-    static ref TUNNEL_MODE: Arc<RwLock<TunnelMode>> = Arc::new(RwLock::new(TunnelMode::Tor));
+    /// Stashi transport configuration; consumer SDK builds always use Direct.
+    static ref TUNNEL_MODE: Arc<RwLock<TunnelMode>> = Arc::new(RwLock::new(tunnel::default_tunnel_mode()));
     /// Pending tunnel mode to persist once registry is available.
     static ref PENDING_TUNNEL_MODE: Arc<RwLock<Option<TunnelMode>>> = Arc::new(RwLock::new(None));
 }
@@ -815,7 +815,7 @@ fn reset_runtime_state_for_storage_switch() {
 
     *WALLETS.write() = Vec::new();
     *ACTIVE_WALLET.write() = None;
-    *TUNNEL_MODE.write() = TunnelMode::Tor;
+    *TUNNEL_MODE.write() = tunnel::default_tunnel_mode();
     *PENDING_TUNNEL_MODE.write() = None;
     REGISTRY_LOADED.store(false, Ordering::SeqCst);
 }

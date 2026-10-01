@@ -4,6 +4,14 @@ use std::time::Duration;
 
 const MAINNET_SAPLING_ACTIVATION_HEIGHT: u64 = 152_855;
 
+pub(super) fn default_tunnel_mode() -> TunnelMode {
+    if cfg!(feature = "stashi-transports") {
+        TunnelMode::Tor
+    } else {
+        TunnelMode::Direct
+    }
+}
+
 fn node_identity_error(network: Option<NetworkType>, info: &LightdInfo) -> Option<String> {
     match network {
         Some(NetworkType::Mainnet)
@@ -35,6 +43,11 @@ fn parse_tunnel_mode_setting(mode: &str, socks5_url: Option<String>) -> Option<T
 }
 
 pub(super) fn load_registry_tunnel_mode(db: &Database) -> Result<Option<TunnelMode>> {
+    // Consumer SDKs have no app transport preference. Ignore old settings
+    // without rewriting them; Stashi still restores its own persisted mode.
+    if !cfg!(feature = "stashi-transports") {
+        return Ok(Some(TunnelMode::Direct));
+    }
     let mode = get_registry_setting(db, REGISTRY_TUNNEL_MODE_KEY)?;
     let Some(mode_str) = mode else {
         return Ok(None);
@@ -84,6 +97,9 @@ fn tunnel_transport_config_for(mode: &TunnelMode) -> (TransportMode, Option<Stri
 }
 
 pub(super) fn tunnel_transport_config() -> (TransportMode, Option<String>, bool) {
+    if !cfg!(feature = "stashi-transports") {
+        return tunnel_transport_config_for(&TunnelMode::Direct);
+    }
     let tunnel_mode = TUNNEL_MODE.read().clone();
     tunnel_transport_config_for(&tunnel_mode)
 }
@@ -150,6 +166,16 @@ fn spawn_disconnect_active_sync_channels(reason: &'static str) {
 }
 
 pub fn set_tunnel(mode: TunnelMode) -> Result<()> {
+    if !cfg!(feature = "stashi-transports") {
+        // Older native callers explicitly selected Direct. Keep that request
+        // idempotent without persisting or bootstrapping an app transport.
+        if mode == TunnelMode::Direct {
+            return Ok(());
+        }
+        return Err(anyhow!(
+            "Transport selection is only available in Stashi Wallet"
+        ));
+    }
     let (transport, socks5_url, _) = tunnel_transport_config_for(&mode);
     // The SOCKS URL may contain proxy credentials. Log only the transport kind.
     tracing::info!("Setting tunnel mode: {:?}", transport);
@@ -766,34 +792,84 @@ mod tests {
         .is_none());
     }
 
-    #[cfg(any(not(feature = "embedded-tor"), not(feature = "embedded-i2p")))]
     #[test]
-    fn unavailable_transport_requests_do_not_replace_the_host_selection() {
+    fn build_policy_controls_initial_and_restored_transport() {
+        let _guard = GLOBAL_WALLET_STATE_TEST_MUTEX.lock().unwrap();
+        reset_runtime_state_for_storage_switch();
+        assert_eq!(*TUNNEL_MODE.read(), default_tunnel_mode());
+        let storage = tempfile::tempdir().unwrap();
+        configure_wallet_storage(
+            storage.path().to_string_lossy().into_owned(),
+            "transport-policy-test-passphrase".into(),
+        )
+        .unwrap();
+        assert_eq!(*TUNNEL_MODE.read(), default_tunnel_mode());
+        let db = open_wallet_registry().unwrap();
+
+        for saved in [
+            TunnelMode::Tor,
+            TunnelMode::I2p,
+            TunnelMode::Socks5 {
+                url: "socks5h://127.0.0.1:9050".into(),
+            },
+            TunnelMode::Direct,
+        ] {
+            persist_registry_tunnel_mode(&db, &saved).unwrap();
+            let stored_value = get_registry_setting(&db, REGISTRY_TUNNEL_MODE_KEY).unwrap();
+            load_wallet_registry_state(&db).unwrap();
+            let expected = if cfg!(feature = "stashi-transports") {
+                saved.clone()
+            } else {
+                TunnelMode::Direct
+            };
+            assert_eq!(get_tunnel().unwrap(), expected);
+            assert_eq!(
+                tunnel_transport_config(),
+                tunnel_transport_config_for(&expected)
+            );
+            // SDK policy must not rewrite another app's saved preference.
+            assert_eq!(
+                get_registry_setting(&db, REGISTRY_TUNNEL_MODE_KEY).unwrap(),
+                stored_value
+            );
+        }
+        drop(db);
+        reset_runtime_state_for_storage_switch();
+    }
+
+    #[cfg(not(feature = "stashi-transports"))]
+    #[test]
+    fn consumer_sdk_rejects_app_transport_commands_without_mutating_state() {
         let _guard = GLOBAL_WALLET_STATE_TEST_MUTEX.lock().unwrap();
         let previous = TUNNEL_MODE.read().clone();
-        let selected = TunnelMode::Socks5 {
-            url: "socks5h://127.0.0.1:9050".into(),
-        };
+        let selected = default_tunnel_mode();
         *TUNNEL_MODE.write() = selected.clone();
         let pending = PENDING_TUNNEL_MODE.read().clone();
 
-        for (mode, available) in [
-            ("Tor", cfg!(feature = "embedded-tor")),
-            ("I2p", cfg!(feature = "embedded-i2p")),
+        for mode in [
+            serde_json::json!("Tor"),
+            serde_json::json!("I2p"),
+            serde_json::json!({"Socks5": {"url": "socks5h://127.0.0.1:9050"}}),
         ] {
-            if available {
-                continue;
-            }
             let response = crate::service::WalletService::new().execute_json(
-                &format!(r#"{{"method":"set_tunnel","mode":"{mode}"}}"#),
+                &serde_json::json!({"method": "set_tunnel", "mode": mode}).to_string(),
                 false,
             );
             let envelope: serde_json::Value = serde_json::from_str(&response).unwrap();
             assert_eq!(envelope["ok"], false);
-            assert!(envelope["error"].as_str().unwrap().contains("unavailable"));
+            assert!(envelope["error"]
+                .as_str()
+                .unwrap()
+                .contains("only available in Stashi Wallet"));
             assert_eq!(*TUNNEL_MODE.read(), selected);
             assert_eq!(*PENDING_TUNNEL_MODE.read(), pending);
         }
+        let response = crate::service::WalletService::new()
+            .execute_json(r#"{"method":"set_tunnel","mode":"Direct"}"#, false);
+        let envelope: serde_json::Value = serde_json::from_str(&response).unwrap();
+        assert_eq!(envelope["ok"], true);
+        assert_eq!(*TUNNEL_MODE.read(), selected);
+        assert_eq!(*PENDING_TUNNEL_MODE.read(), pending);
         *TUNNEL_MODE.write() = previous;
     }
 }

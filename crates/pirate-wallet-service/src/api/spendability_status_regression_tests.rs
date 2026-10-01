@@ -313,7 +313,9 @@ fn starting_a_sync_does_not_record_an_unverified_local_start_height() {
     // Direct transport to a closed local port. The test never leaves the
     // machine and the engine can never obtain a validated server snapshot, so
     // no height may be recorded.
+    #[cfg(feature = "stashi-transports")]
     tunnel::set_tunnel(TunnelMode::Direct).unwrap();
+    assert_eq!(tunnel::get_tunnel().unwrap(), TunnelMode::Direct);
     set_lightd_endpoint(wallet_id.clone(), "http://127.0.0.1:1".to_string(), None).unwrap();
 
     // `start_sync` returns once the sync task has been spawned. The removed

@@ -7,7 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-pirate-wallet-service = { path = "../pirate-wallet-service" }
+pirate-wallet-service = { path = "../pirate-wallet-service", features = ["stashi-transports"] }
 pirate-core = { path = "../pirate-core" }
 pirate-storage-sqlite = { path = "../pirate-storage-sqlite" }
 

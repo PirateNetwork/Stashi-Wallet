@@ -1180,18 +1180,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn host_socks_transport_request_preserves_the_proxy_url() {
-        let request = serde_json::from_value::<WalletServiceRequest>(json!({
-            "method": "set_tunnel",
-            "mode": { "Socks5": { "url": "socks5h://127.0.0.1:9050" } }
-        }))
-        .unwrap();
-        assert!(matches!(request, WalletServiceRequest::SetTunnel {
-            mode: TunnelMode::Socks5 { url }
-        } if url == "socks5h://127.0.0.1:9050"));
-    }
-
-    #[test]
     fn external_sapling_parameter_request_uses_explicit_file_paths() {
         let request = serde_json::from_value::<WalletServiceRequest>(json!({
             "method": "initialize_sapling_parameters",

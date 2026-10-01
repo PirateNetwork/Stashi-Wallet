@@ -6,8 +6,8 @@ use jni::JNIEnv;
 use pirate_core::mnemonic::{inspect_mnemonic, mnemonic_from_entropy};
 use pirate_wallet_service::{
     KeyExportInfo, KeyGroupInfo, MnemonicLanguage, NodeTestResult, QortalP2shRedeemRequest,
-    QortalP2shSendRequest, QortalSendRequest, SyncMode, SyncStatus, TunnelMode, WalletMeta,
-    WalletService, WalletServiceRequest,
+    QortalP2shSendRequest, QortalSendRequest, SyncMode, SyncStatus, WalletMeta, WalletService,
+    WalletServiceRequest,
 };
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -92,9 +92,6 @@ fn configure_storage(base_dir: String, passphrase: String) -> Result<String> {
     execute(WalletServiceRequest::ConfigureWalletStorage {
         base_dir,
         passphrase,
-    })?;
-    execute(WalletServiceRequest::SetTunnel {
-        mode: TunnelMode::Direct,
     })?;
     *state() = AdapterState::default();
     Ok(json!({ "initialized": true }).to_string())

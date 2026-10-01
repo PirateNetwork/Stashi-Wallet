@@ -157,13 +157,32 @@ jobs:
           cd crates
           cargo test --all-features --locked
 
-      - name: Verify host-network SDK and embedded wallet configurations
+      - name: Verify Direct SDK and embedded Stashi configurations
         run: |
           set -euo pipefail
           cd crates
+          cargo tree -p pirate-ffi-native --edges normal,build --locked --prefix none > /tmp/pirate-sdk-dependencies.txt
+          if grep -Eq '^(arti-client|tor-rtcompat|tor-ptmgr|tor-dirmgr) ' /tmp/pirate-sdk-dependencies.txt; then
+            echo "Consumer SDK still embeds Tor runtime crates" >&2
+            exit 1
+          fi
+          if ! grep -q '^wagyu-zcash-parameters ' /tmp/pirate-sdk-dependencies.txt; then
+            echo "Standard SDK lost its embedded Sapling parameters" >&2
+            exit 1
+          fi
+          cargo tree -p pirate-ffi-native --edges features --invert pirate-wallet-service --locked > /tmp/pirate-sdk-features.txt
+          if grep -q 'pirate-wallet-service feature "stashi-transports"' /tmp/pirate-sdk-features.txt; then
+            echo "Consumer SDK enabled Stashi transport settings" >&2
+            exit 1
+          fi
+          cargo tree -p pirate-qortal-jni --edges features --invert pirate-wallet-service --locked > /tmp/pirate-qortal-features.txt
+          if grep -q 'pirate-wallet-service feature "stashi-transports"' /tmp/pirate-qortal-features.txt; then
+            echo "Qortal JNI consumer enabled Stashi transport settings" >&2
+            exit 1
+          fi
           cargo tree -p pirate-ffi-native --no-default-features --edges normal,build --locked --prefix none > /tmp/pirate-external-dependencies.txt
           if grep -Eq '^(wagyu-zcash-parameters|arti-client|tor-rtcompat|tor-ptmgr|tor-dirmgr) ' /tmp/pirate-external-dependencies.txt; then
-            echo "Host-network SDK still embeds proving parameter or Tor runtime crates" >&2
+            echo "External-parameter SDK still embeds proving parameter or Tor runtime crates" >&2
             exit 1
           fi
           cargo tree -p pirate-ffi-frb --no-default-features --features frb --edges normal,build --locked --prefix none > /tmp/pirate-wallet-dependencies.txt
@@ -185,9 +204,10 @@ jobs:
           cargo test -p pirate-sync-lightd --lib --no-default-features client::tests --locked
           cargo test -p pirate-wallet-service --lib --no-default-features service::tests --locked
           cargo test -p pirate-wallet-service --lib --no-default-features api::tunnel::tests --locked
+          cargo test -p pirate-wallet-service --lib --features stashi-transports api::tunnel::tests --locked
           cargo check -p pirate-ffi-native --no-default-features --features embedded-sapling-params --locked
-          cargo check -p pirate-ffi-native --no-default-features --features embedded-tor --locked
-          cargo check -p pirate-ffi-native --no-default-features --features embedded-i2p --locked
+          cargo check -p pirate-net --no-default-features --features embedded-tor --locked
+          cargo check -p pirate-net --no-default-features --features embedded-i2p --locked
 
   rust-qortal-tests:
     name: Rust - Qortal Adapter Tests

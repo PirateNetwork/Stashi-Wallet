@@ -69,6 +69,10 @@ public final class QortalJniSmoke {
         if (!configured.contains("\"initialized\":true")) {
             throw new AssertionError("Storage configuration failed: " + configured);
         }
+        String transport = LiteWalletJni.invokeJson("{\"method\":\"get_tunnel\"}", false);
+        if (!transport.contains("\"ok\":true") || !transport.contains("\"result\":\"Direct\"")) {
+            throw new AssertionError("Consumer JNI must use Direct without transport setup: " + transport);
+        }
         String initialized = LiteWalletJni.initfromseed(
                 "https://127.0.0.1:1/", "", seed, "100000", "", "");
         if (!initialized.contains("\"seed\"")
