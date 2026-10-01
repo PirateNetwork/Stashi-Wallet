@@ -2,6 +2,11 @@
 //!
 //! Provides Tor integration via Arti, DoH/system DNS, SOCKS5 proxy,
 //! and TLS certificate pinning for secure, private connections.
+//!
+//! `embedded-tor` and `embedded-i2p` are enabled by default. Hosts that provide
+//! their own networking may disable them and explicitly select direct or SOCKS5
+//! transport. Selecting an omitted embedded transport returns an error; the
+//! default configuration remains Tor and never falls back to direct networking.
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]

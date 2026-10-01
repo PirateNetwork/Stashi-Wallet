@@ -10,8 +10,10 @@ repository.workspace = true
 crate-type = ["staticlib", "cdylib", "lib"]
 
 [features]
-default = ["embedded-sapling-params"]
+default = ["embedded-sapling-params", "embedded-tor", "embedded-i2p"]
 embedded-sapling-params = ["pirate-wallet-service/embedded-sapling-params"]
+embedded-tor = ["pirate-wallet-service/embedded-tor"]
+embedded-i2p = ["pirate-wallet-service/embedded-i2p"]
 
 [dependencies]
 pirate-wallet-service = { path = "../pirate-wallet-service", default-features = false }

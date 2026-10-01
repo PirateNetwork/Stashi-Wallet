@@ -3,6 +3,14 @@
 /// Network errors
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    /// Embedded Tor support was omitted from this build.
+    #[error("Embedded Tor is unavailable in this build (enable the embedded-tor feature)")]
+    EmbeddedTorUnavailable,
+
+    /// Embedded I2P support was omitted from this build.
+    #[error("Embedded I2P is unavailable in this build (enable the embedded-i2p feature)")]
+    EmbeddedI2pUnavailable,
+
     /// Tor error
     #[error("Tor error: {0}")]
     Tor(String),

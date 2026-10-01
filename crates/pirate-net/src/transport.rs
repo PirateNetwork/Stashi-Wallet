@@ -43,6 +43,18 @@ pub enum TransportMode {
 }
 
 impl TransportMode {
+    /// Reject a transport whose embedded implementation was omitted at build time.
+    ///
+    /// Host-provided SOCKS5 and direct connections are always available. A missing
+    /// private transport never changes the requested mode or falls back to direct.
+    pub fn ensure_available(&self) -> Result<()> {
+        match self {
+            Self::Tor if !cfg!(feature = "embedded-tor") => Err(Error::EmbeddedTorUnavailable),
+            Self::I2p if !cfg!(feature = "embedded-i2p") => Err(Error::EmbeddedI2pUnavailable),
+            _ => Ok(()),
+        }
+    }
+
     /// Get mode name
     pub fn name(&self) -> &str {
         match self {
@@ -166,6 +178,7 @@ impl TransportManager {
 
     /// Create new transport manager
     pub async fn new(config: TransportConfig) -> Result<Self> {
+        config.mode.ensure_available()?;
         info!("Creating transport manager: mode={:?}", config.mode);
         let socks5_summary = config
             .socks5
@@ -343,6 +356,7 @@ impl TransportManager {
 
     /// Update transport configuration
     pub async fn update_config(self: Arc<Self>, config: TransportConfig) -> Result<()> {
+        config.mode.ensure_available()?;
         // Serialize config mutations to avoid concurrent Tor/I2P re-initialization
         // during rapid transport switches or parallel connection attempts.
         let _update_guard = Arc::clone(&self.update_lock).lock_owned().await;
@@ -1288,6 +1302,231 @@ fn require_i2p_url(url: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    async fn accept_socks5_target(listener: TcpListener) -> (TcpStream, String, u16) {
+        let (mut stream, _) = listener.accept().await.expect("SOCKS client");
+        let mut greeting = [0; 2];
+        stream
+            .read_exact(&mut greeting)
+            .await
+            .expect("SOCKS greeting");
+        assert_eq!(greeting[0], 5);
+        let mut methods = vec![0; greeting[1] as usize];
+        stream
+            .read_exact(&mut methods)
+            .await
+            .expect("SOCKS methods");
+        assert!(methods.contains(&0));
+        stream.write_all(&[5, 0]).await.expect("SOCKS method");
+
+        let mut request = [0; 4];
+        stream
+            .read_exact(&mut request)
+            .await
+            .expect("SOCKS request");
+        assert_eq!(request, [5, 1, 0, 3], "destination must remain a hostname");
+        let length = stream.read_u8().await.expect("hostname length") as usize;
+        let mut hostname = vec![0; length];
+        stream.read_exact(&mut hostname).await.expect("hostname");
+        let port = stream.read_u16().await.expect("destination port");
+        stream
+            .write_all(&[5, 0, 0, 1, 127, 0, 0, 1, 0, 0])
+            .await
+            .expect("SOCKS success");
+        (
+            stream,
+            String::from_utf8(hostname).expect("hostname UTF-8"),
+            port,
+        )
+    }
+
+    async fn respond_http(mut stream: TcpStream) {
+        let mut request = Vec::new();
+        while !request.ends_with(b"\r\n\r\n") {
+            request.push(stream.read_u8().await.expect("HTTP request"));
+        }
+        stream
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok")
+            .await
+            .expect("HTTP response");
+    }
+
+    #[tokio::test]
+    async fn direct_transport_fetches_through_the_requested_connection() {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("HTTP listener");
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("HTTP client");
+            respond_http(stream).await;
+        });
+        let manager = TransportManager::new(TransportConfig {
+            mode: TransportMode::Direct,
+            ..TransportConfig::default()
+        })
+        .await
+        .expect("direct manager");
+        let result = tokio::time::timeout(
+            Duration::from_secs(5),
+            manager.fetch_url_bytes(&format!("http://{address}/"), &[]),
+        )
+        .await
+        .expect("local HTTP deadline")
+        .expect("direct HTTP response");
+        assert_eq!(result, b"ok");
+        server.await.expect("HTTP server");
+    }
+
+    #[tokio::test]
+    async fn host_socks_http_keeps_destination_dns_on_the_proxy() {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("SOCKS listener");
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (stream, hostname, port) = accept_socks5_target(listener).await;
+            assert_eq!(hostname, "host-managed-networking.invalid");
+            assert_eq!(port, 9067);
+            respond_http(stream).await;
+        });
+        let manager = TransportManager::new(TransportConfig {
+            mode: TransportMode::Socks5,
+            socks5: Some(Socks5Config {
+                host: address.ip().to_string(),
+                port: address.port(),
+                username: None,
+                password: None,
+            }),
+            ..TransportConfig::default()
+        })
+        .await
+        .expect("host SOCKS manager");
+        let result = tokio::time::timeout(
+            Duration::from_secs(5),
+            manager.fetch_url_bytes("http://host-managed-networking.invalid:9067/", &[]),
+        )
+        .await
+        .expect("local SOCKS deadline")
+        .expect("proxied HTTP response");
+        assert_eq!(result, b"ok");
+        server.await.expect("SOCKS server");
+    }
+
+    #[tokio::test]
+    async fn host_socks_stream_connectors_forward_the_original_hostname() {
+        for grpc_connector in [false, true] {
+            let listener = TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("SOCKS listener");
+            let address = listener.local_addr().unwrap();
+            let server = tokio::spawn(async move {
+                let (_, hostname, port) = accept_socks5_target(listener).await;
+                assert_eq!(hostname, "host-managed-networking.invalid");
+                assert_eq!(port, 9067);
+            });
+            let proxy = Socks5Config {
+                host: address.ip().to_string(),
+                port: address.port(),
+                username: None,
+                password: None,
+            };
+            tokio::time::timeout(Duration::from_secs(5), async {
+                if grpc_connector {
+                    connect_via_socks5(
+                        proxy,
+                        "http://host-managed-networking.invalid:9067/"
+                            .parse()
+                            .unwrap(),
+                    )
+                    .await
+                    .expect("gRPC SOCKS connector");
+                } else {
+                    connect_socks5_stream(proxy, "host-managed-networking.invalid", 9067)
+                        .await
+                        .expect("raw SOCKS connector");
+                }
+                server.await.expect("SOCKS server");
+            })
+            .await
+            .expect("local SOCKS deadline");
+        }
+    }
+
+    #[cfg(any(not(feature = "embedded-tor"), not(feature = "embedded-i2p")))]
+    async fn assert_unavailable_transport_is_rejected(mode: TransportMode) {
+        let direct = TransportConfig {
+            mode: TransportMode::Direct,
+            ..TransportConfig::default()
+        };
+        let manager = Arc::new(
+            TransportManager::new(direct.clone())
+                .await
+                .expect("manager"),
+        );
+        for enabled in [false, true] {
+            let mut unavailable = direct.clone();
+            unavailable.mode = mode;
+            unavailable.tor.enabled = enabled;
+            unavailable.i2p.enabled = enabled;
+            let creation = TransportManager::new(unavailable.clone()).await;
+            let update = Arc::clone(&manager).update_config(unavailable).await;
+            for error in [
+                creation.err().expect("creation rejected"),
+                update.expect_err("update rejected"),
+            ] {
+                match mode {
+                    TransportMode::Tor => assert!(matches!(error, Error::EmbeddedTorUnavailable)),
+                    TransportMode::I2p => assert!(matches!(error, Error::EmbeddedI2pUnavailable)),
+                    _ => unreachable!(),
+                }
+            }
+            assert!(
+                manager.matches_config(&direct),
+                "rejection must preserve configuration"
+            );
+            assert_eq!(manager.mode().await, TransportMode::Direct);
+            assert!(manager.tor_status().await.is_none());
+            assert!(manager.i2p_status().await.is_none());
+        }
+        // Host SOCKS remains selectable after failed private-mode switches.
+        let mut socks = direct;
+        socks.mode = TransportMode::Socks5;
+        socks.socks5 = Some(Socks5Config {
+            host: "127.0.0.1".into(),
+            port: 1,
+            username: None,
+            password: None,
+        });
+        Arc::clone(&manager)
+            .update_config(socks.clone())
+            .await
+            .expect("host SOCKS config");
+        assert!(manager.matches_config(&socks));
+        Arc::clone(&manager)
+            .ensure_ready()
+            .await
+            .expect("no embedded bootstrap");
+    }
+
+    #[cfg(not(feature = "embedded-tor"))]
+    #[tokio::test]
+    async fn omitted_tor_rejects_creation_and_switches_before_config_changes() {
+        assert_unavailable_transport_is_rejected(TransportMode::Tor).await;
+        assert_eq!(TransportConfig::default().mode, TransportMode::Tor);
+        assert!(matches!(
+            TransportManager::new(TransportConfig::default()).await,
+            Err(Error::EmbeddedTorUnavailable)
+        ));
+    }
+
+    #[cfg(not(feature = "embedded-i2p"))]
+    #[tokio::test]
+    async fn omitted_i2p_rejects_creation_and_switches_before_config_changes() {
+        assert_unavailable_transport_is_rejected(TransportMode::I2p).await;
+    }
 
     #[test]
     fn test_transport_mode_privacy() {
@@ -1349,6 +1588,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(feature = "embedded-i2p")]
     async fn config_updates_do_not_wait_for_private_transport_bootstrap() {
         let direct = TransportConfig {
             mode: TransportMode::Direct,

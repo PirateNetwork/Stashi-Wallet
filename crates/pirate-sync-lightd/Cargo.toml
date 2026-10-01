@@ -8,14 +8,16 @@ repository.workspace = true
 build = "build.rs"
 
 [features]
-default = []
+default = ["embedded-tor", "embedded-i2p"]
+embedded-tor = ["pirate-net/embedded-tor"]
+embedded-i2p = ["pirate-net/embedded-i2p"]
 # Enable live integration tests against real lightwalletd server
 live_lightd = []
 
 [dependencies]
 pirate-core = { path = "../pirate-core", default-features = false }
 pirate-params = { path = "../pirate-params" }
-pirate-net = { path = "../pirate-net" }
+pirate-net = { path = "../pirate-net", default-features = false }
 pirate-storage-sqlite = { path = "../pirate-storage-sqlite" }
 
 # Merkle tree for Sapling commitment tree; keep aligned with Sapling/Orchard.

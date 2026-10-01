@@ -6,12 +6,17 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[features]
+default = ["embedded-tor", "embedded-i2p"]
+embedded-tor = ["dep:arti-client", "dep:tor-rtcompat", "dep:liblzma-sys"]
+embedded-i2p = []
+
 [dependencies]
 pirate-core = { path = "../pirate-core", default-features = false }
 
 # Tor/Arti for privacy-first networking
-arti-client = { workspace = true, features = ["bridge-client", "onion-service-client", "pt-client"] }
-tor-rtcompat = { workspace = true }
+arti-client = { workspace = true, features = ["bridge-client", "onion-service-client", "pt-client"], optional = true }
+tor-rtcompat = { workspace = true, optional = true }
 
 tokio = { workspace = true }
 hyper = { workspace = true }
@@ -44,7 +49,7 @@ rustls-pki-types = { version = "1.12", default-features = false, features = ["al
 # Arti accepts XZ-compressed directory responses. Build liblzma from its
 # bundled source on macOS so distributed binaries never depend on Homebrew.
 [target.'cfg(target_os = "macos")'.dependencies]
-liblzma-sys = { version = "0.4.6", default-features = false, features = ["static"] }
+liblzma-sys = { version = "0.4.6", default-features = false, features = ["static"], optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }

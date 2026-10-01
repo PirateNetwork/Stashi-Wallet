@@ -7,14 +7,16 @@ license.workspace = true
 repository.workspace = true
 
 [features]
-default = ["embedded-sapling-params"]
+default = ["embedded-sapling-params", "embedded-tor", "embedded-i2p"]
 embedded-sapling-params = ["pirate-core/embedded-sapling-params"]
+embedded-tor = ["pirate-sync-lightd/embedded-tor"]
+embedded-i2p = ["pirate-sync-lightd/embedded-i2p"]
 
 [dependencies]
 pirate-core = { path = "../pirate-core", default-features = false }
 pirate-params = { path = "../pirate-params" }
 pirate-storage-sqlite = { path = "../pirate-storage-sqlite" }
-pirate-sync-lightd = { path = "../pirate-sync-lightd" }
+pirate-sync-lightd = { path = "../pirate-sync-lightd", default-features = false }
 
 anyhow = { workspace = true }
 bech32 = { workspace = true }
