@@ -1,7 +1,4 @@
 export type SyncMode = 'Compact' | 'Deep'
-export type TunnelConfig =
-  | { mode: 'socks5'; url: string }
-  | { mode: 'direct' | 'tor' | 'i2p' }
 export type SynchronizerStatus = 'STOPPED' | 'SYNCING' | 'SYNCED'
 export type AmountString = string
 export type AmountInput = AmountString | number | bigint
@@ -285,8 +282,6 @@ export class PirateWalletSdk {
   createSynchronizer(walletId: string, config?: SynchronizerConfig): PirateWalletSynchronizer
   buildInfoJson(pretty?: boolean): Promise<string>
   buildInfo(): Promise<any>
-  /** Selects the process-wide transport before network operations. Tor and I2P require their embedded transport in the native library. A rejected selection never falls back to Direct. */
-  setTunnel(config: TunnelConfig): Promise<Acknowledgement>
   /** Validates and caches host-provided Sapling files. Required by the external Android binary before any transaction signing, including Ironwood-only; subsequent calls reuse the ready prover. Receiving and syncing do not require it. */
   initializeSaplingParameters(config: SaplingParametersConfig): Promise<Acknowledgement>
   walletRegistryExists(): Promise<boolean>

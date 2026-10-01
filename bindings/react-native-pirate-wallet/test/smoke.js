@@ -237,45 +237,6 @@ async function main() {
   const nativeModule = createMockNativeModule()
   const sdk = new PirateWalletSdk(nativeModule)
 
-  const tunnelCases = [
-    [{ mode: 'socks5', url: 'socks5h://127.0.0.1:9050' }, { Socks5: { url: 'socks5h://127.0.0.1:9050' } }],
-    [{ mode: 'direct' }, 'Direct'],
-    [{ mode: 'tor' }, 'Tor'],
-    [{ mode: 'i2p' }, 'I2p']
-  ]
-  const tunnelCalls = []
-  const tunnelSdk = new PirateWalletSdk({
-    async invoke(requestJson) {
-      tunnelCalls.push(JSON.parse(requestJson))
-      return ok({ acknowledged: true })
-    }
-  })
-  assert.deepStrictEqual(tunnelCalls, [])
-  for (const [config, mode] of tunnelCases) {
-    assert.deepStrictEqual(await tunnelSdk.setTunnel(config), { acknowledged: true })
-    assert.deepStrictEqual(tunnelCalls[tunnelCalls.length - 1], { method: 'set_tunnel', mode })
-  }
-  for (const config of [null, [], {}, { mode: 'auto' }, { mode: 'Direct' }, { mode: 'socks5' }, { mode: 'socks5', url: ' ' }, { mode: 'socks5', url: 42 }]) {
-    assert.throws(() => tunnelSdk.setTunnel(config), /config object|mode must be|non-empty string/)
-  }
-  assert.strictEqual(tunnelCalls.length, tunnelCases.length)
-  for (const [config, message] of [
-    [{ mode: 'tor' }, 'Embedded Tor support is unavailable in this build'],
-    [{ mode: 'i2p' }, 'Embedded I2P support is unavailable in this build'],
-    [{ mode: 'socks5', url: 'https://127.0.0.1:9050' }, 'SOCKS proxy URL scheme is invalid']
-  ]) {
-    let calls = 0
-    const failingTunnelSdk = new PirateWalletSdk({
-      async invoke(requestJson) {
-        assert.strictEqual(JSON.parse(requestJson).method, 'set_tunnel')
-        calls += 1
-        return JSON.stringify({ ok: false, error: message })
-      }
-    })
-    await assert.rejects(() => failingTunnelSdk.setTunnel(config), error => error.message === message)
-    assert.strictEqual(calls, 1)
-  }
-
   await sdk.configureAccountStorage({
     accountId: 'edge-account-a',
     passphrase: 'EdgeAccountSecretPassphrase123!',
