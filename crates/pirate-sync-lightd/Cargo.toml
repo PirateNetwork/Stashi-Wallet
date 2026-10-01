@@ -13,7 +13,7 @@ default = []
 live_lightd = []
 
 [dependencies]
-pirate-core = { path = "../pirate-core" }
+pirate-core = { path = "../pirate-core", default-features = false }
 pirate-params = { path = "../pirate-params" }
 pirate-net = { path = "../pirate-net" }
 pirate-storage-sqlite = { path = "../pirate-storage-sqlite" }

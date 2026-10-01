@@ -7,7 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-pirate-core = { path = "../pirate-core" }
+pirate-core = { path = "../pirate-core", default-features = false }
 async-trait = { workspace = true }
 thiserror = { workspace = true }
 

@@ -11,7 +11,7 @@ default = []
 native-keystore = []
 
 [dependencies]
-pirate-core = { path = "../pirate-core" }
+pirate-core = { path = "../pirate-core", default-features = false }
 pirate-params = { path = "../pirate-params" }
 
 # Protocol primitives for note deserialization

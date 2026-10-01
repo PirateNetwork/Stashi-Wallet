@@ -7,6 +7,8 @@ license.workspace = true
 repository.workspace = true
 
 [features]
+default = ["embedded-sapling-params"]
+embedded-sapling-params = ["dep:wagyu-zcash-parameters"]
 test-helpers = []
 
 [dependencies]
@@ -22,7 +24,7 @@ zcash_transparent = { workspace = true }
 sapling = { workspace = true }
 zip32 = { workspace = true }
 orchard = { workspace = true }
-wagyu-zcash-parameters = { workspace = true }
+wagyu-zcash-parameters = { workspace = true, optional = true }
 incrementalmerkletree = { workspace = true }
 bellman = { workspace = true }
 bls12_381 = { workspace = true }
@@ -64,5 +66,7 @@ regex = { workspace = true }
 directories = "5.0"
 
 [dev-dependencies]
-pirate-core = { path = ".", features = ["test-helpers"] }
+pirate-core = { path = ".", default-features = false, features = ["test-helpers"] }
+wagyu-zcash-parameters = { workspace = true }
+tempfile = { workspace = true }
 proptest = { workspace = true }

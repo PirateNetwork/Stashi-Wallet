@@ -1137,6 +1137,9 @@ fn sign_tx_internal(
     address_ids_filter: Option<Vec<i64>>,
 ) -> Result<SignedTx> {
     require_wallet_signing_session(&wallet_id)?;
+    // External-parameter SDKs must be ready before consuming the pending
+    // selection context or starting any signing work. This never downloads.
+    pirate_core::try_sapling_prover()?;
     tracing::info!(
         "Signing transaction {} for wallet {}",
         pending.id,

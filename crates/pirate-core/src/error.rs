@@ -46,6 +46,10 @@ pub enum Error {
     #[error("Transaction signing error: {0}")]
     TransactionSigning(String),
 
+    /// Sapling proving parameters are unavailable or invalid.
+    #[error("Sapling parameters: {0}")]
+    SaplingParameters(String),
+
     /// Transaction broadcast error
     #[error("Transaction broadcast error: {0}")]
     TransactionBroadcast(String),
@@ -147,6 +151,7 @@ impl Error {
                 | Error::FeeTooHigh(_)
                 | Error::InvalidAmount(_)
                 | Error::InvalidMnemonic(_)
+                | Error::SaplingParameters(_)
                 | Error::NetworkDown(_)
                 | Error::BroadcastFailed(_)
         )
@@ -182,6 +187,9 @@ impl Error {
             Error::BroadcastFailed(_) => {
                 "Failed to broadcast transaction. The network may be congested. Please try again.".to_string()
             }
+            Error::SaplingParameters(_) => {
+                "Sapling proving parameters are unavailable or invalid. Download the verified parameter files and try again.".to_string()
+            }
             _ => self.to_string(),
         }
     }
@@ -199,6 +207,7 @@ impl Error {
             }
             Error::TransactionBuild(_)
             | Error::TransactionSigning(_)
+            | Error::SaplingParameters(_)
             | Error::TransactionBroadcast(_)
             | Error::BroadcastFailed(_)
             | Error::InvalidTransaction(_) => ErrorCategory::Transaction,

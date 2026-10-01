@@ -19,6 +19,10 @@ pub use pirate_core::{MnemonicInspection, MnemonicLanguage};
 #[serde(tag = "method", rename_all = "snake_case")]
 pub enum WalletServiceRequest {
     GetBuildInfo,
+    InitializeSaplingParameters {
+        spend_path: String,
+        output_path: String,
+    },
     WalletRegistryExists,
     ListWallets,
     GetActiveWallet,
@@ -509,6 +513,21 @@ impl WalletService {
 
         match request {
             WalletServiceRequest::GetBuildInfo => serialize(ffi::get_build_info()?),
+            WalletServiceRequest::InitializeSaplingParameters {
+                spend_path,
+                output_path,
+            } => {
+                // File validation and prover preparation are CPU/IO work, not wallet
+                // operations. Keep them off the service's async runtime threads.
+                tokio::task::spawn_blocking(move || {
+                    pirate_core::initialize_sapling_parameters(
+                        std::path::Path::new(&spend_path),
+                        std::path::Path::new(&output_path),
+                    )
+                })
+                .await??;
+                Ok(ack())
+            }
             WalletServiceRequest::WalletRegistryExists => serialize(ffi::wallet_registry_exists()?),
             WalletServiceRequest::ListWallets => serialize(ffi::list_wallets()?),
             WalletServiceRequest::GetActiveWallet => serialize(ffi::get_active_wallet()?),
@@ -1159,6 +1178,35 @@ fn serialize_amount(value: u64) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn external_sapling_parameter_request_uses_explicit_file_paths() {
+        let request = serde_json::from_value::<WalletServiceRequest>(json!({
+            "method": "initialize_sapling_parameters",
+            "spend_path": "/private/files/sapling-spend.params",
+            "output_path": "/private/files/sapling-output.params"
+        }))
+        .unwrap();
+        assert!(matches!(
+            request,
+            WalletServiceRequest::InitializeSaplingParameters { spend_path, output_path }
+                if spend_path == "/private/files/sapling-spend.params"
+                    && output_path == "/private/files/sapling-output.params"
+        ));
+    }
+
+    #[cfg(not(feature = "embedded-sapling-params"))]
+    #[test]
+    fn missing_external_parameters_return_a_recoverable_json_error() {
+        let response = WalletService::new().execute_json(
+            r#"{"method":"initialize_sapling_parameters","spend_path":"/missing/sapling-spend.params","output_path":"/missing/sapling-output.params"}"#,
+            false,
+        );
+        let envelope: JsonEnvelope = serde_json::from_str(&response).unwrap();
+        assert!(!envelope.ok);
+        assert!(envelope.result.is_none());
+        assert!(envelope.error.unwrap().contains("Sapling"));
+    }
 
     #[test]
     fn incoming_deposit_request_uses_the_public_json_method() {

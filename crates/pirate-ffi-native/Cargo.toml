@@ -9,8 +9,12 @@ repository.workspace = true
 [lib]
 crate-type = ["staticlib", "cdylib", "lib"]
 
+[features]
+default = ["embedded-sapling-params"]
+embedded-sapling-params = ["pirate-wallet-service/embedded-sapling-params"]
+
 [dependencies]
-pirate-wallet-service = { path = "../pirate-wallet-service" }
+pirate-wallet-service = { path = "../pirate-wallet-service", default-features = false }
 
 serde_json = { workspace = true }
 

@@ -9,7 +9,7 @@
 
 use crate::fees::{apply_dust_policy_add_to_fee, FeeCalculator, CHANGE_DUST_THRESHOLD};
 use crate::keys::{ExtendedSpendingKey, IronwoodExtendedSpendingKey, PaymentAddress};
-use crate::params::sapling_prover;
+use crate::params::try_sapling_prover;
 use crate::selection::{NoteSelector, NoteType, SelectableNote, SelectionStrategy};
 use crate::transaction::PirateNetwork;
 use crate::{Error, Memo, Result};
@@ -23,7 +23,6 @@ use zcash_primitives::transaction::{
     builder::{BuildConfig, Builder as TxBuilder},
     TxId,
 };
-use zcash_proofs::prover::LocalTxProver;
 use zcash_protocol::{consensus::BlockHeight, memo::MemoBytes, value::Zatoshis as Amount};
 use zcash_transparent::builder::TransparentSigningSet;
 
@@ -463,7 +462,7 @@ impl ShieldedBuilder {
         };
 
         // Create prover from cached Sapling parameters
-        let prover: LocalTxProver = sapling_prover();
+        let prover = try_sapling_prover()?;
 
         // Create transaction builder with Ironwood anchor
         let mut tx_builder = TxBuilder::new(
@@ -743,8 +742,8 @@ impl ShieldedBuilder {
                 &sapling_extsks,
                 &orchard_saks,
                 rng,
-                &prover,
-                &prover,
+                prover,
+                prover,
                 &fee_rule,
             )
             .map_err(|e| {

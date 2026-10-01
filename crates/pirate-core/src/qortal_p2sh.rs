@@ -3,7 +3,7 @@
 use crate::fees::{apply_dust_policy_add_to_fee, CHANGE_DUST_THRESHOLD};
 use crate::keys::{ExtendedSpendingKey, IronwoodExtendedSpendingKey, PaymentAddress};
 use crate::memo::Memo;
-use crate::params::{ironwood_params, sapling_prover};
+use crate::params::{ironwood_params, try_sapling_prover};
 use crate::selection::{NoteType, SelectableNote};
 use crate::shielded_builder::SelectedSpendNoteRef;
 use crate::transaction::PirateNetwork;
@@ -572,14 +572,14 @@ pub fn build_qortal_p2sh_funding_transaction(
         }
     }
 
-    let prover = sapling_prover();
+    let prover = try_sapling_prover()?;
     let sapling_bundle = sapling_builder
         .build::<zcash_proofs::prover::LocalTxProver, zcash_proofs::prover::LocalTxProver, _, ZatBalance>(
             &sapling_extsks,
             rng,
         )
         .map_err(|e| Error::TransactionBuild(format!("Failed to build Sapling bundle: {:?}", e)))?
-        .map(|(bundle, _meta)| bundle.create_proofs(&prover, &prover, &mut rng, ()));
+        .map(|(bundle, _meta)| bundle.create_proofs(prover, prover, &mut rng, ()));
 
     let ironwood_bundle = if let Some(builder) = ironwood_builder {
         builder
@@ -787,14 +787,14 @@ pub fn build_qortal_p2sh_redeem_transaction(
         ));
     }
 
-    let prover = sapling_prover();
+    let prover = try_sapling_prover()?;
     let sapling_bundle = sapling_builder
         .build::<zcash_proofs::prover::LocalTxProver, zcash_proofs::prover::LocalTxProver, _, ZatBalance>(
             &[],
             &mut rng,
         )
         .map_err(|e| Error::TransactionBuild(format!("Failed to build Sapling bundle: {:?}", e)))?
-        .map(|(bundle, _meta)| bundle.create_proofs(&prover, &prover, &mut rng, ()));
+        .map(|(bundle, _meta)| bundle.create_proofs(prover, prover, &mut rng, ()));
     let ironwood_bundle = if let Some(builder) = ironwood_builder {
         builder
             .build::<ZatBalance>(&mut rng)

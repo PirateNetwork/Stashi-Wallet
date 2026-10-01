@@ -38,7 +38,9 @@ pub use fees::{
 };
 pub use memo::{Memo, MAX_MEMO_LENGTH, MEMO_WARNING_LENGTH};
 pub use mnemonic::{inspect_mnemonic, MnemonicInspection, MnemonicLanguage};
-pub use params::{ironwood_params, sapling_params, sapling_prover};
+pub use params::{initialize_sapling_parameters, ironwood_params, try_sapling_prover};
+#[cfg(feature = "embedded-sapling-params")]
+pub use params::{sapling_params, sapling_prover};
 pub use qortal_p2sh::{
     build_p2sh_script_sig, build_qortal_p2sh_funding_transaction,
     build_qortal_p2sh_redeem_transaction, build_script_pubkey, QortalP2shFundingPlan,

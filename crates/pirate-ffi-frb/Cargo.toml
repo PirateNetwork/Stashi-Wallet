@@ -10,13 +10,16 @@ repository.workspace = true
 crate-type = ["staticlib", "cdylib", "lib"]
 
 [features]
-default = []
+default = ["embedded-sapling-params"]
+embedded-sapling-params = ["pirate-wallet-service/embedded-sapling-params", "pirate-core/embedded-sapling-params"]
 # Enable FRB generated code (after running flutter_rust_bridge_codegen)
-frb = []
+# Stashi builds enable `frb` with --no-default-features; keep those builds
+# self-contained even though the native Android SDK can omit parameters.
+frb = ["embedded-sapling-params"]
 
 [dependencies]
-pirate-wallet-service = { path = "../pirate-wallet-service" }
-pirate-core = { path = "../pirate-core" }
+pirate-wallet-service = { path = "../pirate-wallet-service", default-features = false }
+pirate-core = { path = "../pirate-core", default-features = false }
 
 flutter_rust_bridge.workspace = true
 tokio = { workspace = true }

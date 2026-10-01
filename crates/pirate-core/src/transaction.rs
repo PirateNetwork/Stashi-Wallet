@@ -4,7 +4,7 @@
 
 use crate::fees::{apply_dust_policy_add_to_fee, FeeCalculator, CHANGE_DUST_THRESHOLD};
 use crate::keys::{ExtendedSpendingKey, PaymentAddress};
-use crate::params::sapling_prover;
+use crate::params::try_sapling_prover;
 use crate::selection::{NoteSelector, SelectableNote, SelectionStrategy};
 use crate::{Error, Memo, Result};
 use pirate_params::{Network, NetworkType};
@@ -15,7 +15,6 @@ use zcash_primitives::transaction::{
     builder::{BuildConfig, Builder as TxBuilder},
     Transaction, TxId,
 };
-use zcash_proofs::prover::LocalTxProver;
 use zcash_protocol::{
     consensus::{
         BlockHeight, BranchId, NetworkType as ConsensusNetworkType, NetworkUpgrade, Parameters,
@@ -321,7 +320,7 @@ impl TransactionBuilder {
         let pending_outputs = self.outputs.clone();
 
         // Create prover from cached Sapling parameters (loaded once per process)
-        let prover: LocalTxProver = sapling_prover();
+        let prover = try_sapling_prover()?;
 
         let sapling_anchor = selection
             .notes
@@ -442,8 +441,8 @@ impl TransactionBuilder {
                 &sapling_extsks,
                 &orchard_saks,
                 rng,
-                &prover,
-                &prover,
+                prover,
+                prover,
                 &fee_rule,
             )
             .map_err(|e| {

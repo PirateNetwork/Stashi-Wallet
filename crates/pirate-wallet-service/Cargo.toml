@@ -6,8 +6,12 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[features]
+default = ["embedded-sapling-params"]
+embedded-sapling-params = ["pirate-core/embedded-sapling-params"]
+
 [dependencies]
-pirate-core = { path = "../pirate-core" }
+pirate-core = { path = "../pirate-core", default-features = false }
 pirate-params = { path = "../pirate-params" }
 pirate-storage-sqlite = { path = "../pirate-storage-sqlite" }
 pirate-sync-lightd = { path = "../pirate-sync-lightd" }
