@@ -150,8 +150,9 @@ fn spawn_disconnect_active_sync_channels(reason: &'static str) {
 }
 
 pub fn set_tunnel(mode: TunnelMode) -> Result<()> {
-    tracing::info!("Setting tunnel mode: {:?}", mode);
     let (transport, socks5_url, _) = tunnel_transport_config_for(&mode);
+    // The SOCKS URL may contain proxy credentials. Log only the transport kind.
+    tracing::info!("Setting tunnel mode: {:?}", transport);
     {
         // Hold the mode lock until the sync layer has recorded this choice.
         // Otherwise two concurrent calls can publish the mode and the
@@ -763,5 +764,36 @@ mod tests {
             &lightd_info(MAINNET_SAPLING_ACTIVATION_HEIGHT)
         )
         .is_none());
+    }
+
+    #[cfg(any(not(feature = "embedded-tor"), not(feature = "embedded-i2p")))]
+    #[test]
+    fn unavailable_transport_requests_do_not_replace_the_host_selection() {
+        let _guard = GLOBAL_WALLET_STATE_TEST_MUTEX.lock().unwrap();
+        let previous = TUNNEL_MODE.read().clone();
+        let selected = TunnelMode::Socks5 {
+            url: "socks5h://127.0.0.1:9050".into(),
+        };
+        *TUNNEL_MODE.write() = selected.clone();
+        let pending = PENDING_TUNNEL_MODE.read().clone();
+
+        for (mode, available) in [
+            ("Tor", cfg!(feature = "embedded-tor")),
+            ("I2p", cfg!(feature = "embedded-i2p")),
+        ] {
+            if available {
+                continue;
+            }
+            let response = crate::service::WalletService::new().execute_json(
+                &format!(r#"{{"method":"set_tunnel","mode":"{mode}"}}"#),
+                false,
+            );
+            let envelope: serde_json::Value = serde_json::from_str(&response).unwrap();
+            assert_eq!(envelope["ok"], false);
+            assert!(envelope["error"].as_str().unwrap().contains("unavailable"));
+            assert_eq!(*TUNNEL_MODE.read(), selected);
+            assert_eq!(*PENDING_TUNNEL_MODE.read(), pending);
+        }
+        *TUNNEL_MODE.write() = previous;
     }
 }

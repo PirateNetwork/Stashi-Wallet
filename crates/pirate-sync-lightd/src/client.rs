@@ -142,6 +142,7 @@ impl GlobalTransportState {
         self: Arc<Self>,
         requested: NetTransportConfig,
     ) -> Result<Arc<NetTransportManager>> {
+        requested.mode.ensure_available().map_err(map_net_error)?;
         // Never satisfy an old request by silently routing it through the new
         // transport. The endpoint and transport are one privacy decision: a
         // stale I2P request must be cancelled, not sent directly (or via Tor).
@@ -249,6 +250,7 @@ static TOR_CONFIG_OVERRIDE: Lazy<std::sync::RwLock<Option<NetTorConfig>>> =
 /// A delayed bootstrap must not be allowed to replace a newer selection.
 pub fn select_transport(mode: TransportMode, socks5_url: Option<String>) -> Result<()> {
     let config = build_transport_config_from_mode(mode, socks5_url.as_deref())?;
+    config.mode.ensure_available().map_err(map_net_error)?;
     let mut guard = DESIRED_TRANSPORT_CONFIG
         .write()
         .map_err(|_| Error::Connection("Transport selection lock poisoned".to_string()))?;
@@ -257,6 +259,7 @@ pub fn select_transport(mode: TransportMode, socks5_url: Option<String>) -> Resu
 }
 
 fn select_transport_if_unset(config: &NetTransportConfig) -> Result<()> {
+    config.mode.ensure_available().map_err(map_net_error)?;
     let mut guard = DESIRED_TRANSPORT_CONFIG
         .write()
         .map_err(|_| Error::Connection("Transport selection lock poisoned".to_string()))?;
@@ -752,6 +755,9 @@ pub fn set_tor_bridge_settings(
     bridge_lines: Vec<String>,
     transport_path: Option<String>,
 ) -> Result<()> {
+    NetTransportMode::Tor
+        .ensure_available()
+        .map_err(map_net_error)?;
     if cfg!(any(target_os = "android", target_os = "ios")) {
         let mut config = tor_config_from_env_raw();
         config.use_bridges = false;
@@ -926,12 +932,20 @@ pub async fn bootstrap_transport(mode: TransportMode, socks5_url: Option<String>
 
 /// Get current Tor status if transport manager is initialized.
 pub async fn tor_status() -> Option<pirate_net::TorStatus> {
+    if !cfg!(feature = "embedded-tor") {
+        return Some(pirate_net::TorStatus::Error(
+            pirate_net::Error::EmbeddedTorUnavailable.to_string(),
+        ));
+    }
     let manager = GLOBAL_TRANSPORT.clone().get().await?;
     manager.tor_status().await
 }
 
 /// Rotate Tor exit circuits by isolating future streams.
 pub async fn rotate_tor_exit() -> Result<()> {
+    NetTransportMode::Tor
+        .ensure_available()
+        .map_err(map_net_error)?;
     let manager = GLOBAL_TRANSPORT
         .clone()
         .get()
@@ -975,6 +989,11 @@ pub async fn fetch_http_bytes(
 
 /// Get current I2P status if transport manager is initialized.
 pub async fn i2p_status() -> Option<pirate_net::I2pStatus> {
+    if !cfg!(feature = "embedded-i2p") {
+        return Some(pirate_net::I2pStatus::Error(
+            pirate_net::Error::EmbeddedI2pUnavailable.to_string(),
+        ));
+    }
     let manager = GLOBAL_TRANSPORT.clone().get().await?;
     manager.i2p_status().await
 }
@@ -2424,6 +2443,12 @@ impl LightClient {
 
     /// Connect to a validated Auto pool, or retry the explicitly selected server.
     pub async fn connect(&self) -> Result<()> {
+        // Unsupported transports are a build capability error, not a transient
+        // server failure. Reject before retries, probes, DNS or any connection.
+        build_transport_config(&self.config)?
+            .mode
+            .ensure_available()
+            .map_err(map_net_error)?;
         if self.has_failover_endpoints() && self.config.tls.spki_pin.is_none() {
             // Initialize the selected transport once before concurrent probes.
             // Probe channels reuse it and cannot silently switch transport.
@@ -5512,6 +5537,75 @@ mod tests {
         clear_desired_transport_config();
     }
 
+    #[cfg(any(not(feature = "embedded-tor"), not(feature = "embedded-i2p")))]
+    #[tokio::test]
+    async fn unavailable_embedded_transports_preserve_selection_and_do_not_connect() {
+        let _test_guard = TRANSPORT_STATE_TEST_LOCK.lock().await;
+        shutdown_transport().await;
+        select_transport(TransportMode::Direct, None).unwrap();
+        let selected = desired_transport_config();
+
+        for (mode, available, label) in [
+            (TransportMode::Tor, cfg!(feature = "embedded-tor"), "Tor"),
+            (TransportMode::I2p, cfg!(feature = "embedded-i2p"), "I2P"),
+        ] {
+            if available {
+                continue;
+            }
+            assert!(select_transport(mode, None)
+                .unwrap_err()
+                .to_string()
+                .contains(label));
+            assert_eq!(desired_transport_config(), selected);
+            assert!(bootstrap_transport(mode, None)
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains(label));
+            assert_eq!(desired_transport_config(), selected);
+
+            let client = LightClient::with_config(LightClientConfig {
+                transport: mode,
+                // Even a caller's fallback setting cannot turn an unavailable
+                // privacy feature into a direct request.
+                allow_direct_fallback: true,
+                retry: RetryConfig {
+                    initial_backoff: Duration::from_secs(60),
+                    ..RetryConfig::default()
+                },
+                ..LightClientConfig::default()
+            });
+            let error = tokio::time::timeout(Duration::from_secs(1), client.connect())
+                .await
+                .expect("unsupported mode must fail before retries")
+                .unwrap_err();
+            assert!(error.to_string().contains(label));
+            assert!(!client.is_connected());
+        }
+        assert!(GLOBAL_TRANSPORT.clone().get().await.is_none());
+        shutdown_transport().await;
+    }
+
+    #[cfg(not(feature = "embedded-tor"))]
+    #[tokio::test]
+    async fn unavailable_tor_reports_error_and_rejects_bridge_configuration() {
+        assert!(matches!(
+            tor_status().await,
+            Some(pirate_net::TorStatus::Error(_))
+        ));
+        assert!(rotate_tor_exit()
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("Tor"));
+        assert!(
+            set_tor_bridge_settings(true, false, "snowflake".into(), vec![], None,)
+                .unwrap_err()
+                .to_string()
+                .contains("Tor")
+        );
+    }
+
     #[tokio::test]
     async fn stale_background_probe_cannot_reselect_an_old_transport() {
         let _test_guard = TRANSPORT_STATE_TEST_LOCK.lock().await;
@@ -5530,7 +5624,11 @@ mod tests {
             .await
             .expect("direct transport");
 
-        select_transport(TransportMode::Tor, None).unwrap();
+        select_transport(
+            TransportMode::Socks5,
+            Some("socks5h://127.0.0.1:9050".into()),
+        )
+        .unwrap();
         assert!(state.clone().get_matching(direct.clone()).await.is_none());
         assert!(matches!(
             state.clone().get_or_init(direct).await,
@@ -5541,6 +5639,7 @@ mod tests {
         clear_desired_transport_config();
     }
 
+    #[cfg(feature = "embedded-tor")]
     #[tokio::test]
     async fn queued_tor_bootstrap_cannot_replace_newer_direct_selection() {
         let _test_guard = TRANSPORT_STATE_TEST_LOCK.lock().await;
@@ -5593,7 +5692,11 @@ mod tests {
                 .is_err()
         );
 
-        select_transport(TransportMode::Tor, None).unwrap();
+        select_transport(
+            TransportMode::Socks5,
+            Some("socks5h://127.0.0.1:9050".into()),
+        )
+        .unwrap();
         drop(held_update);
         assert!(matches!(updating.await.unwrap(), Err(Error::Cancelled)));
         state.shutdown().await;
