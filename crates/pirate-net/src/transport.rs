@@ -4,6 +4,7 @@
 
 use crate::debug_log::log_debug_event;
 use crate::lightwalletd_pins::extract_spki_from_cert_der;
+use crate::tls_connector::{connect_tls, peer_certificate_der};
 use crate::{
     DnsConfig, DnsResolver, Error, I2pClient, I2pConfig, Result, TorClient, TorConfig, TorStatus,
 };
@@ -14,7 +15,6 @@ use hyper::client::conn::http1;
 use hyper::header::{HeaderName, HeaderValue, HOST, LOCATION};
 use hyper::Request;
 use hyper_util::rt::TokioIo;
-use native_tls::TlsConnector as NativeTlsConnector;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
@@ -23,7 +23,6 @@ use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
-use tokio_native_tls::TlsConnector;
 use tokio_socks::tcp::Socks5Stream;
 use tonic::transport::{Channel, Endpoint};
 use tower::service_fn;
@@ -151,24 +150,6 @@ impl<T: AsyncRead + AsyncWrite + ?Sized> AsyncReadWrite for T {}
 type BoxedStream = Box<dyn AsyncReadWrite + Send + Unpin>;
 type ConnectorStream = TokioIo<BoxedStream>;
 type ConnectorFuture = Pin<Box<dyn Future<Output = Result<ConnectorStream>> + Send + 'static>>;
-
-async fn fetch_peer_certificate_der(
-    connector: TlsConnector,
-    server_name: String,
-    stream: BoxedStream,
-) -> Result<Vec<u8>> {
-    let stream = connector
-        .connect(&server_name, stream)
-        .await
-        .map_err(|e| Error::Tls(format!("TLS handshake failed: {}", e)))?;
-    let cert = stream
-        .get_ref()
-        .peer_certificate()
-        .map_err(|e| Error::Tls(format!("TLS peer certificate error: {}", e)))?
-        .ok_or_else(|| Error::Tls("No peer certificate presented".to_string()))?;
-    cert.to_der()
-        .map_err(|e| Error::Tls(format!("Failed to read DER certificate: {}", e)))
-}
 
 impl TransportManager {
     /// Whether this manager still owns the requested transport configuration.
@@ -464,8 +445,9 @@ impl TransportManager {
     pub async fn create_http_client(&self) -> Result<reqwest::Client> {
         let config = read_state(&self.config);
 
-        let mut client_builder =
-            reqwest::Client::builder().timeout(std::time::Duration::from_secs(60));
+        let mut client_builder = reqwest::Client::builder()
+            .use_rustls_tls()
+            .timeout(std::time::Duration::from_secs(60));
 
         match config.mode {
             TransportMode::Tor => {
@@ -664,6 +646,9 @@ impl TransportManager {
     }
 
     /// Fetch the SPKI pin from the server using the configured transport.
+    ///
+    /// The certificate must be trusted by webPKI roots and valid for `server_name`,
+    /// which may differ from the hostname used to route the connection.
     pub async fn fetch_spki_pin(
         self: Arc<Self>,
         host: String,
@@ -671,15 +656,10 @@ impl TransportManager {
         server_name: String,
     ) -> Result<String> {
         let stream = self.clone().open_stream(host, port).await?;
-        let connector = NativeTlsConnector::builder()
-            // A pin is an additional constraint on a normally valid TLS
-            // identity, not a replacement for certificate and hostname checks.
-            .danger_accept_invalid_certs(false)
-            .danger_accept_invalid_hostnames(false)
-            .build()
-            .map_err(|e| Error::Tls(format!("TLS connector build failed: {}", e)))?;
-        let connector = TlsConnector::from(connector);
-        let der = fetch_peer_certificate_der(connector, server_name, stream).await?;
+        // A pin is an additional constraint on a normally valid TLS identity.
+        // Validate the supplied TLS hostname, independently of the route host.
+        let stream = connect_tls(&server_name, stream).await?;
+        let der = peer_certificate_der(&stream)?;
         extract_spki_from_cert_der(&der)
     }
 
@@ -945,16 +925,7 @@ async fn fetch_url_once_via_tor(
         .map_err(|e| Error::Network(format!("Failed to build HTTP request: {}", e)))?;
 
     let (status, location, body) = if url.scheme() == "https" {
-        let connector = NativeTlsConnector::builder()
-            .danger_accept_invalid_certs(false)
-            .danger_accept_invalid_hostnames(false)
-            .build()
-            .map_err(|e| Error::Tls(format!("TLS connector build failed: {}", e)))?;
-        let connector = TlsConnector::from(connector);
-        let tls_stream = connector
-            .connect(host, stream)
-            .await
-            .map_err(|e| Error::Tls(format!("TLS handshake failed: {}", e)))?;
+        let tls_stream = connect_tls(host, stream).await?;
         let io = TokioIo::new(tls_stream);
         fetch_over_tunnel_stream(io, request, timeout).await?
     } else {

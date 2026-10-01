@@ -2,6 +2,8 @@
 //!
 //! Provides Tor integration via Arti, DoH/system DNS, SOCKS5 proxy,
 //! and TLS certificate pinning for secure, private connections.
+//! HTTP clients and certificate probes use Rustls with webPKI roots, matching
+//! the gRPC client's trust store. Pins supplement certificate and hostname checks.
 //!
 //! `embedded-tor` and `embedded-i2p` are enabled by default. Hosts that provide
 //! their own networking may disable them and explicitly select direct or SOCKS5
@@ -18,6 +20,7 @@ pub mod i2p;
 pub mod lightwalletd_pins;
 pub mod proxy;
 pub mod tls;
+mod tls_connector;
 pub mod tor;
 mod transport;
 pub mod transport_config;

@@ -2,13 +2,12 @@
 //!
 //! Default certificate pins for known Pirate Chain lightwalletd servers.
 
+use crate::tls_connector::{connect_tls, peer_certificate_der};
 use crate::{CertificatePin, Result, TlsPinning};
 use base64::engine::general_purpose::STANDARD as Base64Standard;
 use base64::Engine;
-use native_tls::TlsConnector as NativeTlsConnector;
 use rustls_pki_types::CertificateDer;
 use sha2::{Digest, Sha256};
-use tokio_native_tls::TlsConnector;
 use webpki::EndEntityCert;
 
 /// Known Pirate Chain lightwalletd servers
@@ -153,35 +152,16 @@ impl LightwalletdPins {
 /// This connects to the server, retrieves the certificate,
 /// and extracts the SPKI hash for pinning.
 ///
-/// This is intended for pin extraction only and does not validate certificates.
+/// The certificate must be valid for the hostname and trusted by the webPKI
+/// roots used by the wallet's HTTP and gRPC clients.
 pub async fn extract_spki_from_server(host: &str, port: u16) -> Result<String> {
     let addr = format!("{}:{}", host, port);
     let tcp = tokio::net::TcpStream::connect(&addr)
         .await
         .map_err(|e| crate::Error::Tls(format!("TCP connect failed: {}", e)))?;
 
-    let connector = NativeTlsConnector::builder()
-        .danger_accept_invalid_certs(true)
-        .danger_accept_invalid_hostnames(true)
-        .build()
-        .map_err(|e| crate::Error::Tls(format!("TLS connector build failed: {}", e)))?;
-
-    let connector = TlsConnector::from(connector);
-    let stream = connector
-        .connect(host, tcp)
-        .await
-        .map_err(|e| crate::Error::Tls(format!("TLS handshake failed: {}", e)))?;
-
-    let cert = stream
-        .get_ref()
-        .peer_certificate()
-        .map_err(|e| crate::Error::Tls(format!("TLS peer certificate error: {}", e)))?
-        .ok_or_else(|| crate::Error::Tls("No peer certificate presented".to_string()))?;
-
-    let der = cert
-        .to_der()
-        .map_err(|e| crate::Error::Tls(format!("Failed to read DER certificate: {}", e)))?;
-
+    let stream = connect_tls(host, tcp).await?;
+    let der = peer_certificate_der(&stream)?;
     extract_spki_from_cert_der(&der)
 }
 

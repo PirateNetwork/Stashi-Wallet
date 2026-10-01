@@ -137,6 +137,7 @@ impl DnsResolver {
             };
             debug!("Tunneling DNS through SOCKS proxy: {}", proxy_url);
             reqwest::Client::builder()
+                .use_rustls_tls()
                 .proxy(
                     reqwest::Proxy::all(proxy_url)
                         .map_err(|e| crate::Error::Network(format!("Proxy error: {}", e)))?,
@@ -144,7 +145,10 @@ impl DnsResolver {
                 .build()
                 .map_err(|e| crate::Error::Network(format!("HTTP client error: {}", e)))?
         } else {
-            reqwest::Client::new()
+            reqwest::Client::builder()
+                .use_rustls_tls()
+                .build()
+                .map_err(|e| crate::Error::Network(format!("HTTP client error: {}", e)))?
         };
 
         let mut addrs = Vec::new();
