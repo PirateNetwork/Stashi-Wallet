@@ -22,11 +22,12 @@ if [[ "$EXTERNAL_SAPLING_PARAMS" -eq 1 ]]; then
   DIST_DIR="$PROJECT_ROOT/dist/android-sdk-external"
   JNI_DIR="$DIST_DIR/jniLibs"
   PACKAGE_NAME="pirate-android-sdk-external-package"
-  # Tune only this opt-in SDK artifact. Unwind must remain enabled because the
-  # transaction worker converts caught panics to recoverable host errors.
+  # Optimize this opt-in SDK artifact for APK size. Keep the normal wallet and
+  # iOS static archive profiles separate. Unwind must remain enabled because
+  # the transaction worker converts caught panics to recoverable host errors.
   export CARGO_PROFILE_RELEASE_LTO="${CARGO_PROFILE_RELEASE_LTO:-thin}"
   export CARGO_PROFILE_RELEASE_CODEGEN_UNITS="${CARGO_PROFILE_RELEASE_CODEGEN_UNITS:-1}"
-  export CARGO_PROFILE_RELEASE_OPT_LEVEL="${CARGO_PROFILE_RELEASE_OPT_LEVEL:-3}"
+  export CARGO_PROFILE_RELEASE_OPT_LEVEL="${CARGO_PROFILE_RELEASE_OPT_LEVEL:-s}"
 fi
 export CARGO_PROFILE_RELEASE_PANIC=unwind
 
