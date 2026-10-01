@@ -259,6 +259,28 @@ public class PirateWalletSdk(
     public fun buildInfo(): BuildInfo =
         parseBuildInfo(invokeResult("get_build_info"))
 
+    /**
+     * Loads the standard Sapling proving parameters from app-private files.
+     *
+     * Required before signing any transaction with the external-parameters native
+     * library, including Ironwood-only transactions: the shared builder loads the
+     * Sapling prover. Receiving and syncing do not require these files. Download
+     * and atomically save both files in the host app first.
+     * Rust verifies their sizes and hashes before caching them process-wide. Run this
+     * blocking operation off the UI thread; failed initialization can be retried.
+     * Once cached, repeated calls succeed without reloading files. Embedded builds
+     * do not require this call.
+     */
+    public fun initializeSaplingParameters(spendPath: String, outputPath: String) {
+        require(spendPath.isNotBlank()) { "spendPath must be a non-empty file path" }
+        require(outputPath.isNotBlank()) { "outputPath must be a non-empty file path" }
+        invokeUnit(
+            "initialize_sapling_parameters",
+            "spend_path" to spendPath,
+            "output_path" to outputPath,
+        )
+    }
+
     public fun walletRegistryExists(): Boolean =
         parseBoolean(invokeResult("wallet_registry_exists"))
 

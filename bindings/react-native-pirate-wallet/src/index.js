@@ -591,6 +591,16 @@ class PirateWalletSdk {
     return this._call('get_build_info')
   }
 
+  initializeSaplingParameters(config) {
+    if (!config || typeof config !== 'object' || Array.isArray(config)) {
+      throw new Error('initializeSaplingParameters requires a config object.')
+    }
+    return this._call('initialize_sapling_parameters', {
+      spend_path: requireNonEmptyString(config.spendPath, 'spendPath'),
+      output_path: requireNonEmptyString(config.outputPath, 'outputPath')
+    })
+  }
+
   walletRegistryExists() {
     return this._call('wallet_registry_exists')
   }

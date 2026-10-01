@@ -47,6 +47,11 @@ export interface PirateWalletSecureAccountStorageConfig {
   storagePath?: string | null
 }
 
+export interface SaplingParametersConfig {
+  spendPath: string
+  outputPath: string
+}
+
 export interface LightdEndpointConfig {
   host: string
   port: number
@@ -277,6 +282,8 @@ export class PirateWalletSdk {
   createSynchronizer(walletId: string, config?: SynchronizerConfig): PirateWalletSynchronizer
   buildInfoJson(pretty?: boolean): Promise<string>
   buildInfo(): Promise<any>
+  /** Validates and caches host-provided Sapling files. Required by the external Android binary before any transaction signing, including Ironwood-only; subsequent calls reuse the ready prover. Receiving and syncing do not require it. */
+  initializeSaplingParameters(config: SaplingParametersConfig): Promise<Acknowledgement>
   walletRegistryExists(): Promise<boolean>
   listWallets(): Promise<WalletMeta[]>
   getActiveWalletId(): Promise<string | null>

@@ -29,6 +29,10 @@ class SmokeConsumer(
 
         sdk.buildInfoJson()
         val buildInfo: BuildInfo = sdk.buildInfo()
+        sdk.initializeSaplingParameters(
+            spendPath = "/app-private/sapling-spend.params",
+            outputPath = "/app-private/sapling-output.params",
+        )
         sdk.getLatestBirthdayHeight(walletId)
         sdk.getShieldedPoolBalances(walletId)
         sdk.getSpendabilityStatus(walletId)

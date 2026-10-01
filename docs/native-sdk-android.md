@@ -122,6 +122,51 @@ The AAR is the normal delivery artifact.
 
 The package zip is there for teams that want to vendor the whole Gradle module instead of only consuming the AAR.
 
+## External Sapling parameters
+
+The standard AAR embeds the public Sapling proving files. To build the optional
+smaller AAR without those files:
+
+```bash
+bash scripts/build-android-sdk.sh --external-sapling-params
+```
+
+Outputs go to `dist/android-sdk-external/`:
+
+- `pirate-android-sdk-external-release.aar`
+- `pirate-android-sdk-external-package.zip`
+
+Use one AAR variant in the consuming app. The host must obtain the standard
+`sapling-spend.params` and `sapling-output.params`, store them in an app-private
+directory, and initialize them before signing any transaction, including
+Ironwood-only transactions. The shared builder loads the Sapling prover:
+
+```kotlin
+// Run on a background dispatcher: validation and parsing read about 51.6 MB.
+sdk.initializeSaplingParameters(
+    spendPath = File(paramsDirectory, "sapling-spend.params").absolutePath,
+    outputPath = File(paramsDirectory, "sapling-output.params").absolutePath,
+)
+```
+
+Download each file to a temporary file using the host app's network policy and
+atomically rename it after completion. Initialize only when both final files are
+ready. The SDK does not download files or change the host's privacy settings.
+
+| File | Public download | Bytes | SHA-256 |
+| --- | --- | ---: | --- |
+| `sapling-spend.params` | [download.z.cash](https://download.z.cash/downloads/sapling-spend.params) | 47,958,396 | `8e48ffd23abb3a5fd9c5589204f32d9c31285a04b78096ba40a79b75677efc13` |
+| `sapling-output.params` | [download.z.cash](https://download.z.cash/downloads/sapling-output.params) | 3,592,860 | `2f0ebbcbb9bb0bcffe95a397e7eba89c29eb4dde6191c339db88570e3f3fb0e4` |
+
+Rust verifies the exact size and hash of each file before parsing and caching
+the prover for the process. Before initialization succeeds, unreadable or
+corrupted files produce a recoverable `PirateWalletSdkException`; replace them
+and retry initialization. After success, repeated calls reuse the cached prover
+without reloading files. Embedded builds do not require this call. Keep the files
+for initialization after the next app launch. Once initialized, proving works
+offline. Receiving and syncing do not need these files. They contain public
+cryptographic constants, not wallet keys or other wallet-specific data.
+
 ## Using it
 
 If you only want the binary artifact, copy the AAR into the consuming Android project and reference it directly:

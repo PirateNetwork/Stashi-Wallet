@@ -33,6 +33,10 @@ function createMockNativeModule() {
       const request = JSON.parse(requestJson)
       calls.push(request.method)
       switch (request.method) {
+        case 'initialize_sapling_parameters':
+          assert.strictEqual(request.spend_path, '/app-private/params/sapling-spend.params')
+          assert.strictEqual(request.output_path, '/app-private/params/sapling-output.params')
+          return ok({ acknowledged: true })
         case 'get_build_info':
           return ok({
             version: '1.2.3',
@@ -242,6 +246,32 @@ async function main() {
 
   const buildInfo = await sdk.buildInfo()
   assert.strictEqual(buildInfo.version, '1.2.3')
+
+  const paramsConfig = {
+    spendPath: '/app-private/params/sapling-spend.params',
+    outputPath: '/app-private/params/sapling-output.params'
+  }
+  assert.deepStrictEqual(await sdk.initializeSaplingParameters(paramsConfig), { acknowledged: true })
+  for (const invalidConfig of [null, [], {}, { ...paramsConfig, spendPath: ' ' }, { ...paramsConfig, outputPath: 42 }]) {
+    assert.throws(() => sdk.initializeSaplingParameters(invalidConfig), /config object|non-empty string/)
+  }
+  let paramsAttempts = 0
+  const retrySdk = new PirateWalletSdk({
+    async invoke(requestJson) {
+      assert.deepStrictEqual(JSON.parse(requestJson), {
+        method: 'initialize_sapling_parameters',
+        spend_path: paramsConfig.spendPath,
+        output_path: paramsConfig.outputPath
+      })
+      paramsAttempts += 1
+      return paramsAttempts === 1
+        ? JSON.stringify({ ok: false, error: 'Sapling output parameters checksum mismatch; replace the file and retry' })
+        : ok({ acknowledged: true })
+    }
+  })
+  await assert.rejects(() => retrySdk.initializeSaplingParameters(paramsConfig), /checksum mismatch/)
+  assert.deepStrictEqual(await retrySdk.initializeSaplingParameters(paramsConfig), { acknowledged: true })
+  assert.strictEqual(paramsAttempts, 2)
 
   const wallets = await sdk.listWallets()
   assert.strictEqual(wallets.length, 1)

@@ -20,6 +20,18 @@ Core:
 - `createSynchronizer(walletId, config = PirateWalletSynchronizer.Config())`
 - `buildInfoJson(pretty = false)`
 - `buildInfo()`
+- `initializeSaplingParameters(spendPath, outputPath)`
+
+`initializeSaplingParameters` validates app-private Sapling parameter files and
+caches them process-wide. The external-parameters Android AAR requires it before
+any transaction signing, including Ironwood-only transactions, because the shared
+builder loads the Sapling prover. Receiving and syncing do not require it.
+Use absolute file paths; run it off the UI thread. Invalid or
+missing files throw `PirateWalletSdkException` and can be replaced before retry.
+After initialization succeeds, repeated calls reuse the cached prover without
+reloading files. Embedded builds do not require this call.
+Blank paths throw `IllegalArgumentException` before calling native code. Download
+and storage remain the host app's responsibility; see the Android SDK overview.
 
 Wallet lifecycle:
 

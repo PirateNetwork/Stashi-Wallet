@@ -10,6 +10,56 @@ import java.util.ArrayDeque
 
 class PirateWalletSdkTest {
     @Test
+    fun `Sapling initialization forwards file paths and allows retry after failure`() {
+        val invoker = ScriptedInvoker(
+            expect("initialize_sapling_parameters") { request ->
+                assertEquals("/app-private/params/sapling-spend.params", request.getString("spend_path"))
+                assertEquals("/app-private/params/sapling-output.params", request.getString("output_path"))
+                JSONObject()
+                    .put("ok", false)
+                    .put("error", "Sapling spend parameters checksum mismatch; replace the file and retry")
+                    .toString()
+            },
+            expect("initialize_sapling_parameters") { request ->
+                assertEquals("/app-private/params/sapling-spend.params", request.getString("spend_path"))
+                assertEquals("/app-private/params/sapling-output.params", request.getString("output_path"))
+                ok(JSONObject().put("acknowledged", true))
+            },
+        )
+        val sdk = PirateWalletSdk(invoker)
+        var failure: PirateWalletSdkException? = null
+        try {
+            sdk.initializeSaplingParameters(
+                "/app-private/params/sapling-spend.params",
+                "/app-private/params/sapling-output.params",
+            )
+        } catch (error: PirateWalletSdkException) {
+            failure = error
+        }
+        assertTrue(failure?.message?.contains("checksum mismatch") == true)
+
+        sdk.initializeSaplingParameters(
+            "/app-private/params/sapling-spend.params",
+            "/app-private/params/sapling-output.params",
+        )
+        invoker.assertFinished()
+    }
+
+    @Test
+    fun `Sapling initialization rejects blank paths before native invocation`() {
+        val sdk = PirateWalletSdk(ScriptedInvoker())
+        for ((spendPath, outputPath) in listOf(" " to "/output", "/spend" to "")) {
+            var rejected = false
+            try {
+                sdk.initializeSaplingParameters(spendPath, outputPath)
+            } catch (error: IllegalArgumentException) {
+                rejected = true
+            }
+            assertTrue("Blank parameter paths must be rejected", rejected)
+        }
+    }
+
+    @Test
     fun `receive address methods use the activation aware service operations`() {
         val invoker = ScriptedInvoker(
             expect("current_receive_address") { request ->
