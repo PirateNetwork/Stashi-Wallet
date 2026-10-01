@@ -35,6 +35,13 @@ public enum NetworkType: String, Codable {
     case regtest = "regtest"
 }
 
+public enum TunnelMode: Equatable, Sendable {
+    case socks5(url: String)
+    case direct
+    case tor
+    case i2p
+}
+
 public enum SyncMode: String, Codable {
     case compact = "Compact"
     case deep = "Deep"

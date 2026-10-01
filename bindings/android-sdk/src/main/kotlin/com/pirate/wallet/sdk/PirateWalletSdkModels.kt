@@ -1,5 +1,12 @@
 package com.pirate.wallet.sdk
 
+public sealed class TunnelMode {
+    public data class Socks5(val url: String) : TunnelMode()
+    public object Direct : TunnelMode()
+    public object Tor : TunnelMode()
+    public object I2p : TunnelMode()
+}
+
 public data class AddressInfo(
     val address: String,
     val diversifierIndex: Int,

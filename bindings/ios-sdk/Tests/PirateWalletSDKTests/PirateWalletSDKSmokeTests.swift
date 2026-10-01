@@ -3,6 +3,82 @@ import XCTest
 @testable import PirateWalletSDK
 
 final class PirateWalletSDKSmokeTests: XCTestCase {
+    func testTransportSelectionForwardsExactServicePayloads() throws {
+        let modes: [(TunnelMode, Any)] = [
+            (.socks5(url: "socks5h://127.0.0.1:9050"), ["Socks5": ["url": "socks5h://127.0.0.1:9050"]]),
+            (.direct, "Direct"),
+            (.tor, "Tor"),
+            (.i2p, "I2p"),
+        ]
+        let invoker = ScriptedInvoker(expectedCalls: modes.map { entry in
+            expected("set_tunnel") { request in
+                let payload: [String: Any] = ["method": "set_tunnel", "mode": entry.1]
+                XCTAssertEqual(request as NSDictionary, payload as NSDictionary)
+                return try ok(["acknowledged": true])
+            }
+        })
+        let sdk = PirateWalletSDK(invoker: invoker)
+
+        for (mode, _) in modes {
+            try sdk.setTunnel(mode)
+        }
+        invoker.assertFinished()
+    }
+
+    func testTransportSelectionRejectsBlankProxyUrlsBeforeNativeInvocation() throws {
+        let invoker = ScriptedInvoker(expectedCalls: [])
+        let sdk = PirateWalletSDK(invoker: invoker)
+
+        for url in ["", " \t\n"] {
+            XCTAssertThrowsError(try sdk.setTunnel(.socks5(url: url))) { error in
+                XCTAssertEqual(error.localizedDescription, "url must be a non-empty string")
+            }
+        }
+        invoker.assertFinished()
+    }
+
+    func testTransportServiceErrorsPropagateWithoutFallback() throws {
+        let modes: [(TunnelMode, String)] = [
+            (.tor, "Embedded Tor support is unavailable in this build"),
+            (.i2p, "Embedded I2P support is unavailable in this build"),
+            (.socks5(url: "https://127.0.0.1:9050"), "SOCKS proxy URL scheme is invalid"),
+        ]
+        for (mode, message) in modes {
+            let invoker = ScriptedInvoker(expectedCalls: [
+                expected("set_tunnel") { _ in
+                    let data = try JSONSerialization.data(withJSONObject: ["ok": false, "error": message])
+                    return try XCTUnwrap(String(data: data, encoding: .utf8))
+                },
+            ])
+            let sdk = PirateWalletSDK(invoker: invoker)
+
+            XCTAssertThrowsError(try sdk.setTunnel(mode)) { error in
+                guard case PirateWalletSdkError.serviceFailure(let actual) = error else {
+                    return XCTFail("Expected the original service error, got \(error)")
+                }
+                XCTAssertEqual(actual, message)
+            }
+            invoker.assertFinished()
+        }
+    }
+
+    func testAsyncTransportSelectionUsesSameServicePayload() async throws {
+        let invoker = ScriptedInvoker(expectedCalls: [
+            expected("set_tunnel") { request in
+                let payload: [String: Any] = [
+                    "method": "set_tunnel",
+                    "mode": ["Socks5": ["url": "socks5h://127.0.0.1:9050"]],
+                ]
+                XCTAssertEqual(request as NSDictionary, payload as NSDictionary)
+                return try ok(["acknowledged": true])
+            },
+        ])
+        let sdk = PirateWalletSDK(invoker: invoker)
+
+        try await sdk.setTunnelAsync(.socks5(url: "socks5h://127.0.0.1:9050"))
+        invoker.assertFinished()
+    }
+
     func testReceiveAddressMethodsUseActivationAwareServiceOperations() throws {
         let invoker = ScriptedInvoker(expectedCalls: [
             expected("current_receive_address") { request in

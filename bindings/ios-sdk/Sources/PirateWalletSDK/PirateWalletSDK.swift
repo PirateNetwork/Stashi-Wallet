@@ -74,6 +74,13 @@ public final class PirateWalletSDK {
         try decodeResult("get_build_info", as: BuildInfo.self)
     }
 
+    /// Selects the process-wide transport before network operations.
+    /// Tor and I2P require their embedded transport in the native library.
+    /// A rejected selection never falls back to Direct.
+    public func setTunnel(_ mode: TunnelMode) throws {
+        _ = try invokeResult("set_tunnel", params: ["mode": tunnelModeJsonValue(mode)])
+    }
+
     public func walletRegistryExists() throws -> Bool {
         try boolResult("wallet_registry_exists")
     }
@@ -791,6 +798,10 @@ extension PirateWalletSDK {
         try await decodeResultAsync("get_build_info", as: BuildInfo.self)
     }
 
+    public func setTunnelAsync(_ mode: TunnelMode) async throws {
+        _ = try await invokeResultAsync("set_tunnel", params: ["mode": tunnelModeJsonValue(mode)])
+    }
+
     public func walletRegistryExistsAsync() async throws -> Bool {
         try await boolResultAsync("wallet_registry_exists")
     }
@@ -1329,6 +1340,22 @@ extension PirateWalletAdvancedKeyManagement {
                 "mnemonic_language": mnemonicLanguage?.rawValue,
             ]
         )
+    }
+}
+
+private func tunnelModeJsonValue(_ mode: TunnelMode) throws -> Any {
+    switch mode {
+    case let .socks5(url):
+        guard !url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw PirateWalletSdkError.encodingFailed("url must be a non-empty string")
+        }
+        return ["Socks5": ["url": url]]
+    case .direct:
+        return "Direct"
+    case .tor:
+        return "Tor"
+    case .i2p:
+        return "I2p"
     }
 }
 

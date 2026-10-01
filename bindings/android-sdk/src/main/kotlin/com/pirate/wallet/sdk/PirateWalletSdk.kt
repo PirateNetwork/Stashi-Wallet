@@ -260,6 +260,24 @@ public class PirateWalletSdk(
         parseBuildInfo(invokeResult("get_build_info"))
 
     /**
+     * Selects the process-wide transport before network operations.
+     * Tor and I2P require a native library built with their embedded transport.
+     * A rejected selection never falls back to Direct.
+     */
+    public fun setTunnel(mode: TunnelMode) {
+        val wireMode = when (mode) {
+            is TunnelMode.Socks5 -> {
+                require(mode.url.isNotBlank()) { "url must be a non-empty string" }
+                JSONObject().put("Socks5", JSONObject().put("url", mode.url))
+            }
+            TunnelMode.Direct -> "Direct"
+            TunnelMode.Tor -> "Tor"
+            TunnelMode.I2p -> "I2p"
+        }
+        invokeUnit("set_tunnel", "mode" to wireMode)
+    }
+
+    /**
      * Loads the standard Sapling proving parameters from app-private files.
      *
      * Required before signing any transaction with the external-parameters native

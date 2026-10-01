@@ -591,6 +591,30 @@ class PirateWalletSdk {
     return this._call('get_build_info')
   }
 
+  setTunnel(config) {
+    if (!config || typeof config !== 'object' || Array.isArray(config)) {
+      throw new Error('setTunnel requires a config object.')
+    }
+    let mode
+    switch (config.mode) {
+      case 'socks5':
+        mode = { Socks5: { url: requireNonEmptyString(config.url, 'url') } }
+        break
+      case 'direct':
+        mode = 'Direct'
+        break
+      case 'tor':
+        mode = 'Tor'
+        break
+      case 'i2p':
+        mode = 'I2p'
+        break
+      default:
+        throw new Error('setTunnel mode must be socks5, direct, tor, or i2p.')
+    }
+    return this._call('set_tunnel', { mode })
+  }
+
   initializeSaplingParameters(config) {
     if (!config || typeof config !== 'object' || Array.isArray(config)) {
       throw new Error('initializeSaplingParameters requires a config object.')
