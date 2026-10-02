@@ -19,6 +19,7 @@ arti-client = { workspace = true, features = ["bridge-client", "onion-service-cl
 tor-rtcompat = { workspace = true, optional = true }
 
 tokio = { workspace = true }
+tokio-util = { version = "0.7", features = ["rt"] }
 hyper = { workspace = true }
 hyper-util = { version = "0.1", features = ["tokio"] }
 http-body-util = "0.1"

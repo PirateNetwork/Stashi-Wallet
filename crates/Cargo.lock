@@ -3934,6 +3934,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tokio-socks",
+ "tokio-util",
  "tonic",
  "tor-rtcompat",
  "tower 0.5.3",
@@ -5940,6 +5941,7 @@ dependencies = [
  "futures-core",
  "futures-io",
  "futures-sink",
+ "futures-util",
  "pin-project-lite",
  "tokio",
 ]
