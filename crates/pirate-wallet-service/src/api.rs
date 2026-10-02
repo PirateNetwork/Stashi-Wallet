@@ -618,29 +618,58 @@ fn install_debug_panic_hook() {
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_millis();
-                let payload = truncate_for_log(&panic_info.to_string(), 4_096);
-                let payload = payload.replace('\"', "\\\"");
-                let thread_name = std::thread::current()
-                    .name()
-                    .unwrap_or("unnamed")
-                    .replace('\"', "\\\"");
-                let panic_location = panic_info
-                    .location()
-                    .map(|loc| format!("{}:{}:{}", loc.file(), loc.line(), loc.column()))
-                    .unwrap_or_else(|| "unknown".to_string())
-                    .replace('\"', "\\\"");
-                let backtrace =
-                    truncate_for_log(&format!("{:?}", std::backtrace::Backtrace::force_capture()), 8_192)
-                        .replace('\"', "\\\"");
-                let _ = writeln!(
-                    file,
-                    r#"{{"id":"log_rust_panic","timestamp":{},"location":"api.rs","message":"unhandled rust panic","data":{{"panic":"{}","thread":"{}","panic_location":"{}","backtrace":"{}"}},"sessionId":"debug-session","runId":"run1","hypothesisId":"R"}}"#,
-                    ts, payload, thread_name, panic_location, backtrace
+                let payload = panic_info
+                    .payload()
+                    .downcast_ref::<&str>()
+                    .copied()
+                    .or_else(|| {
+                        panic_info
+                            .payload()
+                            .downcast_ref::<String>()
+                            .map(String::as_str)
+                    })
+                    .unwrap_or("");
+                let diagnostics = pirate_core::debug_log::panic_diagnostics(
+                    payload,
+                    panic_info.location().map(|loc| loc.file()),
+                    panic_info.location().map(|loc| loc.line()),
                 );
+                let current_thread = std::thread::current();
+                let thread_name = match current_thread.name() {
+                    Some("tokio-rt-worker") => "tokio-rt-worker",
+                    Some("tokio-runtime-worker") => "tokio-runtime-worker",
+                    Some("main") => "main",
+                    None => "unnamed",
+                    _ => "other",
+                };
+                // Classify the payload in memory; never write raw panic text,
+                // backtraces or user-specific source paths to the diagnostic log.
+                let event = serde_json::json!({
+                    "id": "log_rust_panic",
+                    "timestamp": ts,
+                    "location": "api.rs",
+                    "message": "rust panic",
+                    "data": {
+                        "panic": "[REDACTED_SECRET]",
+                        "thread": thread_name,
+                        "panic_location": "[REDACTED_SECRET]",
+                        "backtrace": "[REDACTED_SECRET]",
+                        "panic_category": diagnostics.panic_category,
+                        "panic_source_file": diagnostics.panic_source_file,
+                        "panic_source_line": diagnostics.panic_source_line,
+                    },
+                    "sessionId": "debug-session",
+                    "runId": "run1",
+                    "hypothesisId": "R",
+                });
+                let _ = writeln!(file, "{event}");
             });
             update_runtime_marker(|m| {
                 m.insert("pid".to_string(), std::process::id().to_string());
-                m.insert("last_heartbeat_ms".to_string(), unix_timestamp_millis().to_string());
+                m.insert(
+                    "last_heartbeat_ms".to_string(),
+                    unix_timestamp_millis().to_string(),
+                );
                 m.insert("clean_shutdown".to_string(), "0".to_string());
                 m.insert("reason".to_string(), "panic".to_string());
             });

@@ -18,6 +18,148 @@ use std::sync::Mutex;
 const DEFAULT_DEBUG_LOG_MAX_BYTES: u64 = 100 * 1024 * 1024;
 const DEFAULT_DEBUG_LOG_BACKUP_COUNT: usize = 2;
 const MAX_DEBUG_LOG_BACKUP_COUNT: usize = 10;
+const MAX_PANIC_CLASSIFICATION_BYTES: usize = 4_096;
+
+// Keep these values in sync with the Dart export redactor. Neither list may
+// contain caller-provided text: panic messages and source paths can hold secrets.
+const PANIC_CATEGORIES: &[&str] = &[
+    "runtime_async_drop",
+    "runtime_missing",
+    "runtime_nested_block_on",
+    "tor_pending_channel_drop",
+    "time_overflow",
+    "unknown",
+];
+const PANIC_SOURCE_FILES: &[&str] = &[
+    "api.rs",
+    "blocking.rs",
+    "client.rs",
+    "context.rs",
+    "lib.rs",
+    "mod.rs",
+    "preemptive.rs",
+    "runtime.rs",
+    "scheduler.rs",
+    "shutdown.rs",
+    "state.rs",
+    "time.rs",
+];
+const PRIVATE_FIELDS: &[&str] = &[
+    "mnemonic",
+    "seed",
+    "passphrase",
+    "password",
+    "pin",
+    "panic_pin",
+    "duress_passphrase",
+    "spending_key",
+    "sapling_key",
+    "orchard_key",
+    "ironwood_key",
+    "sapling_viewing_key",
+    "orchard_viewing_key",
+    "ironwood_viewing_key",
+    "viewing_key",
+    "extsk",
+    "ovk",
+    "ivk",
+    "fvk",
+    "private_key",
+    "secret",
+    "panic",
+    "panic_location",
+    "backtrace",
+    "stack",
+];
+const CORRELATING_FIELDS: &[&str] = &[
+    "wallet_id",
+    "account_id",
+    "key_id",
+    "address",
+    "addresses",
+    "z_addresses",
+    "address_id",
+    "txid",
+    "txids",
+    "spent_txid",
+    "pending_txid",
+    "recent_txids",
+    "last_seen_txids",
+    "txid_prefix",
+    "nullifier",
+    "nullifiers",
+    "nf",
+    "cmu",
+    "cmx",
+    "cmx_prefix",
+    "commitment",
+    "memo",
+    "memo_hex",
+    "path",
+    "cwd",
+    "db_path",
+    "endpoint",
+    "url",
+    "host",
+    "server",
+    "server_name",
+    "tls_server_name",
+    "tls_pin",
+];
+
+/// Bounded, non-sensitive metadata for a panic. Raw payloads and paths are omitted.
+#[derive(Debug, Clone, Copy, serde::Serialize)]
+pub struct PanicDiagnostics {
+    /// A fixed category derived from known panic messages, or `unknown`.
+    pub panic_category: &'static str,
+    /// An allowlisted source basename, never a directory or arbitrary filename.
+    pub panic_source_file: Option<&'static str>,
+    /// The compiler-reported source line, when available.
+    pub panic_source_line: Option<u32>,
+}
+
+/// Classify a panic without returning any part of its payload or source path.
+pub fn panic_diagnostics(
+    payload: &str,
+    source_file: Option<&str>,
+    source_line: Option<u32>,
+) -> PanicDiagnostics {
+    let mut end = payload.len().min(MAX_PANIC_CLASSIFICATION_BYTES);
+    while !payload.is_char_boundary(end) {
+        end -= 1;
+    }
+    let payload = &payload[..end];
+    let panic_category = if payload
+        .contains("Cannot drop a runtime in a context where blocking is not allowed")
+    {
+        "runtime_async_drop"
+    } else if payload.contains("there is no reactor running") {
+        "runtime_missing"
+    } else if payload.contains("Cannot start a runtime from within a runtime") {
+        "runtime_nested_block_on"
+    } else if payload.contains("Dropped the 'PendingChannelHandle' without removing the channel") {
+        "tor_pending_channel_drop"
+    } else if payload.contains("overflow when subtracting duration from instant")
+        || payload.contains("overflow when adding duration to instant")
+    {
+        "time_overflow"
+    } else {
+        "unknown"
+    };
+    let panic_source_file = source_file
+        .and_then(|path| path.rsplit(['/', '\\']).next())
+        .and_then(|file| {
+            PANIC_SOURCE_FILES
+                .iter()
+                .copied()
+                .find(|known| *known == file)
+        });
+    PanicDiagnostics {
+        panic_category,
+        panic_source_file,
+        panic_source_line: source_line.filter(|line| *line > 0),
+    }
+}
 
 static DEBUG_LOG_PATH: Lazy<PathBuf> = Lazy::new(resolve_debug_log_path);
 static DEBUG_LOG_FILE: Lazy<Mutex<Option<File>>> = Lazy::new(|| Mutex::new(None));
@@ -26,16 +168,23 @@ static DEBUG_LOG_BACKUP_COUNT: Lazy<usize> = Lazy::new(resolve_debug_log_backup_
 static DEBUG_LOG_ENABLED: AtomicBool = AtomicBool::new(false);
 
 static PRIVATE_JSON_FIELD: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(
-        r#"(?i)("(?:mnemonic|seed|passphrase|password|pin|panic_pin|duress_passphrase|spending_key|sapling_key|orchard_key|ironwood_key|sapling_viewing_key|orchard_viewing_key|ironwood_viewing_key|viewing_key|extsk|ovk|ivk|fvk|private_key|secret|panic|panic_location|backtrace|stack)"\s*:\s*)("[^"\\]*(?:\\.[^"\\]*)*"|[^,}\n]+)"#,
-    )
+    Regex::new(&format!(
+        r#"(?i)("(?:{})"\s*:\s*)("[^"\\]*(?:\\.[^"\\]*)*"|[^,}}\n]+)"#,
+        PRIVATE_FIELDS.join("|")
+    ))
     .expect("valid private-field redaction regex")
 });
 
+static PANIC_DIAGNOSTIC_JSON_KEY: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r#"(?i)"panic(?:_|\\u005f)(?:category|source(?:_|\\u005f)(?:file|line))"\s*:"#)
+        .expect("valid panic metadata key regex")
+});
+
 static CORRELATING_JSON_FIELD: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(
-        r#"(?i)("(?:wallet_id|account_id|key_id|address|addresses|z_addresses|address_id|txid|txids|spent_txid|pending_txid|recent_txids|last_seen_txids|txid_prefix|nullifier|nullifiers|nf|cmu|cmx|cmx_prefix|commitment|memo|memo_hex|path|cwd|db_path|endpoint|url|host|server|server_name|tls_server_name|tls_pin)"\s*:\s*)("[^"\\]*(?:\\.[^"\\]*)*"|[^,}\n]+)"#,
-    )
+    Regex::new(&format!(
+        r#"(?i)("(?:{})"\s*:\s*)("[^"\\]*(?:\\.[^"\\]*)*"|[^,}}\n]+)"#,
+        CORRELATING_FIELDS.join("|")
+    ))
     .expect("valid correlating-field redaction regex")
 });
 
@@ -128,8 +277,72 @@ fn redact_secret_assignment(text: String) -> String {
         .into_owned()
 }
 
+fn redact_json_value(value: &mut serde_json::Value) {
+    use serde_json::Value;
+    match value {
+        Value::Object(fields) => {
+            for (key, value) in fields.iter_mut() {
+                let key = key.to_ascii_lowercase();
+                match key.as_str() {
+                    "panic_category" => {
+                        let category = value
+                            .as_str()
+                            .filter(|category| PANIC_CATEGORIES.contains(category))
+                            .unwrap_or("unknown");
+                        *value = Value::String(category.to_string());
+                    }
+                    "panic_source_file" => {
+                        *value = value
+                            .as_str()
+                            .filter(|file| PANIC_SOURCE_FILES.contains(file))
+                            .map(|file| Value::String(file.to_string()))
+                            .unwrap_or(Value::Null);
+                    }
+                    "panic_source_line" => {
+                        *value = value
+                            .as_u64()
+                            .filter(|line| *line > 0 && *line <= u32::MAX as u64)
+                            .map(|line| Value::Number(line.into()))
+                            .unwrap_or(Value::Null);
+                    }
+                    key if PRIVATE_FIELDS.contains(&key) => {
+                        *value = Value::String("[REDACTED_SECRET]".to_string());
+                    }
+                    key if CORRELATING_FIELDS.contains(&key) => {
+                        *value = Value::String("[REDACTED]".to_string());
+                    }
+                    _ => redact_json_value(value),
+                }
+            }
+        }
+        Value::Array(values) => values.iter_mut().for_each(redact_json_value),
+        _ => {}
+    }
+}
+
 fn redact_log_text(text: &str) -> String {
-    let text = redact_json_field(text.to_string(), &PRIVATE_JSON_FIELD, "[REDACTED_SECRET]");
+    // Debug logs are JSONL. Consume complete JSON values, including arrays and
+    // objects, before the legacy text fallback: regex fragments are not safe
+    // substitutes for nested metadata. Discard malformed panic entries entirely.
+    let text = text
+        .split_inclusive('\n')
+        .map(|line| {
+            let (body, newline) = line
+                .strip_suffix('\n')
+                .map_or((line, ""), |body| (body, "\n"));
+            match serde_json::from_str::<serde_json::Value>(body) {
+                Ok(mut value) => {
+                    redact_json_value(&mut value);
+                    format!("{}{newline}", value)
+                }
+                Err(_) if PANIC_DIAGNOSTIC_JSON_KEY.is_match(body) => {
+                    format!("[REDACTED_MALFORMED_PANIC_EVENT]{newline}")
+                }
+                Err(_) => line.to_string(),
+            }
+        })
+        .collect::<String>();
+    let text = redact_json_field(text, &PRIVATE_JSON_FIELD, "[REDACTED_SECRET]");
     let text = redact_json_field(text, &CORRELATING_JSON_FIELD, "[REDACTED]");
     let text = redact_secret_assignment(text);
     let text = PIRATE_ADDRESS
@@ -341,7 +554,160 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::redact_log_text;
+    use super::{panic_diagnostics, redact_log_text};
+
+    #[test]
+    fn classifies_known_panics_without_exposing_payloads_or_paths() {
+        let cases = [
+            (
+                "Cannot drop a runtime in a context where blocking is not allowed",
+                "runtime_async_drop",
+            ),
+            (
+                "there is no reactor running, must be called from the context of a Tokio runtime",
+                "runtime_missing",
+            ),
+            (
+                "Cannot start a runtime from within a runtime",
+                "runtime_nested_block_on",
+            ),
+            (
+                "Dropped the 'PendingChannelHandle' without removing the channel",
+                "tor_pending_channel_drop",
+            ),
+            (
+                "overflow when subtracting duration from instant",
+                "time_overflow",
+            ),
+            ("wallet-1 mnemonic=abandon abandon", "unknown"),
+        ];
+        for (payload, category) in cases {
+            let diagnostics =
+                panic_diagnostics(payload, Some("/Users/alice/private/shutdown.rs"), Some(51));
+            assert_eq!(diagnostics.panic_category, category);
+            assert_eq!(diagnostics.panic_source_file, Some("shutdown.rs"));
+            assert_eq!(diagnostics.panic_source_line, Some(51));
+            let json = serde_json::to_string(&diagnostics).unwrap();
+            assert!(!json.contains("alice"));
+            assert!(!json.contains("wallet-1"));
+            assert!(!json.contains("abandon"));
+        }
+        let diagnostics = panic_diagnostics("secret", Some(r"C:\Users\alice\seed-words.rs"), None);
+        assert_eq!(diagnostics.panic_source_file, None);
+        let diagnostics = panic_diagnostics("secret", Some(r"C:\Users\alice\shutdown.rs"), Some(0));
+        assert_eq!(diagnostics.panic_source_file, Some("shutdown.rs"));
+        assert_eq!(diagnostics.panic_source_line, None);
+    }
+
+    #[test]
+    fn panic_classification_is_bounded_and_utf8_safe() {
+        let payload = format!(
+            "{}Cannot drop a runtime in a context where blocking is not allowed",
+            "€".repeat(2_000)
+        );
+        assert_eq!(
+            panic_diagnostics(&payload, None, None).panic_category,
+            "unknown"
+        );
+    }
+
+    #[test]
+    fn retains_only_allowlisted_panic_metadata_when_writing_logs() {
+        let raw = serde_json::json!({
+            "panic": "seed=abandon \"wallet-1\" abandon",
+            "panic_location": "/Users/alice/wallet-1/private.rs:51:9",
+            "backtrace": "mnemonic=abandon abandon",
+            "panic_category": "runtime_async_drop",
+            "panic_source_file": "shutdown.rs",
+            "panic_source_line": 51,
+        })
+        .to_string();
+        let redacted: serde_json::Value = serde_json::from_str(&redact_log_text(&raw)).unwrap();
+        assert_eq!(redacted["panic_category"], "runtime_async_drop");
+        assert_eq!(redacted["panic_source_file"], "shutdown.rs");
+        assert_eq!(redacted["panic_source_line"], 51);
+        for field in ["panic", "panic_location", "backtrace"] {
+            assert_eq!(redacted[field], "[REDACTED_SECRET]");
+        }
+        let exported = redacted.to_string();
+        for secret in ["abandon", "alice", "wallet-1"] {
+            assert!(!exported.contains(secret));
+        }
+
+        let untrusted = serde_json::json!({
+            "panic_category": "wallet-1 seed=abandon",
+            "panic_source_file": "/Users/alice/shutdown.rs",
+            "panic_source_line": "wallet-1",
+        })
+        .to_string();
+        let redacted: serde_json::Value =
+            serde_json::from_str(&redact_log_text(&untrusted)).unwrap();
+        assert_eq!(redacted["panic_category"], "unknown");
+        assert!(redacted["panic_source_file"].is_null());
+        assert!(redacted["panic_source_line"].is_null());
+    }
+
+    #[test]
+    fn panic_source_lines_are_positive_u32_integers() {
+        for value in [
+            serde_json::json!(0),
+            serde_json::json!(-1),
+            serde_json::json!(u32::MAX as u64 + 1),
+            serde_json::json!(51.5),
+            serde_json::json!("51"),
+            serde_json::Value::Null,
+        ] {
+            let raw = serde_json::json!({"panic_source_line": value}).to_string();
+            let redacted: serde_json::Value = serde_json::from_str(&redact_log_text(&raw)).unwrap();
+            assert!(redacted["panic_source_line"].is_null());
+        }
+        let raw = serde_json::json!({"panic_source_line": u32::MAX}).to_string();
+        let redacted: serde_json::Value = serde_json::from_str(&redact_log_text(&raw)).unwrap();
+        assert_eq!(redacted["panic_source_line"], u32::MAX);
+    }
+
+    #[test]
+    fn redacts_complete_nested_metadata_values_and_escaped_keys() {
+        let raw = r#"{"data":[{"panic\u005fcategory":["runtime_async_drop","wallet-1"],"panic_source_file":{"allowed":"shutdown.rs","private":"alice"},"panic_source_line":[51,"abandon"]},{"PANIC_CATEGORY":"runtime_async_drop","panic":["private-payload",{"details":"secret-tail"}],"addresses":["private-address","private-address-tail"]}]}"#;
+        let exported = redact_log_text(raw);
+        let parsed: serde_json::Value = serde_json::from_str(&exported).unwrap();
+        assert_eq!(parsed["data"][0]["panic_category"], "unknown");
+        assert!(parsed["data"][0]["panic_source_file"].is_null());
+        assert!(parsed["data"][0]["panic_source_line"].is_null());
+        assert_eq!(parsed["data"][1]["PANIC_CATEGORY"], "runtime_async_drop");
+        assert_eq!(parsed["data"][1]["panic"], "[REDACTED_SECRET]");
+        assert_eq!(parsed["data"][1]["addresses"], "[REDACTED]");
+        for secret in [
+            "wallet-1",
+            "alice",
+            "abandon",
+            "private-payload",
+            "secret-tail",
+            "private-address",
+        ] {
+            assert!(!exported.contains(secret));
+        }
+    }
+
+    #[test]
+    fn malformed_panic_entries_fail_closed_and_keep_jsonl_boundaries() {
+        let raw = concat!(
+            "{\"panic_source_line\":[\"wallet-1\",{\"details\":\"abandon\"}\n",
+            "{\"data\":{\"panic_category\":\"runtime_async_drop\"}}\n",
+            "{\"panic\\u005fcategory\":{\"secret-tail\":\"alice\"}\n",
+        );
+        let exported = redact_log_text(raw);
+        let lines: Vec<_> = exported.lines().collect();
+        assert_eq!(lines.len(), 3);
+        assert_eq!(lines[0], "[REDACTED_MALFORMED_PANIC_EVENT]");
+        assert_eq!(lines[2], "[REDACTED_MALFORMED_PANIC_EVENT]");
+        let parsed: serde_json::Value = serde_json::from_str(lines[1]).unwrap();
+        assert_eq!(parsed["data"]["panic_category"], "runtime_async_drop");
+        assert!(exported.ends_with('\n'));
+        for secret in ["wallet-1", "abandon", "alice", "secret-tail"] {
+            assert!(!exported.contains(secret));
+        }
+    }
 
     #[test]
     fn redacts_private_and_correlating_fields() {
