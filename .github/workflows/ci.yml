@@ -1993,6 +1993,10 @@ jobs:
           GITHUB_API_PUBLIC_READONLY_TOKEN: ${{ github.token }}
         run: |
           REPRODUCIBLE=1 ./scripts/build-linux.sh deb
+          deb_file=dist/linux/Stashi-Wallet-amd64.deb
+          test "$(dpkg-deb --field "$deb_file" Architecture)" = amd64
+          depends="$(dpkg-deb --field "$deb_file" Depends)"
+          [[ "$depends" == *libsecret-1-0* ]] || exit 1
 
       - name: Generate SBOM
         run: |
@@ -2139,7 +2143,7 @@ jobs:
           deb_file=dist/linux/Stashi-Wallet-arm64.deb
           test "$(dpkg-deb --field "$deb_file" Architecture)" = arm64
           depends="$(dpkg-deb --field "$deb_file" Depends)"
-          for dependency in libudev1 libgcc-s1 'libc6 (>= 2.35)'; do
+          for dependency in libsecret-1-0 libudev1 libgcc-s1 'libc6 (>= 2.35)'; do
             [[ "$depends" == *"$dependency"* ]] || exit 1
           done
           package_root="$RUNNER_TEMP/stashi-arm64-package"

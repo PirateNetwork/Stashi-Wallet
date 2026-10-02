@@ -1,5 +1,9 @@
 from pathlib import Path
+import os
 import re
+import shutil
+import subprocess
+import tempfile
 import unittest
 
 
@@ -103,6 +107,66 @@ class LinuxPackagingPolicyTest(unittest.TestCase):
         )
         self.assertNotIn("cmp --silent --bytes", self.linux_build)
         self.assertIn("grep -aFq 'libfuse.so.2'", self.linux_build)
+
+
+@unittest.skipUnless(
+    os.name != "nt" and shutil.which("dpkg-deb"),
+    "Debian package inspection requires Linux and dpkg-deb",
+)
+class DebianRuntimeDependenciesTest(unittest.TestCase):
+    def test_emitted_packages_require_libsecret_on_both_architectures(self) -> None:
+        # Exercise the production packaging function with a small fixture bundle,
+        # avoiding a Flutter rebuild while inspecting real .deb control metadata.
+        match = re.search(
+            r"(?ms)^build_deb\(\) \{.*?^\}\n",
+            LINUX_BUILD.read_text(encoding="utf-8"),
+        )
+        self.assertIsNotNone(match)
+        script = (
+            "set -euo pipefail\n"
+            "log() { :; }\n"
+            "normalize_mtime() { :; }\n"
+            "create_apt_repo_metadata() { :; }\n"
+            f"{match.group(0)}\n"
+            "build_deb\n"
+        )
+        for architecture in ("amd64", "arm64"):
+            with self.subTest(architecture=architecture), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                bundle = root / "bundle"
+                bundle.mkdir()
+                (bundle / "stashi-wallet").write_text(
+                    "#!/bin/sh\nexit 0\n", encoding="utf-8"
+                )
+                (bundle / "stashi-wallet").chmod(0o755)
+                output = root / "output"
+                output.mkdir()
+                env = os.environ.copy()
+                env.update(
+                    PROJECT_ROOT=str(root),
+                    BUNDLE_DIR=str(bundle),
+                    OUTPUT_DIR=str(output),
+                    DEB_ARCH=architecture,
+                    APP_VERSION_SEMVER="0.0.1",
+                )
+                result = subprocess.run(
+                    ["bash", "-s"], input=script, env=env, cwd=root,
+                    text=True, capture_output=True,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                package = output / f"Stashi-Wallet-{architecture}.deb"
+                dependencies = subprocess.check_output(
+                    ["dpkg-deb", "--field", str(package), "Depends"], text=True
+                )
+                self.assertIn(
+                    "libsecret-1-0", {item.strip() for item in dependencies.split(",")}
+                )
+                self.assertEqual(
+                    subprocess.check_output(
+                        ["dpkg-deb", "--field", str(package), "Architecture"], text=True
+                    ).strip(),
+                    architecture,
+                )
 
 
 if __name__ == "__main__":

@@ -469,7 +469,9 @@ EOF
 build_deb() {
     log "Creating Debian package..."
 
-    local deb_depends="libgtk-3-0, libglib2.0-0, libsqlite3-0"
+    # The launcher and secure-storage plugin dynamically link to libsecret.
+    # Declare the runtime library so APT installs it on either architecture.
+    local deb_depends="libgtk-3-0, libglib2.0-0, libsqlite3-0, libsecret-1-0"
     if [[ "$DEB_ARCH" == arm64 ]]; then
         # KDF needs libudev/libgcc; the Linux build baseline is glibc 2.35.
         deb_depends+=", libudev1, libgcc-s1, libc6 (>= 2.35)"
