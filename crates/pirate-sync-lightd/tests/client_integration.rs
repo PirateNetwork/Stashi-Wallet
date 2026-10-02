@@ -386,8 +386,8 @@ mod live_tests {
             .expect("Failed to get latest");
 
         // Request 50 blocks in batches of 20
-        let start = (latest - 50) as u64;
-        let end = (latest - 1) as u64;
+        let start = latest - 50;
+        let end = latest - 1;
 
         let blocks = client
             .get_block_range_batched(start, end, 20)

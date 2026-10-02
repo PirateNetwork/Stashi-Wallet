@@ -133,15 +133,43 @@ impl TransportMode {
 }
 
 struct GlobalTransportState {
-    manager: Arc<RwLock<Option<Arc<NetTransportManager>>>>,
+    // Only clone/take/publish under this lock. Selection must be able to
+    // revoke old connections synchronously, before asynchronous startup.
+    manager: Arc<StdRwLock<Option<Arc<NetTransportManager>>>>,
+    retired: Arc<StdRwLock<Vec<Arc<NetTransportManager>>>>,
     initialization: Arc<Mutex<()>>,
+    generation: AtomicU64,
+    shutdown_generation: AtomicU64,
 }
 
 impl GlobalTransportState {
+    fn generation(&self) -> u64 {
+        self.generation.load(Ordering::Acquire)
+    }
+
+    fn ensure_generation(&self, generation: u64) -> Result<()> {
+        if self.generation() != generation
+            || self.shutdown_generation.load(Ordering::Acquire) == generation
+        {
+            return Err(Error::Cancelled);
+        }
+        Ok(())
+    }
+
     async fn get_or_init(
         self: Arc<Self>,
         requested: NetTransportConfig,
     ) -> Result<Arc<NetTransportManager>> {
+        let generation = self.generation();
+        self.get_or_init_for_generation(requested, generation).await
+    }
+
+    async fn get_or_init_for_generation(
+        self: Arc<Self>,
+        requested: NetTransportConfig,
+        generation: u64,
+    ) -> Result<Arc<NetTransportManager>> {
+        self.ensure_generation(generation)?;
         requested.mode.ensure_available().map_err(map_net_error)?;
         // Never satisfy an old request by silently routing it through the new
         // transport. The endpoint and transport are one privacy decision: a
@@ -156,51 +184,68 @@ impl GlobalTransportState {
         // bootstrap must not update the shared manager after the new Direct
         // request has already configured it (or vice versa).
         let _initialization_guard = Arc::clone(&self.initialization).lock_owned().await;
+        self.ensure_generation(generation)?;
         if desired_transport_config()
             .as_ref()
             .is_some_and(|desired| desired != &requested)
         {
             return Err(Error::Cancelled);
         }
-        let config = requested.clone();
-        if let Some(manager) = {
-            let guard = Arc::clone(&self.manager).read_owned().await;
-            guard.as_ref().map(Arc::clone)
-        } {
-            Arc::clone(&manager)
-                .update_config(config)
-                .await
-                .map_err(map_net_error)?;
-            if desired_transport_config()
-                .as_ref()
-                .is_some_and(|desired| desired != &requested)
-            {
-                return Err(Error::Cancelled);
+        self.shutdown_retired().await;
+        self.ensure_generation(generation)?;
+        if desired_transport_config()
+            .as_ref()
+            .is_some_and(|desired| desired != &requested)
+        {
+            return Err(Error::Cancelled);
+        }
+        if let Some(manager) = self.clone().get().await {
+            if manager.matches_config(&requested) && !manager.is_invalidated() {
+                return Ok(manager);
             }
-            return Ok(manager);
+            self.retire_current();
+            self.shutdown_retired().await;
+            self.ensure_generation(generation)?;
         }
 
         let created = Arc::new(
-            NetTransportManager::new(config)
+            NetTransportManager::new(requested.clone())
                 .await
                 .map_err(map_net_error)?,
         );
-        *Arc::clone(&self.manager).write_owned().await = Some(Arc::clone(&created));
-        if desired_transport_config()
-            .as_ref()
-            .is_some_and(|desired| desired != &requested)
         {
-            return Err(Error::Cancelled);
+            // Use the same lock order as select_transport. A selection made
+            // during creation must not be followed by stale publication.
+            let desired = DESIRED_TRANSPORT_CONFIG
+                .read()
+                .map_err(|_| Error::Connection("Transport selection lock poisoned".into()))?;
+            if self.ensure_generation(generation).is_err()
+                || desired
+                    .as_ref()
+                    .is_some_and(|selected| selected != &requested)
+            {
+                created.invalidate_connections();
+                self.retired
+                    .write()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .push(Arc::clone(&created));
+                return Err(Error::Cancelled);
+            }
+            let mut guard = self
+                .manager
+                .write()
+                .map_err(|_| Error::Connection("Transport manager lock poisoned".into()))?;
+            *guard = Some(Arc::clone(&created));
         }
         Ok(created)
     }
 
     async fn get(self: Arc<Self>) -> Option<Arc<NetTransportManager>> {
-        let manager = {
-            let guard = Arc::clone(&self.manager).read_owned().await;
-            guard.as_ref().map(Arc::clone)
-        };
-        manager
+        self.manager
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+            .map(Arc::clone)
     }
 
     async fn get_matching(
@@ -216,27 +261,71 @@ impl GlobalTransportState {
         let config = resolve_transport_config(requested);
         self.get()
             .await
-            .filter(|manager| manager.matches_config(&config))
+            .filter(|manager| manager.matches_config(&config) && !manager.is_invalidated())
+    }
+
+    fn retire_current(&self) {
+        let mut guard = self
+            .manager
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(manager) = guard.take() {
+            manager.invalidate_connections();
+            self.retired
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .push(manager);
+        }
+    }
+
+    async fn shutdown_retired(&self) {
+        let retired = self
+            .retired
+            .write()
+            .map(|mut guard| std::mem::take(&mut *guard))
+            .unwrap_or_else(|poisoned| std::mem::take(&mut *poisoned.into_inner()));
+        for manager in retired {
+            manager.shutdown().await;
+        }
     }
 
     async fn shutdown(self: Arc<Self>) {
-        let _initialization_guard = Arc::clone(&self.initialization).lock_owned().await;
-        let manager = {
-            let mut guard = Arc::clone(&self.manager).write_owned().await;
-            let manager = guard.as_ref().map(Arc::clone);
-            *guard = None;
-            manager
+        let generation = {
+            // Keep the selected private mode while teardown waits. Clearing
+            // it first would allow queued old Direct requests to initialise.
+            let _selection = DESIRED_TRANSPORT_CONFIG
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let generation = self
+                .generation
+                .fetch_add(1, Ordering::AcqRel)
+                .wrapping_add(1);
+            self.shutdown_generation
+                .store(generation, Ordering::Release);
+            self.retire_current();
+            generation
         };
-        if let Some(manager) = manager {
-            manager.shutdown().await;
+        let _initialization_guard = Arc::clone(&self.initialization).lock_owned().await;
+        self.shutdown_retired().await;
+        let mut selected = DESIRED_TRANSPORT_CONFIG
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if self.generation() == generation {
+            *selected = None;
+            // Clients created while teardown was pending must not reopen
+            // their captured transport after it completes either.
+            self.generation.fetch_add(1, Ordering::AcqRel);
         }
     }
 }
 
 static GLOBAL_TRANSPORT: Lazy<Arc<GlobalTransportState>> = Lazy::new(|| {
     Arc::new(GlobalTransportState {
-        manager: Arc::new(RwLock::new(None)),
+        manager: Arc::new(StdRwLock::new(None)),
+        retired: Arc::new(StdRwLock::new(Vec::new())),
         initialization: Arc::new(Mutex::new(())),
+        generation: AtomicU64::new(0),
+        shutdown_generation: AtomicU64::new(u64::MAX),
     })
 });
 
@@ -246,6 +335,12 @@ static DESIRED_TRANSPORT_CONFIG: Lazy<StdRwLock<Option<NetTransportConfig>>> =
 static TOR_CONFIG_OVERRIDE: Lazy<std::sync::RwLock<Option<NetTorConfig>>> =
     Lazy::new(|| std::sync::RwLock::new(None));
 
+/// Revision of the selected transport, including connection teardown.
+/// Callers can avoid restarting synchronization for idempotent settings.
+pub fn transport_selection_generation() -> u64 {
+    GLOBAL_TRANSPORT.generation()
+}
+
 /// Record a user-selected transport before scheduling its asynchronous startup.
 /// A delayed bootstrap must not be allowed to replace a newer selection.
 pub fn select_transport(mode: TransportMode, socks5_url: Option<String>) -> Result<()> {
@@ -254,7 +349,17 @@ pub fn select_transport(mode: TransportMode, socks5_url: Option<String>) -> Resu
     let mut guard = DESIRED_TRANSPORT_CONFIG
         .write()
         .map_err(|_| Error::Connection("Transport selection lock poisoned".to_string()))?;
-    *guard = Some(config);
+    if guard.as_ref() != Some(&config)
+        || GLOBAL_TRANSPORT.shutdown_generation.load(Ordering::Acquire)
+            == GLOBAL_TRANSPORT.generation()
+    {
+        // Revoke existing streams before returning to the caller. Changing
+        // only the manager configuration cannot revoke an established TCP
+        // connection or an Auto-pool clone of an old gRPC channel.
+        GLOBAL_TRANSPORT.retire_current();
+        GLOBAL_TRANSPORT.generation.fetch_add(1, Ordering::AcqRel);
+        *guard = Some(config);
+    }
     Ok(())
 }
 
@@ -267,12 +372,15 @@ fn select_transport_if_unset(config: &NetTransportConfig) -> Result<()> {
         Some(selected) if selected != config => Err(Error::Cancelled),
         Some(_) => Ok(()),
         None => {
+            GLOBAL_TRANSPORT.retire_current();
+            GLOBAL_TRANSPORT.generation.fetch_add(1, Ordering::AcqRel);
             *guard = Some(config.clone());
             Ok(())
         }
     }
 }
 
+#[cfg(test)]
 fn clear_desired_transport_config() {
     if let Ok(mut guard) = DESIRED_TRANSPORT_CONFIG.write() {
         *guard = None;
@@ -581,10 +689,21 @@ fn build_transport_config_from_mode(
         None
     };
 
-    let mut tor = tor_config_from_env();
+    // Inactive tunnel preferences are not part of this transport's identity.
+    // Saving future Tor bridge settings while using Direct must not invalidate
+    // a Direct client or make its reconnect look like a stale Tor selection.
+    let mut tor = if net_mode == NetTransportMode::Tor {
+        tor_config_from_env()
+    } else {
+        NetTorConfig::default()
+    };
     tor.enabled = net_mode == NetTransportMode::Tor;
 
-    let mut i2p = i2p_config_from_env();
+    let mut i2p = if net_mode == NetTransportMode::I2p {
+        i2p_config_from_env()
+    } else {
+        NetI2pConfig::default()
+    };
     i2p.enabled = net_mode == NetTransportMode::I2p;
 
     let mut dns_config = NetDnsConfig::default();
@@ -1000,7 +1119,6 @@ pub async fn i2p_status() -> Option<pirate_net::I2pStatus> {
 
 /// Shutdown any active transport manager.
 pub async fn shutdown_transport() {
-    clear_desired_transport_config();
     GLOBAL_TRANSPORT.clone().shutdown().await;
 }
 
@@ -1589,6 +1707,7 @@ fn validate_compact_cache_tip(
 /// transaction broadcast through the configured privacy transport.
 pub struct LightClient {
     config: LightClientConfig,
+    transport_generation: u64,
     channel: Arc<Mutex<Option<Channel>>>,
     endpoint_pool: Arc<RwLock<EndpointPoolState>>,
     endpoint_pool_probe_inflight: Arc<AtomicBool>,
@@ -1646,6 +1765,7 @@ impl LightClient {
                 endpoint,
                 ..Default::default()
             },
+            transport_generation: GLOBAL_TRANSPORT.generation(),
             channel: Arc::new(Mutex::new(None)),
             endpoint_pool: Arc::new(RwLock::new(EndpointPoolState::default())),
             endpoint_pool_probe_inflight: Arc::new(AtomicBool::new(false)),
@@ -1658,6 +1778,7 @@ impl LightClient {
     pub fn with_config(config: LightClientConfig) -> Self {
         Self {
             config,
+            transport_generation: GLOBAL_TRANSPORT.generation(),
             channel: Arc::new(Mutex::new(None)),
             endpoint_pool: Arc::new(RwLock::new(EndpointPoolState::default())),
             endpoint_pool_probe_inflight: Arc::new(AtomicBool::new(false)),
@@ -1674,6 +1795,7 @@ impl LightClient {
                 retry: retry_config,
                 ..Default::default()
             },
+            transport_generation: GLOBAL_TRANSPORT.generation(),
             channel: Arc::new(Mutex::new(None)),
             endpoint_pool: Arc::new(RwLock::new(EndpointPoolState::default())),
             endpoint_pool_probe_inflight: Arc::new(AtomicBool::new(false)),
@@ -1690,6 +1812,18 @@ impl LightClient {
     /// Get current transport mode.
     pub fn transport_mode(&self) -> TransportMode {
         self.config.transport
+    }
+
+    fn ensure_selected_transport(&self) -> Result<()> {
+        GLOBAL_TRANSPORT.ensure_generation(self.transport_generation)?;
+        let requested = build_transport_config(&self.config)?;
+        if desired_transport_config()
+            .as_ref()
+            .is_some_and(|selected| selected != &requested)
+        {
+            return Err(Error::Cancelled);
+        }
+        Ok(())
     }
 
     /// Whether this client has explicitly configured failover endpoints.
@@ -1720,6 +1854,7 @@ impl LightClient {
         config.retry.max_attempts = 1;
         Some(Self {
             config,
+            transport_generation: self.transport_generation,
             channel: Arc::new(Mutex::new(None)),
             endpoint_pool: Arc::clone(&self.endpoint_pool),
             endpoint_pool_probe_inflight: Arc::clone(&self.endpoint_pool_probe_inflight),
@@ -1729,6 +1864,7 @@ impl LightClient {
     }
 
     async fn connected_candidate_client(&self, index: usize) -> Option<Self> {
+        self.ensure_selected_transport().ok()?;
         // A stripe worker is already bound to one validated endpoint. Its
         // shared pool indices belong to the parent, not its local index zero.
         if !self.has_failover_endpoints() {
@@ -1759,6 +1895,7 @@ impl LightClient {
         config.retry.max_attempts = 1;
         Some(Self {
             config,
+            transport_generation: self.transport_generation,
             channel: Arc::new(Mutex::new(Some(channel))),
             endpoint_pool: Arc::clone(&self.endpoint_pool),
             endpoint_pool_probe_inflight: Arc::clone(&self.endpoint_pool_probe_inflight),
@@ -1771,8 +1908,11 @@ impl LightClient {
         1usize.saturating_add(self.config.failover_endpoints.len())
     }
 
-    async fn probe_candidate(config: LightClientConfig) -> Result<(LightdInfo, u64, Channel)> {
-        let channel = Self::try_connect_for_probe(config).await?;
+    async fn probe_candidate(
+        config: LightClientConfig,
+        generation: u64,
+    ) -> Result<(LightdInfo, u64, Channel)> {
+        let channel = Self::try_connect_for_probe(config, generation).await?;
         let (info, tip) = Self::probe_connected_candidate(channel.clone()).await?;
         Ok((info, tip, channel))
     }
@@ -1962,9 +2102,11 @@ impl LightClient {
             };
             pending_probes.push(async move {
                 let started = Instant::now();
-                let result =
-                    tokio::time::timeout(probe_timeout, Self::probe_candidate(candidate.config))
-                        .await;
+                let result = tokio::time::timeout(
+                    probe_timeout,
+                    Self::probe_candidate(candidate.config, candidate.transport_generation),
+                )
+                .await;
                 (index, started.elapsed(), result)
             });
         }
@@ -2187,6 +2329,7 @@ impl LightClient {
     }
 
     async fn canonical_pool_tip(&self, force_refresh: bool) -> Option<u64> {
+        self.ensure_selected_transport().ok()?;
         if !self.has_failover_endpoints() {
             return None;
         }
@@ -2449,17 +2592,19 @@ impl LightClient {
             .mode
             .ensure_available()
             .map_err(map_net_error)?;
+        self.ensure_selected_transport()?;
         if self.has_failover_endpoints() && self.config.tls.spki_pin.is_none() {
             // Initialize the selected transport once before concurrent probes.
             // Probe channels reuse it and cannot silently switch transport.
             let transport_config = build_transport_config(&self.config)?;
             GLOBAL_TRANSPORT
                 .clone()
-                .get_or_init(transport_config)
+                .get_or_init_for_generation(transport_config, self.transport_generation)
                 .await?;
             // Every candidate gets one bounded readiness probe. A dead primary
             // must not consume its retry budget before alternates even start.
             let health = self.clone().probe_endpoints_owned(None).await;
+            self.ensure_selected_transport()?;
             Self::report_endpoint_pool_health(&health);
             if health.iter().any(|endpoint| endpoint.healthy) {
                 info!(
@@ -2481,6 +2626,7 @@ impl LightClient {
     async fn connect_single_endpoint(self) -> Result<()> {
         let LightClient {
             config,
+            transport_generation,
             channel: channel_state,
             ..
         } = self;
@@ -2488,13 +2634,16 @@ impl LightClient {
         let mut backoff = config.retry.initial_backoff;
 
         loop {
-            match Self::try_connect(config.clone(), true).await {
+            match Self::try_connect(config.clone(), true, transport_generation).await {
                 Ok(channel) => {
                     info!("Connected to lightwalletd at {}", config.endpoint);
                     *channel_state.lock_owned().await = Some(channel);
                     return Ok(());
                 }
                 Err(e) => {
+                    if matches!(e, Error::Cancelled) {
+                        return Err(e);
+                    }
                     attempt += 1;
                     if attempt >= config.retry.max_attempts {
                         error!("Failed to connect after {} attempts: {}", attempt, e);
@@ -2522,6 +2671,9 @@ impl LightClient {
     /// Disconnect from server
     pub async fn disconnect(&self) {
         *self.channel.lock().await = None;
+        // Retained Auto-pool channels can otherwise resurrect the old
+        // transport on the next cached-tip read or failover attempt.
+        *self.endpoint_pool.write().await = EndpointPoolState::default();
         info!("Disconnected from lightwalletd");
     }
 
@@ -2613,7 +2765,8 @@ impl LightClient {
         Ok(endpoint)
     }
 
-    async fn try_connect_for_probe(config: LightClientConfig) -> Result<Channel> {
+    async fn try_connect_for_probe(config: LightClientConfig, generation: u64) -> Result<Channel> {
+        GLOBAL_TRANSPORT.ensure_generation(generation)?;
         if config.tls.spki_pin.is_some() {
             return Err(Error::Connection(
                 "pinned endpoints cannot participate in automatic endpoint pools".to_string(),
@@ -2632,10 +2785,16 @@ impl LightClient {
         {
             return Err(Error::Cancelled);
         }
+        GLOBAL_TRANSPORT.ensure_generation(generation)?;
         Ok(manager.create_grpc_channel_lazy(endpoint))
     }
 
-    async fn try_connect(config: LightClientConfig, initialize_transport: bool) -> Result<Channel> {
+    async fn try_connect(
+        config: LightClientConfig,
+        initialize_transport: bool,
+        generation: u64,
+    ) -> Result<Channel> {
+        GLOBAL_TRANSPORT.ensure_generation(generation)?;
         let endpoint_url = config.endpoint.clone();
         debug!("Connecting to {} via {:?}", endpoint_url, config.transport);
 
@@ -2664,7 +2823,7 @@ impl LightClient {
         let manager = if initialize_transport {
             GLOBAL_TRANSPORT
                 .clone()
-                .get_or_init(transport_config.clone())
+                .get_or_init_for_generation(transport_config.clone(), generation)
                 .await?
         } else {
             GLOBAL_TRANSPORT
@@ -2673,6 +2832,7 @@ impl LightClient {
                 .await
                 .ok_or_else(|| Error::Cancelled)?
         };
+        GLOBAL_TRANSPORT.ensure_generation(generation)?;
         if !initialize_transport
             && desired_transport_config()
                 .as_ref()
@@ -2767,6 +2927,7 @@ impl LightClient {
     }
 
     async fn get_client(&self) -> Result<CompactTxStreamerClient<Channel>> {
+        self.ensure_selected_transport()?;
         let guard = Arc::clone(&self.channel).lock_owned().await;
         let channel = guard
             .as_ref()
@@ -2808,6 +2969,7 @@ impl LightClient {
     ///
     /// Returns the current blockchain tip height.
     pub async fn get_latest_block(&self) -> Result<u64> {
+        self.ensure_selected_transport()?;
         // #region agent log
         pirate_core::debug_log::with_locked_file(|file| {
             let ts = std::time::SystemTime::now()
@@ -3068,12 +3230,14 @@ impl LightClient {
         sender: &mpsc::Sender<Result<CompactBlockChunk>>,
         assembler: &mut OrderedBlockAssembler,
     ) -> Result<()> {
+        self.ensure_selected_transport()?;
         let max_rounds = self.config.retry.max_attempts.max(1);
         let mut round = 0u32;
         let mut backoff = self.config.retry.initial_backoff;
         let mut last_error = None;
 
         while assembler.next_height() < end_exclusive && round < max_rounds {
+            self.ensure_selected_transport()?;
             if sender.is_closed() {
                 return Err(Error::Cancelled);
             }
@@ -4266,7 +4430,7 @@ impl LightClient {
     /// Move a failed RPC to an already validated, up-to-date pool member.
     /// Candidate clients have no failover pool and must never rotate the parent.
     async fn rotate_failed_endpoint(&self) -> bool {
-        if !self.has_failover_endpoints() {
+        if self.ensure_selected_transport().is_err() || !self.has_failover_endpoints() {
             return false;
         }
         let replacement = {
@@ -4325,9 +4489,16 @@ impl LightClient {
         let mut backoff = self.config.retry.initial_backoff;
 
         loop {
-            match operation().await {
+            self.ensure_selected_transport()?;
+            let result = operation().await;
+            match result {
                 Ok(result) => return Ok(result),
                 Err(e) => {
+                    // Retired connections can return a generic gRPC/IO error.
+                    // Do not retry or rotate an old channel after selection.
+                    // Keep an already received success (notably a broadcast
+                    // acknowledgement): cancellation cannot unsend a payment.
+                    self.ensure_selected_transport()?;
                     // Cancellation should return immediately (no retries/backoff).
                     if matches!(e, Error::Cancelled) {
                         return Err(e);
@@ -4374,6 +4545,7 @@ impl Clone for LightClient {
         // Clone shares the existing channel to avoid reconnect races.
         Self {
             config: self.config.clone(),
+            transport_generation: self.transport_generation,
             channel: Arc::clone(&self.channel),
             endpoint_pool: Arc::clone(&self.endpoint_pool),
             endpoint_pool_probe_inflight: Arc::clone(&self.endpoint_pool_probe_inflight),
@@ -4527,6 +4699,273 @@ mod tests {
 
     static TRANSPORT_STATE_TEST_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
+    #[tokio::test]
+    async fn inactive_tor_bridge_preferences_do_not_change_direct_transport_identity() {
+        let _guard = TRANSPORT_STATE_TEST_LOCK.lock().await;
+        let saved = TOR_CONFIG_OVERRIDE.read().unwrap().clone();
+        let before = build_transport_config_from_mode(TransportMode::Direct, None).unwrap();
+        let future_tor = NetTorConfig {
+            use_bridges: true,
+            fallback_to_bridges: true,
+            ..Default::default()
+        };
+        set_tor_config_override(future_tor);
+        let after = build_transport_config_from_mode(TransportMode::Direct, None).unwrap();
+        *TOR_CONFIG_OVERRIDE.write().unwrap() = saved;
+        assert_eq!(before, after);
+        assert!(!after.tor.enabled);
+        assert!(!after.tor.use_bridges);
+        assert!(!after.i2p.enabled);
+    }
+
+    #[tokio::test]
+    async fn shutdown_cancels_a_queued_initializer_without_clearing_selection_early() {
+        let _guard = TRANSPORT_STATE_TEST_LOCK.lock().await;
+        shutdown_transport().await;
+        select_transport(TransportMode::Direct, None).unwrap();
+        let direct = build_transport_config_from_mode(TransportMode::Direct, None).unwrap();
+        let manager = GLOBAL_TRANSPORT
+            .clone()
+            .get_or_init(direct.clone())
+            .await
+            .unwrap();
+        let held_initialization = GLOBAL_TRANSPORT.initialization.clone().lock_owned().await;
+        let old_initializer = GLOBAL_TRANSPORT.clone().get_or_init(direct.clone());
+        tokio::pin!(old_initializer);
+        assert!(futures_util::poll!(&mut old_initializer).is_pending());
+        let shutdown = shutdown_transport();
+        tokio::pin!(shutdown);
+        assert!(futures_util::poll!(&mut shutdown).is_pending());
+        assert!(
+            manager.is_invalidated(),
+            "shutdown must revoke before waiting"
+        );
+        assert_eq!(desired_transport_config(), Some(direct));
+        drop(held_initialization);
+        assert!(matches!(old_initializer.await, Err(Error::Cancelled)));
+        shutdown.await;
+        assert!(GLOBAL_TRANSPORT.clone().get().await.is_none());
+        assert!(desired_transport_config().is_none());
+    }
+
+    #[tokio::test]
+    async fn shutdown_does_not_erase_or_retire_a_newer_selection() {
+        let _guard = TRANSPORT_STATE_TEST_LOCK.lock().await;
+        shutdown_transport().await;
+        select_transport(TransportMode::Direct, None).unwrap();
+        let direct = build_transport_config_from_mode(TransportMode::Direct, None).unwrap();
+        let old = GLOBAL_TRANSPORT.clone().get_or_init(direct).await.unwrap();
+        let held_initialization = GLOBAL_TRANSPORT.initialization.clone().lock_owned().await;
+        let shutdown = shutdown_transport();
+        tokio::pin!(shutdown);
+        assert!(futures_util::poll!(&mut shutdown).is_pending());
+        select_transport(
+            TransportMode::Socks5,
+            Some("socks5h://127.0.0.1:9050".into()),
+        )
+        .unwrap();
+        let proxy_config = build_transport_config_from_mode(
+            TransportMode::Socks5,
+            Some("socks5h://127.0.0.1:9050"),
+        )
+        .unwrap();
+        let initializer = GLOBAL_TRANSPORT.clone().get_or_init(proxy_config.clone());
+        drop(held_initialization);
+        let ((), new) = tokio::join!(shutdown, initializer);
+        let new = new.unwrap();
+        assert_eq!(desired_transport_config(), Some(proxy_config));
+        assert!(old.is_invalidated());
+        assert!(!new.is_invalidated());
+        assert!(Arc::ptr_eq(
+            &new,
+            &GLOBAL_TRANSPORT.clone().get().await.unwrap()
+        ));
+        shutdown_transport().await;
+    }
+
+    #[tokio::test]
+    async fn shutdown_invalidates_clients_from_before_and_during_teardown() {
+        let _guard = TRANSPORT_STATE_TEST_LOCK.lock().await;
+        shutdown_transport().await;
+        select_transport(TransportMode::Direct, None).unwrap();
+        let old = LightClient::with_config(LightClientConfig::direct(DEFAULT_LIGHTD_URL));
+        let held_initialization = GLOBAL_TRANSPORT.initialization.clone().lock_owned().await;
+        let shutdown = shutdown_transport();
+        tokio::pin!(shutdown);
+        assert!(futures_util::poll!(&mut shutdown).is_pending());
+        let during = LightClient::with_config(LightClientConfig::direct(DEFAULT_LIGHTD_URL));
+        assert!(matches!(
+            old.ensure_selected_transport(),
+            Err(Error::Cancelled)
+        ));
+        assert!(matches!(
+            during.ensure_selected_transport(),
+            Err(Error::Cancelled)
+        ));
+        drop(held_initialization);
+        shutdown.await;
+        assert!(matches!(
+            old.ensure_selected_transport(),
+            Err(Error::Cancelled)
+        ));
+        assert!(matches!(
+            during.ensure_selected_transport(),
+            Err(Error::Cancelled)
+        ));
+        let fresh = LightClient::with_config(LightClientConfig::direct(DEFAULT_LIGHTD_URL));
+        assert!(fresh.ensure_selected_transport().is_ok());
+    }
+
+    #[tokio::test]
+    async fn transport_selection_retires_the_old_manager_synchronously() {
+        let _guard = TRANSPORT_STATE_TEST_LOCK.lock().await;
+        shutdown_transport().await;
+        select_transport(TransportMode::Direct, None).unwrap();
+        let direct = build_transport_config_from_mode(TransportMode::Direct, None).unwrap();
+        let manager = GLOBAL_TRANSPORT
+            .clone()
+            .get_or_init(direct.clone())
+            .await
+            .unwrap();
+
+        select_transport(TransportMode::Direct, None).unwrap();
+        assert!(
+            !manager.is_invalidated(),
+            "an unchanged selection is idempotent"
+        );
+        select_transport(
+            TransportMode::Socks5,
+            Some("socks5h://127.0.0.1:9050".into()),
+        )
+        .unwrap();
+        assert!(
+            manager.is_invalidated(),
+            "revocation must not wait for bootstrap"
+        );
+        assert!(GLOBAL_TRANSPORT.clone().get().await.is_none());
+        let proxy_config = build_transport_config_from_mode(
+            TransportMode::Socks5,
+            Some("socks5h://127.0.0.1:9050"),
+        )
+        .unwrap();
+        let proxy = GLOBAL_TRANSPORT
+            .clone()
+            .get_or_init(proxy_config.clone())
+            .await
+            .unwrap();
+        assert!(proxy.matches_config(&proxy_config));
+        assert!(!proxy.is_invalidated());
+        assert!(!Arc::ptr_eq(&manager, &proxy));
+
+        select_transport(TransportMode::Direct, None).unwrap();
+        let returned_direct = GLOBAL_TRANSPORT.clone().get_or_init(direct).await.unwrap();
+        assert!(proxy.is_invalidated());
+        assert!(
+            manager.is_invalidated(),
+            "old Direct streams must never resurrect"
+        );
+        assert!(!Arc::ptr_eq(&manager, &returned_direct));
+        shutdown_transport().await;
+    }
+
+    #[tokio::test]
+    async fn stale_client_cannot_read_a_cached_pool_tip_or_dispatch_an_rpc() {
+        let _guard = TRANSPORT_STATE_TEST_LOCK.lock().await;
+        shutdown_transport().await;
+        select_transport(TransportMode::Direct, None).unwrap();
+        let client = auto_pool_client(TransportMode::Direct);
+        seed_endpoint_pool(&client, &[1000, 1000], &[]).await;
+        let channel = Endpoint::from_static("http://127.0.0.1:2").connect_lazy();
+        *client.channel.lock().await = Some(channel.clone());
+        client
+            .endpoint_pool
+            .write()
+            .await
+            .channels
+            .insert(0, channel);
+
+        select_transport(
+            TransportMode::Socks5,
+            Some("socks5h://127.0.0.1:9050".into()),
+        )
+        .unwrap();
+        assert!(matches!(
+            client.get_latest_block().await,
+            Err(Error::Cancelled)
+        ));
+        assert!(matches!(client.get_client().await, Err(Error::Cancelled)));
+        assert!(client.canonical_pool_tip(false).await.is_none());
+        assert!(client.connected_candidate_client(0).await.is_none());
+        assert!(!client.rotate_failed_endpoint().await);
+        shutdown_transport().await;
+    }
+
+    #[tokio::test]
+    async fn transport_change_during_rpc_returns_cancellation_without_retry() {
+        let _guard = TRANSPORT_STATE_TEST_LOCK.lock().await;
+        shutdown_transport().await;
+        select_transport(TransportMode::Direct, None).unwrap();
+        let client = LightClient::with_config(LightClientConfig::direct(DEFAULT_LIGHTD_URL));
+        let attempts = AtomicU64::new(0);
+        let result: Result<()> = client
+            .with_retry(|| async {
+                attempts.fetch_add(1, Ordering::Relaxed);
+                select_transport(
+                    TransportMode::Socks5,
+                    Some("socks5h://127.0.0.1:9050".into()),
+                )?;
+                Err(Error::Network("retired stream".into()))
+            })
+            .await;
+        assert!(matches!(result, Err(Error::Cancelled)));
+        assert_eq!(attempts.load(Ordering::Relaxed), 1);
+        shutdown_transport().await;
+    }
+
+    #[tokio::test]
+    async fn completed_rpc_acknowledgement_survives_a_transport_change() {
+        let _guard = TRANSPORT_STATE_TEST_LOCK.lock().await;
+        shutdown_transport().await;
+        select_transport(TransportMode::Direct, None).unwrap();
+        let client = LightClient::with_config(LightClientConfig::direct(DEFAULT_LIGHTD_URL));
+        let acknowledgement = client
+            .with_retry(|| async {
+                // Represent a response accepted just before selection changes.
+                select_transport(
+                    TransportMode::Socks5,
+                    Some("socks5h://127.0.0.1:9050".into()),
+                )?;
+                Ok("accepted transaction")
+            })
+            .await
+            .unwrap();
+        assert_eq!(acknowledgement, "accepted transaction");
+        shutdown_transport().await;
+    }
+
+    #[tokio::test]
+    async fn disconnect_discards_all_retained_pool_channels() {
+        let _guard = TRANSPORT_STATE_TEST_LOCK.lock().await;
+        shutdown_transport().await;
+        let client = auto_pool_client(TransportMode::Direct);
+        seed_endpoint_pool(&client, &[1000, 1000], &[]).await;
+        let channel = Endpoint::from_static("http://127.0.0.1:2").connect_lazy();
+        *client.channel.lock().await = Some(channel.clone());
+        client
+            .endpoint_pool
+            .write()
+            .await
+            .channels
+            .insert(0, channel);
+
+        client.disconnect().await;
+        assert!(client.channel.lock().await.is_none());
+        let pool = client.endpoint_pool.read().await;
+        assert!(pool.channels.is_empty());
+        assert!(pool.tips.is_empty());
+        assert!(!pool.probed);
+    }
+
     fn auto_pool_client(transport: TransportMode) -> LightClient {
         let mut config = LightClientConfig::direct(DEFAULT_LIGHTD_URL);
         config.transport = transport;
@@ -4549,6 +4988,8 @@ mod tests {
 
     #[tokio::test]
     async fn historical_worker_keeps_its_endpoint_when_parent_pool_changes() {
+        let _guard = TRANSPORT_STATE_TEST_LOCK.lock().await;
+        clear_desired_transport_config();
         let parent = auto_pool_client(TransportMode::Direct);
         seed_endpoint_pool(&parent, &[1000, 1000], &[]).await;
         {
@@ -4619,6 +5060,8 @@ mod tests {
 
     #[tokio::test]
     async fn cancelled_download_does_not_reconnect_or_advance_resume_height() {
+        let _guard = TRANSPORT_STATE_TEST_LOCK.lock().await;
+        clear_desired_transport_config();
         let client = auto_pool_client(TransportMode::Tor);
         let (sender, receiver) = mpsc::channel(1);
         drop(receiver);
@@ -4721,6 +5164,8 @@ mod tests {
 
     #[tokio::test]
     async fn auto_rpc_retry_uses_a_fresh_validated_alternate() {
+        let _guard = TRANSPORT_STATE_TEST_LOCK.lock().await;
+        clear_desired_transport_config();
         let client = auto_pool_client(TransportMode::Direct);
         seed_endpoint_pool(&client, &[1_000, 900, 1_000], &[]).await;
         {
@@ -4747,6 +5192,8 @@ mod tests {
 
     #[tokio::test]
     async fn auto_does_not_rotate_on_cancellation_or_permanent_rpc_errors() {
+        let _guard = TRANSPORT_STATE_TEST_LOCK.lock().await;
+        clear_desired_transport_config();
         let client = auto_pool_client(TransportMode::Direct);
         seed_endpoint_pool(&client, &[1_000, 1_000], &[]).await;
         for error in [
@@ -5514,8 +5961,11 @@ mod tests {
         let _test_guard = TRANSPORT_STATE_TEST_LOCK.lock().await;
         clear_desired_transport_config();
         let state = Arc::new(GlobalTransportState {
-            manager: Arc::new(RwLock::new(None)),
+            manager: Arc::new(StdRwLock::new(None)),
+            retired: Arc::new(StdRwLock::new(Vec::new())),
             initialization: Arc::new(Mutex::new(())),
+            generation: AtomicU64::new(0),
+            shutdown_generation: AtomicU64::new(u64::MAX),
         });
         let config = NetTransportConfig {
             mode: NetTransportMode::Direct,
@@ -5611,8 +6061,11 @@ mod tests {
         let _test_guard = TRANSPORT_STATE_TEST_LOCK.lock().await;
         clear_desired_transport_config();
         let state = Arc::new(GlobalTransportState {
-            manager: Arc::new(RwLock::new(None)),
+            manager: Arc::new(StdRwLock::new(None)),
+            retired: Arc::new(StdRwLock::new(Vec::new())),
             initialization: Arc::new(Mutex::new(())),
+            generation: AtomicU64::new(0),
+            shutdown_generation: AtomicU64::new(u64::MAX),
         });
         let direct = NetTransportConfig {
             mode: NetTransportMode::Direct,
@@ -5672,8 +6125,11 @@ mod tests {
         let _test_guard = TRANSPORT_STATE_TEST_LOCK.lock().await;
         clear_desired_transport_config();
         let state = Arc::new(GlobalTransportState {
-            manager: Arc::new(RwLock::new(None)),
+            manager: Arc::new(StdRwLock::new(None)),
+            retired: Arc::new(StdRwLock::new(Vec::new())),
             initialization: Arc::new(Mutex::new(())),
+            generation: AtomicU64::new(0),
+            shutdown_generation: AtomicU64::new(u64::MAX),
         });
         let direct = build_transport_config_from_mode(TransportMode::Direct, None).unwrap();
         select_transport(TransportMode::Direct, None).unwrap();
