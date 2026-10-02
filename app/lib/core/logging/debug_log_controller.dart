@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:path_provider/path_provider.dart';
@@ -7,6 +8,137 @@ import 'debug_log_path.dart';
 import 'debug_log_preference_store.dart';
 
 const String kDebugLoggingStorageKey = 'ui_debug_logging_enabled_v1';
+
+// Match the native allowlists in pirate-core's debug_log.rs. Arbitrary panic
+// metadata must not provide another route for exporting private payloads.
+const _panicCategories = {
+  'runtime_async_drop',
+  'runtime_missing',
+  'runtime_nested_block_on',
+  'tor_pending_channel_drop',
+  'time_overflow',
+  'unknown',
+};
+const _panicSourceFiles = {
+  'api.rs',
+  'blocking.rs',
+  'client.rs',
+  'context.rs',
+  'lib.rs',
+  'mod.rs',
+  'preemptive.rs',
+  'runtime.rs',
+  'scheduler.rs',
+  'shutdown.rs',
+  'state.rs',
+  'time.rs',
+};
+const _privateFields = {
+  'mnemonic',
+  'seed',
+  'passphrase',
+  'password',
+  'pin',
+  'panic_pin',
+  'duress_passphrase',
+  'spending_key',
+  'sapling_key',
+  'orchard_key',
+  'ironwood_key',
+  'sapling_viewing_key',
+  'orchard_viewing_key',
+  'ironwood_viewing_key',
+  'viewing_key',
+  'extsk',
+  'ovk',
+  'ivk',
+  'fvk',
+  'private_key',
+  'secret',
+  'panic',
+  'panic_location',
+  'backtrace',
+  'stack',
+};
+const _correlatingFields = {
+  'wallet_id',
+  'account_id',
+  'key_id',
+  'address',
+  'addresses',
+  'z_addresses',
+  'address_id',
+  'txid',
+  'txids',
+  'spent_txid',
+  'pending_txid',
+  'recent_txids',
+  'last_seen_txids',
+  'txid_prefix',
+  'nullifier',
+  'nullifiers',
+  'nf',
+  'cmu',
+  'cmx',
+  'cmx_prefix',
+  'commitment',
+  'memo',
+  'memo_hex',
+  'path',
+  'cwd',
+  'db_path',
+  'endpoint',
+  'url',
+  'host',
+  'server',
+  'server_name',
+  'tls_server_name',
+  'tls_pin',
+};
+final _panicMetadataKey = RegExp(
+  r'"panic(?:_|\\u005f)(?:category|source(?:_|\\u005f)(?:file|line))"\s*:',
+  caseSensitive: false,
+);
+final _privateFieldAssignment = RegExp(
+  '("?(?:${_privateFields.join('|')})"?'
+  r'\s*[:=]\s*)("[^"\\]*(?:\\.[^"\\]*)*"|[^,}\n]+)',
+  caseSensitive: false,
+);
+final _correlatingFieldAssignment = RegExp(
+  '("?(?:${_correlatingFields.join('|')})"?'
+  r'\s*[:=]\s*)("[^"\\]*(?:\\.[^"\\]*)*"|[^,}\n]+)',
+  caseSensitive: false,
+);
+
+Object? _redactJsonValue(Object? value) {
+  if (value is List) {
+    return value.map(_redactJsonValue).toList();
+  }
+  if (value is! Map<String, dynamic>) return value;
+  return value.map((key, metadata) {
+    final Object? sanitized;
+    final normalizedKey = key.toLowerCase();
+    switch (normalizedKey) {
+      case 'panic_category':
+        sanitized = _panicCategories.contains(metadata) ? metadata : 'unknown';
+      case 'panic_source_file':
+        sanitized = _panicSourceFiles.contains(metadata) ? metadata : null;
+      case 'panic_source_line':
+        sanitized = metadata is int && metadata > 0 && metadata <= 0xffffffff
+            ? metadata
+            : null;
+      default:
+        if (_privateFields.contains(normalizedKey)) {
+          sanitized = '[REDACTED_SECRET]';
+        } else if (_correlatingFields.contains(normalizedKey)) {
+          sanitized = '[REDACTED]';
+        } else {
+          sanitized = _redactJsonValue(metadata);
+        }
+    }
+    return MapEntry(key, sanitized);
+  });
+}
 
 class DebugLogController {
   DebugLogController._();
@@ -70,19 +202,27 @@ class DebugLogController {
   }
 
   static String redactDebugLogText(String value) {
-    var text = value;
+    // Logs are JSONL. Redact complete values so nested objects, arrays and
+    // escaped field names cannot leak through a regex-only replacement.
+    var text = value
+        .split('\n')
+        .map((line) {
+          try {
+            return jsonEncode(_redactJsonValue(jsonDecode(line)));
+          } on FormatException {
+            // A malformed panic entry cannot safely preserve arbitrary tail text.
+            return _panicMetadataKey.hasMatch(line)
+                ? '[REDACTED_MALFORMED_PANIC_EVENT]'
+                : line;
+          }
+        })
+        .join('\n');
     text = text.replaceAllMapped(
-      RegExp(
-        r'("?(?:mnemonic|seed|passphrase|password|pin|panic_pin|duress_passphrase|spending_key|sapling_key|orchard_key|ironwood_key|sapling_viewing_key|orchard_viewing_key|ironwood_viewing_key|viewing_key|extsk|ovk|ivk|fvk|private_key|secret|panic|panic_location|backtrace|stack)"?\s*[:=]\s*)("[^"]*"|[^,}\n]+)',
-        caseSensitive: false,
-      ),
+      _privateFieldAssignment,
       (match) => '${match[1]}"[REDACTED_SECRET]"',
     );
     text = text.replaceAllMapped(
-      RegExp(
-        r'("?(?:wallet_id|account_id|key_id|address|addresses|z_addresses|address_id|txid|txids|spent_txid|pending_txid|recent_txids|last_seen_txids|txid_prefix|nullifier|nullifiers|nf|cmu|cmx|cmx_prefix|commitment|memo|memo_hex|path|cwd|db_path|endpoint|url|host|server|server_name|tls_server_name|tls_pin)"?\s*[:=]\s*)("[^"]*"|[^,}\n]+)',
-        caseSensitive: false,
-      ),
+      _correlatingFieldAssignment,
       (match) => '${match[1]}"[REDACTED]"',
     );
     text = text.replaceAll(
