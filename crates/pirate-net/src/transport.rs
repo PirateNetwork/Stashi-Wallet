@@ -4,6 +4,7 @@
 
 use crate::debug_log::log_debug_event;
 use crate::lightwalletd_pins::extract_spki_from_cert_der;
+use crate::revocable_stream::RevocableStream;
 use crate::tls_connector::{connect_tls, peer_certificate_der};
 use crate::{
     DnsConfig, DnsResolver, Error, I2pClient, I2pConfig, Result, TorClient, TorConfig, TorStatus,
@@ -24,6 +25,7 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 use tokio_socks::tcp::Socks5Stream;
+use tokio_util::sync::CancellationToken;
 use tonic::transport::{Channel, Endpoint};
 use tower::service_fn;
 use tracing::{debug, error, info, warn};
@@ -128,6 +130,12 @@ pub struct TransportManager {
     i2p_client: Arc<RwLock<Option<I2pClient>>>,
     dns_resolver: Arc<RwLock<DnsResolver>>,
     update_lock: Arc<Mutex<()>>,
+    connections: RwLock<ConnectionState>,
+}
+
+struct ConnectionState {
+    token: CancellationToken,
+    retired: bool,
 }
 
 #[allow(dead_code)]
@@ -219,7 +227,35 @@ impl TransportManager {
             i2p_client: Arc::new(RwLock::new(i2p_client)),
             dns_resolver: Arc::new(RwLock::new(dns_resolver)),
             update_lock: Arc::new(Mutex::new(())),
+            connections: RwLock::new(ConnectionState {
+                token: CancellationToken::new(),
+                retired: false,
+            }),
         })
+    }
+
+    /// Immediately retire all streams and pending connections owned by this manager.
+    /// A retired manager cannot be reused after a later transport selection.
+    pub fn invalidate_connections(&self) {
+        let mut state = self.connections.write().unwrap_or_else(|p| p.into_inner());
+        state.retired = true;
+        state.token.cancel();
+    }
+
+    /// Whether this manager has been retired by a newer transport selection.
+    pub fn is_invalidated(&self) -> bool {
+        self.connections
+            .read()
+            .unwrap_or_else(|p| p.into_inner())
+            .retired
+    }
+
+    fn connection_token(&self) -> Result<CancellationToken> {
+        let state = self.connections.read().unwrap_or_else(|p| p.into_inner());
+        if state.retired || state.token.is_cancelled() {
+            return Err(retired_connection_error());
+        }
+        Ok(state.token.clone())
     }
 
     /// Get current transport mode
@@ -240,10 +276,11 @@ impl TransportManager {
     }
 
     async fn ensure_tor_bootstrapped(self: Arc<Self>, config: TransportConfig) -> Result<()> {
-        let client = {
+        let (client, token) = {
             // Keep selection/publication atomic with update_config, but never
             // hold this lock across the potentially long bootstrap itself.
             let _update_guard = Arc::clone(&self.update_lock).lock_owned().await;
+            let token = self.connection_token()?;
             if !self.matches_config(&config) {
                 return Err(Error::Network(
                     "Transport changed before Tor startup".to_string(),
@@ -254,7 +291,7 @@ impl TransportManager {
                 .write()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
             if let Some(client) = current.as_ref() {
-                client.clone()
+                (client.clone(), token)
             } else {
                 log_debug_event(
                     "transport.rs:TransportManager::ensure_tor_bootstrapped",
@@ -263,12 +300,15 @@ impl TransportManager {
                 );
                 let client = TorClient::new(config.tor)?;
                 *current = Some(client.clone());
-                client
+                (client, token)
             }
         };
 
         let status = client.status().await;
         if matches!(status, TorStatus::Ready) {
+            if token.is_cancelled() {
+                return Err(retired_connection_error());
+            }
             log_debug_event(
                 "transport.rs:TransportManager::ensure_tor_bootstrapped",
                 "transport_update_config_skip",
@@ -285,15 +325,19 @@ impl TransportManager {
             "transport_update_config_tor_ensure",
             &format!("mode={:?} status={:?}", config.mode, status),
         );
-        client.bootstrap().await?;
-        Ok(())
+        tokio::select! {
+            biased;
+            _ = token.cancelled() => Err(retired_connection_error()),
+            result = client.bootstrap() => result,
+        }
     }
 
     async fn ensure_i2p_started(self: Arc<Self>, config: TransportConfig) -> Result<()> {
-        let client = {
+        let (client, token) = {
             // Publish a replacement before startup so update_config can see
             // and shut it down if the user changes mode while I2P is starting.
             let _update_guard = Arc::clone(&self.update_lock).lock_owned().await;
+            let token = self.connection_token()?;
             if !self.matches_config(&config) {
                 return Err(Error::Network(
                     "Transport changed before I2P startup".to_string(),
@@ -304,20 +348,24 @@ impl TransportManager {
                 .write()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
             if let Some(client) = current.as_ref() {
-                client.clone()
+                (client.clone(), token)
             } else {
                 let client = I2pClient::new(config.i2p)?;
                 *current = Some(client.clone());
-                client
+                (client, token)
             }
         };
 
-        client.start().await?;
-        Ok(())
+        tokio::select! {
+            biased;
+            _ = token.cancelled() => Err(retired_connection_error()),
+            result = client.start() => result,
+        }
     }
 
     /// Ensure the active transport has completed any required startup.
     pub async fn ensure_ready(self: Arc<Self>) -> Result<()> {
+        self.connection_token()?;
         let config = self
             .config
             .read()
@@ -341,6 +389,7 @@ impl TransportManager {
         // Serialize config mutations to avoid concurrent Tor/I2P re-initialization
         // during rapid transport switches or parallel connection attempts.
         let _update_guard = Arc::clone(&self.update_lock).lock_owned().await;
+        self.connection_token()?;
         let current_config = self
             .config
             .read()
@@ -393,6 +442,15 @@ impl TransportManager {
             None
         };
 
+        // Retire the old epoch before any asynchronous shutdown. Connectors
+        // snapshot this token together with the configuration under the same
+        // lock; none can pair an old mode with a fresh connection token.
+        self.connections
+            .write()
+            .unwrap_or_else(|p| p.into_inner())
+            .token
+            .cancel();
+
         // Detach old clients before awaiting shutdown so any connector created
         // after this point cannot capture a transport that is being retired.
         let tor_current = self
@@ -417,6 +475,10 @@ impl TransportManager {
         // potentially minutes-long bootstrap. bootstrap_transport/connector
         // calls own readiness; a subsequent mode change can therefore acquire
         // update_lock immediately and cancel those clients via shutdown.
+        let mut connections = self.connections.write().unwrap_or_else(|p| p.into_inner());
+        if connections.retired {
+            return Err(retired_connection_error());
+        }
         *self
             .tor_client
             .write()
@@ -437,12 +499,18 @@ impl TransportManager {
             .config
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = config;
+        connections.token = CancellationToken::new();
 
         Ok(())
     }
 
-    /// Create HTTP client with configured transport
+    /// Create a snapshot HTTP client with the configured transport.
+    ///
+    /// A returned `reqwest::Client` cannot be revoked when transport settings
+    /// change. Wallet requests must use [`Self::fetch_url_bytes`] instead, which
+    /// cancels connections when their transport is retired.
     pub async fn create_http_client(&self) -> Result<reqwest::Client> {
+        self.connection_token()?;
         let config = read_state(&self.config);
 
         let mut client_builder = reqwest::Client::builder()
@@ -472,7 +540,7 @@ impl TransportManager {
                 i2p.clone().start().await?;
                 let proxy = i2p.clone().proxy_config().await;
                 let proxy_url = proxy.proxy_url();
-                debug!("Creating HTTP client with I2P proxy: {}", proxy_url);
+                debug!("Creating HTTP client with I2P proxy");
 
                 let proxy = reqwest::Proxy::all(&proxy_url)
                     .map_err(|e| Error::Network(format!("Failed to create I2P proxy: {}", e)))?;
@@ -482,7 +550,7 @@ impl TransportManager {
             TransportMode::Socks5 => {
                 if let Some(ref socks5) = config.socks5 {
                     let proxy_url = socks5.proxy_url();
-                    debug!("Creating HTTP client with SOCKS5 proxy: {}", proxy_url);
+                    debug!("Creating HTTP client with SOCKS5 proxy");
 
                     let proxy = reqwest::Proxy::all(&proxy_url).map_err(|e| {
                         Error::Network(format!("Failed to create SOCKS5 proxy: {}", e))
@@ -510,22 +578,15 @@ impl TransportManager {
         url: &str,
         headers: &[(String, String)],
     ) -> Result<Vec<u8>> {
-        let config = read_state(&self.config);
-
-        match config.mode {
-            TransportMode::Tor => {
-                let tor = read_state(&self.tor_client)
-                    .ok_or_else(|| Error::Network("Tor client not initialized".to_string()))?;
-                fetch_url_bytes_via_tor(tor, url, headers, Duration::from_secs(60)).await
-            }
-            TransportMode::I2p => {
-                require_i2p_url(url)?;
-                let client = self.create_http_client().await?;
-                fetch_url_bytes_with_client(&client, url, headers).await
-            }
-            _ => {
-                let client = self.create_http_client().await?;
-                fetch_url_bytes_with_client(&client, url, headers).await
+        // Use revocable streams for HTTP as well as gRPC. A pooled reqwest
+        // client would retain its original route after a transport change.
+        let token = self.connection_token()?;
+        let timeout = Duration::from_secs(60);
+        tokio::select! {
+            biased;
+            _ = token.cancelled() => Err(retired_connection_error()),
+            result = tokio::time::timeout(timeout, fetch_url_bytes_via_transport(self, url, headers, timeout)) => {
+                result.map_err(|_| Error::Network("HTTP request timed out".to_string()))?
             }
         }
     }
@@ -536,6 +597,8 @@ impl TransportManager {
            + Clone
            + Send
            + 'static {
+        let connections = self.connections.read().unwrap_or_else(|p| p.into_inner());
+        let token = connections.token.clone();
         let config = read_state(&self.config);
         let tor_client = read_state(&self.tor_client);
         let i2p_client = read_state(&self.i2p_client);
@@ -544,31 +607,42 @@ impl TransportManager {
         let mode = config.mode;
 
         service_fn(move |uri: Uri| -> ConnectorFuture {
+            let token = token.clone();
             let tor_client = tor_client.clone();
             let i2p_client = i2p_client.clone();
             let dns_config = dns_config.clone();
             let socks5_config = socks5_config.clone();
             Box::pin(async move {
-                match mode {
-                    TransportMode::Tor => {
-                        let tor = tor_client.ok_or_else(|| {
-                            Error::Network("Tor client not initialized".to_string())
-                        })?;
-                        connect_via_tor(tor, uri).await
+                let connecting = async move {
+                    match mode {
+                        TransportMode::Tor => {
+                            let tor = tor_client.ok_or_else(|| {
+                                Error::Network("Tor client not initialized".to_string())
+                            })?;
+                            connect_via_tor(tor, uri).await
+                        }
+                        TransportMode::I2p => {
+                            let i2p = i2p_client.ok_or_else(|| {
+                                Error::Network("I2P router not initialized".to_string())
+                            })?;
+                            connect_via_i2p(i2p, uri).await
+                        }
+                        TransportMode::Socks5 => {
+                            let socks5 = socks5_config.ok_or_else(|| {
+                                Error::Network("SOCKS5 config not provided".to_string())
+                            })?;
+                            connect_via_socks5(socks5, uri).await
+                        }
+                        TransportMode::Direct => connect_direct(dns_config, mode, uri).await,
                     }
-                    TransportMode::I2p => {
-                        let i2p = i2p_client.ok_or_else(|| {
-                            Error::Network("I2P router not initialized".to_string())
-                        })?;
-                        connect_via_i2p(i2p, uri).await
-                    }
-                    TransportMode::Socks5 => {
-                        let socks5 = socks5_config.ok_or_else(|| {
-                            Error::Network("SOCKS5 config not provided".to_string())
-                        })?;
-                        connect_via_socks5(socks5, uri).await
-                    }
-                    TransportMode::Direct => connect_direct(dns_config, mode, uri).await,
+                };
+                tokio::select! {
+                    biased;
+                    _ = token.cancelled() => Err(retired_connection_error()),
+                    result = connecting => result.map(|stream| {
+                        let stream: BoxedStream = Box::new(RevocableStream::new(stream.into_inner(), token.clone()));
+                        TokioIo::new(stream)
+                    }),
                 }
             })
         })
@@ -619,29 +693,46 @@ impl TransportManager {
     }
 
     /// Open a raw stream using the configured transport mode.
-    async fn open_stream(self: Arc<Self>, host: String, port: u16) -> Result<BoxedStream> {
-        let config = read_state(&self.config);
-        let tor_client = read_state(&self.tor_client);
-        let i2p_client = read_state(&self.i2p_client);
-
-        match config.mode {
-            TransportMode::Tor => {
-                let tor = tor_client
-                    .ok_or_else(|| Error::Network("Tor client not initialized".to_string()))?;
-                connect_tor_stream(tor, &host, port).await
+    async fn open_stream(&self, host: String, port: u16) -> Result<BoxedStream> {
+        let (config, tor_client, i2p_client, token) = {
+            let connections = self.connections.read().unwrap_or_else(|p| p.into_inner());
+            if connections.retired || connections.token.is_cancelled() {
+                return Err(retired_connection_error());
             }
-            TransportMode::I2p => {
-                let i2p = i2p_client
-                    .ok_or_else(|| Error::Network("I2P router not initialized".to_string()))?;
-                connect_i2p_stream(i2p, &host, port).await
+            (
+                read_state(&self.config),
+                read_state(&self.tor_client),
+                read_state(&self.i2p_client),
+                connections.token.clone(),
+            )
+        };
+        let connecting = async move {
+            match config.mode {
+                TransportMode::Tor => {
+                    let tor = tor_client
+                        .ok_or_else(|| Error::Network("Tor client not initialized".to_string()))?;
+                    connect_tor_stream(tor, &host, port).await
+                }
+                TransportMode::I2p => {
+                    let i2p = i2p_client
+                        .ok_or_else(|| Error::Network("I2P router not initialized".to_string()))?;
+                    connect_i2p_stream(i2p, &host, port).await
+                }
+                TransportMode::Socks5 => {
+                    let socks5 = config
+                        .socks5
+                        .ok_or_else(|| Error::Network("SOCKS5 config not provided".to_string()))?;
+                    connect_socks5_stream(socks5, &host, port).await
+                }
+                TransportMode::Direct => {
+                    connect_direct_stream(config.dns_config, &host, port).await
+                }
             }
-            TransportMode::Socks5 => {
-                let socks5 = config
-                    .socks5
-                    .ok_or_else(|| Error::Network("SOCKS5 config not provided".to_string()))?;
-                connect_socks5_stream(socks5, &host, port).await
-            }
-            TransportMode::Direct => connect_direct_stream(config.dns_config, &host, port).await,
+        };
+        tokio::select! {
+            biased;
+            _ = token.cancelled() => Err(retired_connection_error()),
+            result = connecting => result.map(|stream| Box::new(RevocableStream::new(stream, token.clone())) as BoxedStream),
         }
     }
 
@@ -665,8 +756,13 @@ impl TransportManager {
 
     /// Resolve hostname via configured DNS
     pub async fn resolve_host(&self, hostname: &str) -> Result<Vec<std::net::IpAddr>> {
+        let token = self.connection_token()?;
         let resolver = read_state(&self.dns_resolver);
-        resolver.resolve(hostname).await
+        tokio::select! {
+            biased;
+            _ = token.cancelled() => Err(retired_connection_error()),
+            result = resolver.resolve(hostname) => result,
+        }
     }
 
     /// Get Tor bootstrap status
@@ -691,6 +787,10 @@ impl TransportManager {
 
     /// Rotate Tor exit circuits by isolating future streams.
     pub async fn rotate_tor_exit(&self) -> Result<()> {
+        // Coordinate circuit isolation and epoch replacement with config
+        // publication, so rotation cannot resurrect a retired connection epoch.
+        let _update_guard = self.update_lock.lock().await;
+        self.connection_token()?;
         let mode = read_state(&self.config).mode;
         if mode != TransportMode::Tor {
             log_debug_event(
@@ -733,6 +833,17 @@ impl TransportManager {
 
         tor.clone().rotate_exit().await;
 
+        // HTTP/2 connections outlive individual RPCs. Retire those connections
+        // so future RPCs cannot keep using the previous circuit isolation.
+        {
+            let mut connections = self.connections.write().unwrap_or_else(|p| p.into_inner());
+            if connections.retired {
+                return Err(retired_connection_error());
+            }
+            connections.token.cancel();
+            connections.token = CancellationToken::new();
+        }
+
         match tor.clone().fetch_exit_ip().await {
             Ok(ip) => {
                 let changed = before_ip.as_ref() != Some(&ip);
@@ -756,6 +867,8 @@ impl TransportManager {
 
     /// Shutdown transport (cleanup)
     pub async fn shutdown(&self) {
+        self.invalidate_connections();
+        let _update_guard = self.update_lock.lock().await;
         info!("Shutting down transport manager...");
 
         if let Some(tor) = read_state(&self.tor_client) {
@@ -775,6 +888,10 @@ impl TransportManager {
     }
 }
 
+fn retired_connection_error() -> Error {
+    Error::Network("Transport selection changed; connection retired".to_string())
+}
+
 fn format_error_chain(error: &(dyn std::error::Error + 'static)) -> String {
     let mut message = error.to_string();
     let mut source = error.source();
@@ -789,50 +906,19 @@ fn format_error_chain(error: &(dyn std::error::Error + 'static)) -> String {
     message
 }
 
-async fn fetch_url_bytes_with_client(
-    client: &reqwest::Client,
-    url: &str,
-    headers: &[(String, String)],
-) -> Result<Vec<u8>> {
-    let mut request = client.get(url);
-    for (name, value) in headers {
-        request = request.header(name, value);
-    }
-
-    let response = request
-        .send()
-        .await
-        .map_err(|e| Error::Network(format!("HTTP request failed: {}", e)))?;
-    let status = response.status();
-    let body = response
-        .bytes()
-        .await
-        .map_err(|e| Error::Network(format!("HTTP response read failed: {}", e)))?;
-
-    if !status.is_success() {
-        let preview = String::from_utf8_lossy(&body);
-        return Err(Error::Network(format!(
-            "HTTP request failed with status {}: {}",
-            status,
-            preview.chars().take(256).collect::<String>()
-        )));
-    }
-
-    Ok(body.to_vec())
-}
-
-async fn fetch_url_bytes_via_tor(
-    tor: TorClient,
+async fn fetch_url_bytes_via_transport(
+    manager: &TransportManager,
     url: &str,
     headers: &[(String, String)],
     timeout: Duration,
 ) -> Result<Vec<u8>> {
     let mut current = reqwest::Url::parse(url)
         .map_err(|e| Error::Network(format!("Invalid URL '{}': {}", url, e)))?;
+    let mut headers = headers.to_vec();
 
     for _ in 0..=5 {
         let (status, location, body) =
-            fetch_url_once_via_tor(tor.clone(), &current, headers, timeout).await?;
+            fetch_url_once_via_transport(manager, &current, &headers, timeout).await?;
 
         if status.is_redirection() {
             let location = location.ok_or_else(|| {
@@ -841,12 +927,23 @@ async fn fetch_url_bytes_via_tor(
                     current
                 ))
             })?;
-            current = current.join(&location).map_err(|e| {
+            let next = current.join(&location).map_err(|e| {
                 Error::Network(format!(
                     "Invalid redirect target '{}' from '{}': {}",
                     location, url, e
                 ))
             })?;
+            if current.scheme() == "https" && next.scheme() != "https" {
+                return Err(Error::Network(
+                    "Refusing insecure HTTP redirect".to_string(),
+                ));
+            }
+            if current.origin() != next.origin() {
+                // Custom headers may contain API keys under arbitrary names.
+                // Never forward caller-supplied headers to a different origin.
+                headers.clear();
+            }
+            current = next;
             continue;
         }
 
@@ -868,8 +965,8 @@ async fn fetch_url_bytes_via_tor(
     )))
 }
 
-async fn fetch_url_once_via_tor(
-    tor: TorClient,
+async fn fetch_url_once_via_transport(
+    manager: &TransportManager,
     url: &reqwest::Url,
     headers: &[(String, String)],
     timeout: Duration,
@@ -877,6 +974,12 @@ async fn fetch_url_once_via_tor(
     let host = url
         .host_str()
         .ok_or_else(|| Error::Network(format!("URL '{}' is missing a host", url)))?;
+    // URL authorities retain IPv6 brackets, but DNS, SOCKS and TLS need the
+    // literal address without them. Keep the brackets in the HTTP Host header.
+    let connection_host = host
+        .strip_prefix('[')
+        .and_then(|host| host.strip_suffix(']'))
+        .unwrap_or(host);
     let port = url
         .port_or_known_default()
         .ok_or_else(|| Error::Network(format!("URL '{}' is missing a port", url)))?;
@@ -907,7 +1010,12 @@ async fn fetch_url_once_via_tor(
         format!("{}:{}", host, port)
     };
 
-    let stream = tor.connect_stream(host, port).await?;
+    let stream = tokio::time::timeout(
+        timeout,
+        manager.open_stream(connection_host.to_string(), port),
+    )
+    .await
+    .map_err(|_| Error::Network("HTTP connection timed out".to_string()))??;
 
     let mut request = Request::builder().method("GET").uri(path);
     request = request.header(HOST, host_header);
@@ -925,7 +1033,7 @@ async fn fetch_url_once_via_tor(
         .map_err(|e| Error::Network(format!("Failed to build HTTP request: {}", e)))?;
 
     let (status, location, body) = if url.scheme() == "https" {
-        let tls_stream = connect_tls(host, stream).await?;
+        let tls_stream = connect_tls(connection_host, stream).await?;
         let io = TokioIo::new(tls_stream);
         fetch_over_tunnel_stream(io, request, timeout).await?
     } else {
@@ -1254,27 +1362,243 @@ fn is_i2p_destination(host: &str) -> bool {
     normalized.ends_with(".i2p")
 }
 
-fn require_i2p_url(url: &str) -> Result<()> {
-    let parsed = reqwest::Url::parse(url)
-        .map_err(|error| Error::Network(format!("Invalid URL for I2P transport: {error}")))?;
-    let host = parsed
-        .host_str()
-        .ok_or_else(|| Error::Network("I2P URL has no destination host".to_string()))?;
-
-    if !is_i2p_destination(host) {
-        return Err(Error::Network(format!(
-            "I2P transport refuses non-I2P URL destination '{host}'"
-        )));
-    }
-
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
+    use tower::Service;
+
+    async fn direct_manager() -> Arc<TransportManager> {
+        Arc::new(
+            TransportManager::new(TransportConfig {
+                mode: TransportMode::Direct,
+                ..TransportConfig::default()
+            })
+            .await
+            .unwrap(),
+        )
+    }
+
+    #[tokio::test]
+    async fn retired_lazy_connector_cannot_open_a_direct_connection() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let manager = direct_manager().await;
+        let mut connector = manager.grpc_connector();
+        manager.invalidate_connections();
+        let result = connector
+            .call(
+                format!("http://{}/", listener.local_addr().unwrap())
+                    .parse()
+                    .unwrap(),
+            )
+            .await;
+        assert!(result.is_err());
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), listener.accept())
+                .await
+                .is_err()
+        );
+        assert!(
+            Arc::clone(&manager)
+                .update_config(TransportConfig {
+                    mode: TransportMode::Direct,
+                    ..TransportConfig::default()
+                })
+                .await
+                .is_err(),
+            "old managers must never be resurrected"
+        );
+    }
+
+    #[tokio::test]
+    async fn established_direct_connection_is_revoked_after_selection_changes() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let manager = direct_manager().await;
+        let mut connector = manager.grpc_connector();
+        let connection = connector.call(
+            format!("http://{}/", listener.local_addr().unwrap())
+                .parse()
+                .unwrap(),
+        );
+        let (stream, peer) = tokio::join!(connection, listener.accept());
+        let mut stream = stream.unwrap().into_inner();
+        let (mut peer, _) = peer.unwrap();
+        stream.write_all(b"before").await.unwrap();
+        let mut received = [0; 6];
+        peer.read_exact(&mut received).await.unwrap();
+        manager.invalidate_connections();
+        assert_eq!(
+            stream.write_all(b"after").await.unwrap_err().kind(),
+            std::io::ErrorKind::ConnectionAborted
+        );
+        assert_eq!(peer.read(&mut [0]).await.unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn config_update_revokes_old_connectors_without_disabling_new_ones() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let manager = direct_manager().await;
+        let mut old = manager.grpc_connector();
+        let mut config = read_state(&manager.config);
+        config.dns_config.tunnel_dns = !config.dns_config.tunnel_dns;
+        Arc::clone(&manager).update_config(config).await.unwrap();
+        let uri: Uri = format!("http://{}/", listener.local_addr().unwrap())
+            .parse()
+            .unwrap();
+        assert!(old.call(uri.clone()).await.is_err());
+        assert!(!manager.is_invalidated());
+        let mut current = manager.grpc_connector();
+        let (stream, peer) = tokio::join!(current.call(uri), listener.accept());
+        assert!(stream.is_ok());
+        assert!(peer.is_ok());
+    }
+
+    #[tokio::test]
+    async fn transport_retirement_aborts_http_response_reads() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let manager = direct_manager().await;
+        let address = listener.local_addr().unwrap();
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            while !request.ends_with(b"\r\n\r\n") {
+                request.push(socket.read_u8().await.unwrap());
+            }
+            started_tx.send(()).unwrap();
+            assert_eq!(socket.read(&mut [0]).await.unwrap(), 0);
+        });
+        let client = Arc::clone(&manager);
+        let request = tokio::spawn(async move {
+            client
+                .fetch_url_bytes(&format!("http://{address}/"), &[])
+                .await
+        });
+        started_rx.await.unwrap();
+        manager.invalidate_connections();
+        assert!(tokio::time::timeout(Duration::from_secs(1), request)
+            .await
+            .unwrap()
+            .unwrap()
+            .is_err());
+        tokio::time::timeout(Duration::from_secs(1), server)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn http_redirect_does_not_forward_credentials_to_another_origin() {
+        let origin = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let destination = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = origin.local_addr().unwrap();
+        let destination_address = destination.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = origin.accept().await.unwrap();
+            let mut request = Vec::new();
+            while !request.ends_with(b"\r\n\r\n") {
+                request.push(socket.read_u8().await.unwrap());
+            }
+            assert!(String::from_utf8_lossy(&request).contains("test-secret"));
+            socket.write_all(format!("HTTP/1.1 302 Found\r\nLocation: http://{destination_address}/\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").as_bytes()).await.unwrap();
+            let (mut socket, _) = destination.accept().await.unwrap();
+            let mut request = Vec::new();
+            while !request.ends_with(b"\r\n\r\n") {
+                request.push(socket.read_u8().await.unwrap());
+            }
+            let request = String::from_utf8_lossy(&request);
+            assert!(!request.contains("test-secret"));
+            assert!(!request.to_lowercase().contains("authorization"));
+            socket
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok")
+                .await
+                .unwrap();
+        });
+        let manager = direct_manager().await;
+        let result = tokio::time::timeout(
+            Duration::from_secs(5),
+            manager.fetch_url_bytes(
+                &format!("http://{address}/"),
+                &[
+                    ("Authorization".into(), "test-secret".into()),
+                    ("X-Custom-Key".into(), "test-secret".into()),
+                ],
+            ),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(result, b"ok");
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn direct_http_preserves_ipv6_authority_without_resolving_brackets() {
+        let listener = TcpListener::bind("[::1]:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            while !request.ends_with(b"\r\n\r\n") {
+                request.push(socket.read_u8().await.unwrap());
+            }
+            assert!(String::from_utf8_lossy(&request)
+                .to_lowercase()
+                .contains(&format!("host: {address}\r\n")));
+            socket
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok")
+                .await
+                .unwrap();
+        });
+        let manager = direct_manager().await;
+        let body = tokio::time::timeout(
+            Duration::from_secs(5),
+            manager.fetch_url_bytes(&format!("http://{address}/"), &[]),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(body, b"ok");
+        server.await.unwrap();
+    }
+
+    #[cfg(feature = "embedded-i2p")]
+    #[tokio::test]
+    async fn i2p_http_rejects_clearnet_before_starting_a_router() {
+        let manager = TransportManager::new(TransportConfig {
+            mode: TransportMode::I2p,
+            i2p: I2pConfig {
+                enabled: true,
+                binary_path: Some(std::path::PathBuf::from("missing-i2pd-for-http-test")),
+                ..I2pConfig::default()
+            },
+            ..TransportConfig::default()
+        })
+        .await
+        .unwrap();
+        let error = manager
+            .fetch_url_bytes("https://example.com/", &[])
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("refuses non-I2P destination"));
+    }
+
+    #[cfg(feature = "embedded-i2p")]
+    #[tokio::test]
+    async fn queued_startup_cannot_recreate_a_client_after_retirement() {
+        let manager = direct_manager().await;
+        let guard = manager.update_lock.lock().await;
+        let mut requested = read_state(&manager.config);
+        requested.mode = TransportMode::I2p;
+        requested.i2p.enabled = true;
+        let attempt = tokio::spawn(Arc::clone(&manager).ensure_i2p_started(requested));
+        tokio::task::yield_now().await;
+        manager.invalidate_connections();
+        drop(guard);
+        assert!(attempt.await.unwrap().is_err());
+        assert!(read_state(&manager.i2p_client).is_none());
+    }
 
     async fn accept_socks5_target(listener: TcpListener) -> (TcpStream, String, u16) {
         let (mut stream, _) = listener.accept().await.expect("SOCKS client");
@@ -1535,11 +1859,6 @@ mod tests {
         assert!(is_i2p_destination("HASH.B32.I2P."));
         assert!(!is_i2p_destination("example.com"));
         assert!(!is_i2p_destination("example.onion"));
-
-        assert!(require_i2p_url("https://example.i2p/path").is_ok());
-        assert!(require_i2p_url("http://hash.b32.i2p:9067/").is_ok());
-        assert!(require_i2p_url("https://example.com/").is_err());
-        assert!(require_i2p_url("https://example.onion/").is_err());
     }
 
     #[tokio::test]

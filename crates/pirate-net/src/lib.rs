@@ -19,6 +19,7 @@ pub mod error;
 pub mod i2p;
 pub mod lightwalletd_pins;
 pub mod proxy;
+mod revocable_stream;
 pub mod tls;
 mod tls_connector;
 pub mod tor;
