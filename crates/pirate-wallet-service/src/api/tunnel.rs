@@ -145,13 +145,12 @@ fn spawn_bootstrap_transport(mode: TunnelMode) {
     }
 }
 
-pub(super) async fn disconnect_active_sync_channels(reason: &'static str) {
-    sync_control::disconnect_foreground_sync_channels(reason).await;
-}
-
-fn spawn_disconnect_active_sync_channels(reason: &'static str) {
+fn spawn_disconnect_active_sync_channels(
+    plan: Vec<sync_control::TransportSyncRestart>,
+    reason: &'static str,
+) {
     let task = async move {
-        disconnect_active_sync_channels(reason).await;
+        sync_control::restart_foreground_sync_channels(plan, reason).await;
     };
 
     if let Ok(handle) = tokio::runtime::Handle::try_current() {
@@ -179,14 +178,20 @@ pub fn set_tunnel(mode: TunnelMode) -> Result<()> {
     let (transport, socks5_url, _) = tunnel_transport_config_for(&mode);
     // The SOCKS URL may contain proxy credentials. Log only the transport kind.
     tracing::info!("Setting tunnel mode: {:?}", transport);
-    {
+    let restart_plan = {
         // Hold the mode lock until the sync layer has recorded this choice.
         // Otherwise two concurrent calls can publish the mode and the
         // selected network transport in opposite orders.
         let mut selected = TUNNEL_MODE.write();
+        let plan = if *selected != mode {
+            sync_control::plan_transport_sync_restart()
+        } else {
+            Vec::new()
+        };
         pirate_sync_lightd::select_transport(transport, socks5_url)?;
         *selected = mode.clone();
-    }
+        plan
+    };
     // #region agent log
     pirate_core::debug_log::with_locked_file(|file| {
         let ts = std::time::SystemTime::now()
@@ -218,9 +223,12 @@ pub fn set_tunnel(mode: TunnelMode) -> Result<()> {
         *PENDING_TUNNEL_MODE.write() = Some(mode.clone());
     }
     spawn_bootstrap_transport(mode);
-    // Force active sync channels to reconnect on the new transport immediately
-    // instead of waiting for long-lived gRPC streams to churn on their own.
-    spawn_disconnect_active_sync_channels("tunnel_mode_changed");
+    // Selection has already revoked old streams synchronously. Join and
+    // recreate active foreground engines from their durable local height;
+    // never wait behind an engine mutex held by a perpetual tip monitor.
+    if !restart_plan.is_empty() {
+        spawn_disconnect_active_sync_channels(restart_plan, "tunnel_mode_changed");
+    }
     Ok(())
 }
 
@@ -294,13 +302,37 @@ pub async fn set_tor_bridge_settings(
     bridge_lines: Vec<String>,
     transport_path: Option<String>,
 ) -> Result<()> {
-    pirate_sync_lightd::client::set_tor_bridge_settings(
-        use_bridges,
-        fallback_to_bridges,
-        transport.clone(),
-        bridge_lines.clone(),
-        transport_path.clone(),
-    )?;
+    let (restart_tor, restart_plan) = {
+        let selected = TUNNEL_MODE.read();
+        let restart_tor = matches!(*selected, TunnelMode::Tor);
+        // Capture active intent before changing settings can invalidate a
+        // client's configuration and cause its task to exit.
+        let generation = pirate_sync_lightd::client::transport_selection_generation();
+        let plan = if restart_tor {
+            sync_control::plan_transport_sync_restart()
+        } else {
+            Vec::new()
+        };
+        pirate_sync_lightd::client::set_tor_bridge_settings(
+            use_bridges,
+            fallback_to_bridges,
+            transport.clone(),
+            bridge_lines.clone(),
+            transport_path.clone(),
+        )?;
+        if restart_tor {
+            pirate_sync_lightd::select_transport(TransportMode::Tor, None)?;
+        }
+        let plan = if pirate_sync_lightd::client::transport_selection_generation() != generation {
+            plan
+        } else {
+            Vec::new()
+        };
+        (restart_tor, plan)
+    };
+    if !restart_plan.is_empty() {
+        spawn_disconnect_active_sync_channels(restart_plan, "tor_bridge_settings_changed");
+    }
 
     // #region agent log
     pirate_core::debug_log::with_locked_file(|file| {
@@ -325,17 +357,6 @@ pub async fn set_tor_bridge_settings(
     });
     // #endregion
 
-    let restart_tor = {
-        let selected = TUNNEL_MODE.read();
-        if matches!(*selected, TunnelMode::Tor) {
-            // Applying new bridge settings changes the Tor configuration.
-            // Publish it only while Tor remains the selected mode.
-            pirate_sync_lightd::select_transport(TransportMode::Tor, None)?;
-            true
-        } else {
-            false
-        }
-    };
     if restart_tor {
         pirate_sync_lightd::bootstrap_transport(TransportMode::Tor, None)
             .await
@@ -376,6 +397,9 @@ pub async fn get_tor_status() -> Result<String> {
 
 /// Rotate Tor exit circuits for new streams and reconnect sync channels.
 pub async fn rotate_tor_exit() -> Result<()> {
+    // Rotation revokes existing HTTP/2 channels. Preserve active session
+    // intent before awaiting it, not after the old task may have exited.
+    let restart_plan = sync_control::plan_transport_sync_restart();
     pirate_sync_lightd::rotate_tor_exit()
         .await
         .map_err(|e| anyhow!("Failed to rotate Tor exit: {}", e))?;
@@ -395,7 +419,7 @@ pub async fn rotate_tor_exit() -> Result<()> {
     });
     // #endregion
 
-    disconnect_active_sync_channels("tor_exit_rotate").await;
+    sync_control::restart_foreground_sync_channels(restart_plan, "tor_exit_rotate").await;
 
     Ok(())
 }

@@ -5,6 +5,7 @@ use pirate_sync_lightd::{
     PerfCounters, SyncEngine, SyncProfileSession, SyncProgress, SyncWorkload,
 };
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
@@ -40,6 +41,33 @@ lazy_static::lazy_static! {
     /// Serializes sync startup, cancellation, and rescan setup for each wallet.
     static ref SYNC_OPERATION_LOCKS: Arc<RwLock<HashMap<WalletId, Arc<Mutex<()>>>>> =
         Arc::new(RwLock::new(HashMap::new()));
+    static ref TRANSPORT_SYNC_RESTART_LOCK: Arc<Mutex<()>> = Arc::new(Mutex::new(()));
+    /// Explicit stop/start intent outlives a task clearing its cancellation token.
+    static ref SYNC_INTENT_GENERATIONS: Arc<RwLock<HashMap<WalletId, Arc<AtomicU64>>>> =
+        Arc::new(RwLock::new(HashMap::new()));
+}
+
+fn sync_intent_generation(wallet_id: &WalletId) -> Arc<AtomicU64> {
+    SYNC_INTENT_GENERATIONS
+        .write()
+        .entry(wallet_id.clone())
+        .or_insert_with(|| Arc::new(AtomicU64::new(0)))
+        .clone()
+}
+
+fn supersede_transport_restart(wallet_id: &WalletId) {
+    sync_intent_generation(wallet_id).fetch_add(1, Ordering::AcqRel);
+}
+
+fn claim_transport_restart(intent: &AtomicU64, generation: u64) -> bool {
+    intent
+        .compare_exchange(
+            generation,
+            generation.wrapping_add(1),
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        )
+        .is_ok()
 }
 
 fn sync_operation_lock(wallet_id: &WalletId) -> Arc<Mutex<()>> {
@@ -59,6 +87,7 @@ fn sync_operation_lock(wallet_id: &WalletId) -> Arc<Mutex<()>> {
 pub(super) async fn acquire_exclusive_key_import(
     wallet_id: &WalletId,
 ) -> Result<tokio::sync::OwnedMutexGuard<()>> {
+    supersede_transport_restart(wallet_id);
     let operation_guard = sync_operation_lock(wallet_id).lock_owned().await;
     cancel_sync_session(wallet_id.clone(), true).await?;
     Ok(operation_guard)
@@ -578,14 +607,61 @@ pub(super) fn get_spendability_status(wallet_id: WalletId) -> Result<Spendabilit
     Ok(status)
 }
 
-pub(super) async fn disconnect_foreground_sync_channels(reason: &'static str) {
-    let sessions: Vec<(WalletId, Arc<tokio::sync::Mutex<SyncSession>>)> = {
+/// Capture intent before selection revokes old streams and their tasks exit.
+/// Idle sessions are not restarted merely because the transport changed.
+#[flutter_rust_bridge::frb(ignore)]
+pub(super) struct TransportSyncRestart {
+    wallet_id: WalletId,
+    session: Arc<Mutex<SyncSession>>,
+    mode: SyncMode,
+    rescan: bool,
+    cancellation: Option<CancelToken>,
+    intent: Arc<AtomicU64>,
+    intent_generation: u64,
+}
+
+pub(super) fn plan_transport_sync_restart() -> Vec<TransportSyncRestart> {
+    let sessions: Vec<_> = {
         let sessions = SYNC_SESSIONS.read();
         sessions
             .iter()
             .map(|(wallet_id, session)| (wallet_id.clone(), Arc::clone(session)))
             .collect()
     };
+    sessions
+        .into_iter()
+        .filter_map(|(wallet_id, session)| {
+            let (mode, cancellation) = match session.try_lock() {
+                Ok(state) if !state.has_active_work() => return None,
+                Ok(state) => (state.mode, state.cancelled.clone()),
+                // Lifecycle updates hold this lock briefly, never for sync.
+                // Treat a busy session as active just as is_sync_running does.
+                Err(_) => (SyncMode::Compact, None),
+            };
+            let rescan =
+                is_rescan_active(&wallet_id) || RESCAN_IN_FLIGHT.read().contains(&wallet_id);
+            let intent = sync_intent_generation(&wallet_id);
+            let intent_generation = intent.load(Ordering::Acquire);
+            Some(TransportSyncRestart {
+                wallet_id,
+                session,
+                mode,
+                rescan,
+                cancellation,
+                intent,
+                intent_generation,
+            })
+        })
+        .collect()
+}
+
+pub(super) async fn restart_foreground_sync_channels(
+    plan: Vec<TransportSyncRestart>,
+    reason: &'static str,
+) {
+    // Coalesce lifecycle work by serialising it; each fresh client reads the
+    // latest selection, never a transport captured by an older queued task.
+    let _transition = TRANSPORT_SYNC_RESTART_LOCK.lock().await;
 
     write_runtime_debug_event(
         "log_transport_sync_disconnect_start",
@@ -593,39 +669,73 @@ pub(super) async fn disconnect_foreground_sync_channels(reason: &'static str) {
         &format!(
             r#"{{"reason":"{}","session_count":{}}}"#,
             escape_json(reason),
-            sessions.len()
+            plan.len()
         ),
     );
 
-    for (wallet_id, session_arc) in sessions {
-        let sync_opt = { session_arc.lock().await.sync.clone() };
-        if let Some(sync) = sync_opt {
-            let wallet_id_for_log = wallet_id.clone();
-            let result = run_sync_engine_task(sync.clone(), move |engine| {
-                Box::pin(async move {
-                    engine.disconnect().await;
-                    Ok(())
-                })
-            })
-            .await;
-            if let Err(e) = result {
-                tracing::warn!(
-                    "Failed to disconnect sync engine for {} after {}: {}",
-                    wallet_id_for_log,
-                    reason,
-                    e
-                );
-                write_runtime_debug_event(
-                    "log_transport_sync_disconnect_error",
-                    "disconnect active sync channels failed",
-                    &format!(
-                        r#"{{"reason":"{}","wallet_id":"{}","error":"{}"}}"#,
-                        escape_json(reason),
-                        wallet_id_for_log,
-                        escape_json(&format!("{}", e))
-                    ),
-                );
-            }
+    for restart in plan {
+        let operation_guard = sync_operation_lock(&restart.wallet_id).lock_owned().await;
+        if restart.intent.load(Ordering::Acquire) != restart.intent_generation {
+            continue;
+        }
+        // A user-requested pause/lock can supersede this queued handoff.
+        if restart
+            .cancellation
+            .as_ref()
+            .is_some_and(CancelToken::is_cancelled)
+        {
+            continue;
+        }
+        let current = SYNC_SESSIONS.read().get(&restart.wallet_id).cloned();
+        if current
+            .as_ref()
+            .is_none_or(|session| !Arc::ptr_eq(session, &restart.session))
+        {
+            continue;
+        }
+        // cancel_sync_session signals the token stored outside SyncEngine,
+        // then joins normal cleanup. It never queues behind a perpetual tip
+        // monitor while waiting to acquire the engine's mutex.
+        if let Err(error) = cancel_sync_session(restart.wallet_id.clone(), true).await {
+            tracing::warn!(
+                "Transport handoff could not stop synchronization: {}",
+                error
+            );
+            continue;
+        }
+        if restart.intent.load(Ordering::Acquire) != restart.intent_generation {
+            continue;
+        }
+        let current = SYNC_SESSIONS.read().get(&restart.wallet_id).cloned();
+        if current
+            .as_ref()
+            .is_none_or(|session| !Arc::ptr_eq(session, &restart.session))
+        {
+            continue;
+        }
+        if restart.rescan {
+            // Do not pretend a partial replay finished or rewind it implicitly.
+            // Keep its durable progress and conservative gate for an explicit
+            // resume on the newly selected transport.
+            write_runtime_debug_event(
+                "log_transport_rescan_paused",
+                "rescan paused after transport change; resume required",
+                &format!(r#"{{"reason":"{}"}}"#, escape_json(reason)),
+            );
+            continue;
+        }
+        // Only one queued handoff may recreate this session. A concurrent
+        // explicit pause/start changes the intent and wins instead.
+        if !claim_transport_restart(&restart.intent, restart.intent_generation) {
+            continue;
+        }
+        if let Err(error) =
+            start_sync_with_guard(restart.wallet_id, restart.mode, operation_guard, false).await
+        {
+            tracing::warn!(
+                "Synchronization remains paused after transport change: {}",
+                error
+            );
         }
     }
 }
@@ -651,6 +761,7 @@ pub(super) async fn foreground_sync_needs_work(wallet_id: &WalletId) -> Option<b
 
 #[flutter_rust_bridge::frb(ignore)]
 struct SyncSession {
+    mode: SyncMode,
     sync: Option<Arc<tokio::sync::Mutex<SyncEngine>>>,
     cancelled: Option<CancelToken>,
     progress: Option<Arc<tokio::sync::RwLock<SyncProgress>>>,
@@ -671,6 +782,7 @@ impl SyncSession {
 impl Default for SyncSession {
     fn default() -> Self {
         Self {
+            mode: SyncMode::Compact,
             sync: None,
             cancelled: None,
             progress: None,
@@ -697,7 +809,17 @@ impl Default for SyncSession {
 pub(super) async fn start_sync(wallet_id: WalletId, mode: SyncMode) -> Result<()> {
     ensure_not_decoy("Sync")?;
     let operation_lock = sync_operation_lock(&wallet_id);
-    let _operation_guard = operation_lock.lock().await;
+    let operation_guard = operation_lock.lock_owned().await;
+    start_sync_with_guard(wallet_id, mode, operation_guard, true).await
+}
+
+async fn start_sync_with_guard(
+    wallet_id: WalletId,
+    mode: SyncMode,
+    _operation_guard: tokio::sync::OwnedMutexGuard<()>,
+    allow_replay: bool,
+) -> Result<()> {
+    ensure_not_decoy("Sync")?;
     tracing::info!("Starting sync for wallet {} in mode {:?}", wallet_id, mode);
 
     if RESCAN_IN_FLIGHT.read().contains(&wallet_id) || is_rescan_active(&wallet_id) {
@@ -743,6 +865,12 @@ pub(super) async fn start_sync(wallet_id: WalletId, mode: SyncMode) -> Result<()
             session.startup_in_progress = false;
         }
     }
+    if allow_replay {
+        // A real explicit start supersedes older handoff intent. An idempotent
+        // start while the old task is still running must not erase its queued
+        // transport restart.
+        supersede_transport_restart(&wallet_id);
+    }
     // Import may have committed immediately before the app was closed. Resume
     // through the full replay path; ordinary tip sync cannot establish coverage
     // for a key that was absent from the previous engine's key snapshot.
@@ -752,6 +880,11 @@ pub(super) async fn start_sync(wallet_id: WalletId, mode: SyncMode) -> Result<()
         required_key_replay(&SpendabilityStateStorage::new(&db).load_state()?)?
     };
     if let Some(pending) = pending_replay {
+        if !allow_replay {
+            return Err(anyhow!(
+                "Synchronization is paused; resume the required rescan on the selected transport"
+            ));
+        }
         drop(_operation_guard);
         return rescan(wallet_id, pending.from_height).await;
     }
@@ -931,6 +1064,7 @@ pub(super) async fn start_sync(wallet_id: WalletId, mode: SyncMode) -> Result<()
         }
 
         session.is_running = true;
+        session.mode = mode;
         session.startup_in_progress = true;
         session.sync = None;
         session.cancelled = None;
@@ -1935,6 +2069,7 @@ async fn wait_for_sync_stop(wallet_id: &WalletId, timeout: Duration) -> Result<(
 
 pub(super) async fn rescan(wallet_id: WalletId, from_height: u32) -> Result<()> {
     ensure_not_decoy("Rescan")?;
+    supersede_transport_restart(&wallet_id);
     tracing::info!(
         "Rescanning wallet {} from height {}",
         wallet_id,
@@ -2481,6 +2616,7 @@ pub(super) async fn rescan(wallet_id: WalletId, from_height: u32) -> Result<()> 
     let rescan_session_arc = {
         let mut sessions = SYNC_SESSIONS.write();
         let session = Arc::new(tokio::sync::Mutex::new(SyncSession {
+            mode: SyncMode::Deep,
             sync: Some(Arc::clone(&sync)),
             cancelled: Some(cancel_flag),
             progress: Some(progress),
@@ -2789,12 +2925,14 @@ pub(super) async fn cancel_sync_internal(
     wallet_id: WalletId,
     clear_engine_handle: bool,
 ) -> Result<()> {
+    supersede_transport_restart(&wallet_id);
     let operation_lock = sync_operation_lock(&wallet_id);
     let _operation_guard = operation_lock.lock().await;
     cancel_sync_session(wallet_id, clear_engine_handle).await
 }
 
 pub(super) async fn cancel_sync_for_wallet_switch(wallet_id: WalletId) -> Result<()> {
+    supersede_transport_restart(&wallet_id);
     let operation_lock = sync_operation_lock(&wallet_id);
     let _operation_guard = operation_lock.lock().await;
     if RESCAN_IN_FLIGHT.read().contains(&wallet_id) || is_rescan_active(&wallet_id) {
@@ -2833,6 +2971,7 @@ pub(super) fn is_sync_running(wallet_id: WalletId) -> Result<bool> {
 }
 
 pub(super) fn clear_wallet_sync_state(wallet_id: &WalletId) {
+    supersede_transport_restart(wallet_id);
     {
         let mut sessions = SYNC_SESSIONS.write();
         sessions.remove(wallet_id);
@@ -2861,6 +3000,136 @@ pub(super) fn clear_passphrase_change_sync_state() {
 #[cfg(test)]
 mod lifecycle_tests {
     use super::*;
+
+    #[tokio::test]
+    async fn user_pause_after_task_cleanup_supersedes_the_queued_handoff() {
+        let wallet_id = format!("test-transport-cleanup-stop-{}", uuid::Uuid::new_v4());
+        let session = Arc::new(Mutex::new(SyncSession::default()));
+        let task = tokio::spawn(std::future::pending::<()>());
+        {
+            let mut state = session.lock().await;
+            state.is_running = true;
+            state.task = Some(task);
+        }
+        SYNC_SESSIONS
+            .write()
+            .insert(wallet_id.clone(), Arc::clone(&session));
+        let plan = plan_transport_sync_restart()
+            .into_iter()
+            .filter(|restart| restart.wallet_id == wallet_id)
+            .collect();
+        {
+            let mut state = session.lock().await;
+            state.task.take().unwrap().abort();
+            state.is_running = false;
+            state.cancelled = None;
+        }
+        cancel_sync_internal(wallet_id.clone(), true).await.unwrap();
+        restart_foreground_sync_channels(plan, "test_transport_change").await;
+        assert!(!session.lock().await.has_active_work());
+        SYNC_SESSIONS.write().remove(&wallet_id);
+        SYNC_OPERATION_LOCKS.write().remove(&wallet_id);
+        SYNC_INTENT_GENERATIONS.write().remove(&wallet_id);
+    }
+
+    #[test]
+    fn rapid_transport_selections_claim_only_one_restart_intent() {
+        let intent = AtomicU64::new(4);
+        assert!(claim_transport_restart(&intent, 4));
+        assert!(!claim_transport_restart(&intent, 4));
+        // A newer explicit stop also blocks the old queued handoff.
+        intent.fetch_add(1, Ordering::AcqRel);
+        assert!(!claim_transport_restart(&intent, 5));
+    }
+
+    #[tokio::test]
+    async fn transport_restart_signals_cancellation_without_acquiring_busy_engine() {
+        let wallet_id = format!("test-transport-stop-{}", uuid::Uuid::new_v4());
+        let session = Arc::new(Mutex::new(SyncSession::default()));
+        let cancellation = CancelToken::new();
+        let session_for_task = Arc::clone(&session);
+        let cancellation_for_task = cancellation.clone();
+        // Represent the lock held throughout a perpetual follow-tip task.
+        let busy_engine = Arc::new(Mutex::new(()));
+        let held_engine = Arc::clone(&busy_engine).lock_owned().await;
+        let task = tokio::spawn(async move {
+            let _held_engine = held_engine;
+            cancellation_for_task.cancelled().await;
+            let mut state = session_for_task.lock().await;
+            state.is_running = false;
+            state.task = None;
+        });
+        {
+            let mut state = session.lock().await;
+            state.mode = SyncMode::Deep;
+            state.cancelled = Some(cancellation.clone());
+            state.is_running = true;
+            state.task = Some(task);
+        }
+        SYNC_SESSIONS
+            .write()
+            .insert(wallet_id.clone(), Arc::clone(&session));
+        let mut plan: Vec<_> = plan_transport_sync_restart()
+            .into_iter()
+            .filter(|restart| restart.wallet_id == wallet_id)
+            .collect();
+        assert_eq!(plan.len(), 1);
+        assert!(matches!(plan[0].mode, SyncMode::Deep));
+        // A rescan pause tests joining without creating a database or contacting
+        // any node. Ordinary tasks subsequently use start_sync's durable resume.
+        plan[0].rescan = true;
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            restart_foreground_sync_channels(plan, "test_transport_change"),
+        )
+        .await
+        .expect("handoff must not wait behind the busy engine");
+        assert!(cancellation.is_cancelled());
+        assert!(busy_engine.try_lock().is_ok());
+        assert!(!session.lock().await.has_active_work());
+        SYNC_SESSIONS.write().remove(&wallet_id);
+        SYNC_OPERATION_LOCKS.write().remove(&wallet_id);
+    }
+
+    #[tokio::test]
+    async fn transport_restart_plan_does_not_resume_an_idle_session() {
+        let wallet_id = format!("test-transport-idle-{}", uuid::Uuid::new_v4());
+        SYNC_SESSIONS.write().insert(
+            wallet_id.clone(),
+            Arc::new(Mutex::new(SyncSession::default())),
+        );
+        assert!(!plan_transport_sync_restart()
+            .iter()
+            .any(|restart| restart.wallet_id == wallet_id));
+        SYNC_SESSIONS.write().remove(&wallet_id);
+    }
+
+    #[tokio::test]
+    async fn user_cancellation_supersedes_a_queued_transport_restart() {
+        let wallet_id = format!("test-transport-user-stop-{}", uuid::Uuid::new_v4());
+        let session = Arc::new(Mutex::new(SyncSession::default()));
+        let cancellation = CancelToken::new();
+        let task = tokio::spawn(std::future::pending::<()>());
+        {
+            let mut state = session.lock().await;
+            state.cancelled = Some(cancellation.clone());
+            state.is_running = true;
+            state.task = Some(task);
+        }
+        SYNC_SESSIONS
+            .write()
+            .insert(wallet_id.clone(), Arc::clone(&session));
+        let plan = plan_transport_sync_restart()
+            .into_iter()
+            .filter(|restart| restart.wallet_id == wallet_id)
+            .collect();
+        cancellation.cancel();
+        restart_foreground_sync_channels(plan, "test_transport_change").await;
+        // The stale handoff neither joins nor replaces the user-owned stop.
+        session.lock().await.task.take().unwrap().abort();
+        SYNC_SESSIONS.write().remove(&wallet_id);
+        SYNC_OPERATION_LOCKS.write().remove(&wallet_id);
+    }
 
     #[tokio::test]
     async fn status_polling_does_not_restart_an_idle_session() {
