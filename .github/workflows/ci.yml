@@ -870,7 +870,7 @@ jobs:
         run: python3 scripts/verify_linux_glibc.py --max-version 2.35 dist/cli
 
       - name: Upload CLI binaries
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: ${{ matrix.artifact-name }}
           path: dist/cli/*
@@ -936,7 +936,7 @@ jobs:
         run: python3 scripts/verify_linux_glibc.py --max-version 2.35 dist/qortal-jni
 
       - name: Upload Qortal JNI library
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: ${{ matrix.artifact-name }}
           path: dist/qortal-jni/**/*
@@ -980,7 +980,7 @@ jobs:
         run: python3 scripts/verify_linux_glibc.py --max-version 2.35 dist/native-ffi
 
       - name: Upload native FFI package
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: native-ffi
           path: dist/native-ffi/**/*
@@ -1044,7 +1044,7 @@ jobs:
             test
 
       - name: Upload iOS SDK package
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: ios-sdk
           path: |
@@ -1124,7 +1124,7 @@ jobs:
           exit "$status"
 
       - name: Upload Android SDK package
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: android-sdk
           path: |
@@ -1258,7 +1258,7 @@ jobs:
           scripts/package-react-native-plugin.sh
 
       - name: Upload React Native plugin package
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: react-native-pirate-wallet
           path: |
@@ -1489,7 +1489,7 @@ jobs:
           ./scripts/generate-provenance.sh dist/android/Stashi-Wallet-android-unsigned.aab dist/provenance
 
       - name: Upload APK (V8)
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: android-apk-unsigned-v8
           path: |
@@ -1497,7 +1497,7 @@ jobs:
             dist/android/Stashi-Wallet-android-V8-unsigned.apk.sha256
 
       - name: Upload AAB
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: android-aab
           path: |
@@ -1505,13 +1505,13 @@ jobs:
             dist/android/*.aab.sha256
 
       - name: Upload SBOM
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: android-sbom
           path: dist/sbom/**/*
 
       - name: Upload Provenance
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: android-provenance
           path: dist/provenance/**/*
@@ -1628,7 +1628,7 @@ jobs:
           ./scripts/generate-provenance.sh dist/ios/Stashi-Wallet-ios-unsigned.ipa dist/provenance
 
       - name: Upload IPA
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: ios-ipa
           path: |
@@ -1637,13 +1637,13 @@ jobs:
             dist/ios/installed-payload-ios-unsigned.txt
 
       - name: Upload SBOM
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: ios-sbom
           path: dist/sbom/**/*
 
       - name: Upload Provenance
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: ios-provenance
           path: dist/provenance/**/*
@@ -1754,7 +1754,7 @@ jobs:
           fi
 
       - name: Upload Windows artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: windows-desktop
           path: |
@@ -1766,13 +1766,13 @@ jobs:
             dist/windows/installed-payload-windows-unsigned.txt
 
       - name: Upload SBOM
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: windows-sbom
           path: dist/sbom/**/*
 
       - name: Upload Provenance
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: windows-provenance
           path: dist/provenance/**/*
@@ -1874,7 +1874,7 @@ jobs:
           ./scripts/generate-provenance.sh dist/macos/Stashi-Wallet-macos-unsigned.dmg dist/provenance
 
       - name: Upload DMG
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: macos-dmg
           path: |
@@ -1883,13 +1883,13 @@ jobs:
             dist/macos/installed-payload-macos-unsigned.txt
 
       - name: Upload SBOM
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: macos-sbom
           path: dist/sbom/**/*
 
       - name: Upload Provenance
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: macos-provenance
           path: dist/provenance/**/*
@@ -2015,7 +2015,7 @@ jobs:
           ./scripts/generate-provenance.sh dist/linux/Stashi-Wallet-amd64.deb dist/provenance
 
       - name: Upload AppImage
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: linux-appimage
           path: |
@@ -2024,7 +2024,7 @@ jobs:
             dist/linux/installed-payload-linux.txt
 
       - name: Upload Flatpak
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: linux-flatpak
           path: |
@@ -2032,7 +2032,7 @@ jobs:
             com.pirate.wallet.yml
 
       - name: Upload Debian Package
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: linux-deb
           path: |
@@ -2041,13 +2041,13 @@ jobs:
             dist/linux/apt-repo/**/*
 
       - name: Upload SBOM
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: linux-sbom
           path: dist/sbom/**/*
 
       - name: Upload Provenance
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: linux-provenance
           path: dist/provenance/**/*
@@ -2168,7 +2168,7 @@ jobs:
           ./scripts/generate-provenance.sh dist/linux/Stashi-Wallet-arm64.deb dist/provenance
 
       - name: Upload ARM64 Debian package
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: linux-arm64-deb
           path: |
@@ -2177,13 +2177,13 @@ jobs:
             dist/linux/installed-payload-linux-arm64.txt
 
       - name: Upload ARM64 SBOM
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: linux-arm64-sbom
           path: dist/sbom/**/*
 
       - name: Upload ARM64 Provenance
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: linux-arm64-provenance
           path: dist/provenance/**/*
@@ -2299,7 +2299,7 @@ jobs:
 
       - name: Upload signed APK (V8)
         if: steps.signing.outputs.enabled == 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: android-apk-signed-v8
           path: |
@@ -2309,7 +2309,7 @@ jobs:
 
       - name: Upload signed AAB
         if: steps.signing.outputs.enabled == 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: android-aab-signed
           path: |
@@ -2414,7 +2414,7 @@ jobs:
 
       - name: Upload signed Windows artifacts
         if: steps.signing.outputs.enabled == 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: windows-signed
           path: |
@@ -2586,7 +2586,7 @@ jobs:
 
       - name: Upload signed DMG
         if: steps.signing.outputs.enabled == 'true' && steps.macos_notary.outputs.final == 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: macos-dmg-signed
           path: |
@@ -2598,7 +2598,7 @@ jobs:
 
       - name: Upload pending macOS notarization artifact
         if: steps.signing.outputs.enabled == 'true' && steps.macos_notary.outputs.final != 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: macos-dmg-notary-pending
           path: |
@@ -2759,7 +2759,7 @@ jobs:
 
       - name: Upload signed IPA
         if: steps.signing.outputs.enabled == 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: ios-ipa-signed
           path: |
@@ -2845,7 +2845,7 @@ jobs:
 
       - name: Upload VirusTotal report
         if: steps.vt.outputs.enabled == 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: virustotal-report
           path: vt-report/*
